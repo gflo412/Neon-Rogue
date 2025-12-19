@@ -399,8 +399,9 @@
         
         #boss-warning {
             position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            color: red; font-size: 4rem; font-weight: 900; display: none; pointer-events: none;
-            text-shadow: 0 0 20px red; letter-spacing: 10px; animation: flash 0.5s infinite; z-index: 200;
+            color: red; font-size: 3rem; font-weight: 900; display: none; pointer-events: none;
+            text-shadow: 0 0 20px red; letter-spacing: 6px; animation: flash 0.5s infinite; z-index: 200;
+            text-align: center; width: 100%;
         }
         @keyframes flash { 0% {opacity: 1;} 50% {opacity: 0.2;} 100% {opacity: 1;} }
 
@@ -433,7 +434,7 @@
     <canvas id="gameCanvas"></canvas>
     <div class="vignette"></div>
     <div id="damage-flash"></div>
-    <div id="boss-warning">WARNING<br>BOSS DETECTED</div>
+    <div id="boss-warning">WARNING<br>CHAMPION INCOMING!</div>
 
 
     <!-- HUD -->
@@ -503,26 +504,98 @@
 
     <!-- Main Menu -->
     <div id="menu-screen" class="modal active">
-        <h1 class="text-6xl text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-blue-500 font-black mb-2 tracking-tighter filter drop-shadow-[0_0_15px_rgba(0,209,178,0.5)]">NEON<br>ROGUE</h1>
-        <p class="text-blue-200 tracking-widest text-sm mb-12 opacity-70">UNDERTRAINED. OVERKILL.</p>
-        <div class="flex flex-col gap-4 w-64">
-            <button id="start-btn" class="bg-teal-500 hover:bg-teal-400 text-black font-bold py-4 rounded-sm skew-x-[-10deg] shadow-[0_0_30px_rgba(0,209,178,0.3)] transition-all">
-                <span class="inline-block skew-x-[10deg]">DEPLOY</span>
-            </button>
-            
-            <!-- Seed Input (Optional) -->
-            <div class="flex flex-col gap-2 mt-2">
-                <label class="text-xs text-gray-500 tracking-wide">SEED (Optional)</label>
-                <input 
-                    id="seed-input" 
-                    type="text" 
-                    placeholder="Random" 
-                    maxlength="6"
-                    class="bg-gray-800 border border-gray-700 text-teal-400 text-center py-2 px-3 rounded font-mono focus:border-teal-500 focus:outline-none"
-                    style="letter-spacing: 0.2em;"
-                />
-                <p class="text-[10px] text-gray-600 text-center">Leave blank for random run</p>
+        <!-- Title - Pinned to Top -->
+        <div class="absolute top-12 left-0 right-0 flex justify-center">
+            <h1 class="text-6xl text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-blue-500 font-black tracking-tighter filter drop-shadow-[0_0_15px_rgba(0,209,178,0.5)]">NEON<br>ROGUE</h1>
+        </div>
+        
+        <!-- Seed Icon Button - Bottom Left Corner (Pinned) -->
+        <button id="seed-corner-btn" class="absolute bottom-6 left-6 w-12 h-12 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-teal-400 rounded-lg border border-gray-700 flex items-center justify-center transition-all">
+            <i class="fas fa-hashtag text-lg"></i>
+        </button>
+        
+        <!-- Save Icon Button - Bottom Right Corner (Pinned) -->
+        <button id="save-corner-btn" class="absolute bottom-6 right-6 w-12 h-12 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-teal-400 rounded-lg border border-gray-700 flex items-center justify-center transition-all">
+            <i class="fas fa-save text-lg"></i>
+        </button>
+        
+        <!-- Centered Content Area -->
+        <div class="flex flex-col items-center justify-center" style="min-height: 100vh; padding: 180px 0 100px 0;">
+            <!-- Ship Selection Carousel - Vertical Layout -->
+            <div class="mb-8 w-80 relative">
+                <!-- Navigation Arrows - Inside edges -->
+                <button id="ship-prev" class="absolute left-2 top-1/2 -translate-y-1/2 text-2xl z-10 transition-all disabled:text-gray-800 disabled:cursor-not-allowed text-teal-400 hover:text-teal-300" disabled>
+                    <i class="fas fa-chevron-circle-left"></i>
+                </button>
+                <button id="ship-next" class="absolute right-2 top-1/2 -translate-y-1/2 text-2xl z-10 transition-all disabled:text-gray-800 disabled:cursor-not-allowed text-teal-400 hover:text-teal-300" disabled>
+                    <i class="fas fa-chevron-circle-right"></i>
+                </button>
+                
+                <!-- Ship Display - Vertical Layout -->
+                <div class="flex flex-col items-center">
+                    <!-- Ship Icon (Canvas) - Top -->
+                    <div class="mb-3">
+                        <canvas id="ship-canvas" width="70" height="70"></canvas>
+                    </div>
+                    
+                    <!-- Ship Info - Bottom, Centered -->
+                    <div class="text-center">
+                        <h3 id="ship-name" class="text-base font-bold text-teal-400 mb-1 tracking-wide">PATHFINDER</h3>
+                        <p id="ship-desc" class="text-xs text-gray-400 mb-2">Balanced all-around vessel</p>
+                        <div id="ship-stats" class="text-[10px] text-gray-500 font-mono space-y-0.5">
+                            <div>HP: <span class="text-white">150</span> • DMG: <span class="text-white">100%</span> • SPD: <span class="text-white">100%</span></div>
+                            <div>WEAPON: <span class="text-teal-400">Ion Cannons</span></div>
+                        </div>
+                    </div>
+                </div>
+                <p class="text-[10px] text-gray-700 text-center mt-4">More ships unlock via progression</p>
             </div>
+            
+            <div class="flex flex-col gap-4 w-64">
+                <button id="start-btn" class="bg-teal-500 hover:bg-teal-400 text-black font-bold py-4 rounded-sm skew-x-[-10deg] shadow-[0_0_30px_rgba(0,209,178,0.3)] transition-all">
+                    <span class="inline-block skew-x-[10deg]">DEPLOY</span>
+                </button>
+                
+                <button id="view-stats-btn" class="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-teal-400 text-sm font-bold py-2 rounded transition-all border border-gray-700">
+                    <i class="fas fa-chart-bar mr-2"></i>VIEW STATS
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Seed Options Modal -->
+    <div id="seed-modal" class="modal">
+        <h2 class="text-3xl text-teal-400 font-black mb-6 tracking-widest">SEED OPTIONS</h2>
+        <div class="flex flex-col gap-3 w-72">
+            <input 
+                id="seed-input" 
+                type="text" 
+                placeholder="Random" 
+                maxlength="6"
+                class="bg-gray-800 border border-gray-700 text-teal-400 text-center py-3 px-4 rounded font-mono focus:border-teal-500 focus:outline-none text-lg"
+                style="letter-spacing: 0.3em;"
+            />
+            <p class="text-sm text-gray-500 text-center">Leave blank for random run</p>
+            <button id="seed-close-btn" class="mt-4 border border-gray-500 text-gray-400 hover:text-white hover:border-white py-2 px-8 rounded transition-all">
+                CLOSE
+            </button>
+        </div>
+    </div>
+    
+    <!-- Save Management Modal -->
+    <div id="save-modal" class="modal">
+        <h2 class="text-3xl text-teal-400 font-black mb-6 tracking-widest">SAVE MANAGEMENT</h2>
+        <div class="flex flex-col gap-3 w-72">
+            <button id="export-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition-all">
+                <i class="fas fa-download mr-2"></i>EXPORT SAVE
+            </button>
+            <button id="import-btn" class="bg-gray-700 hover:bg-gray-600 text-white font-bold py-3 rounded transition-all">
+                <i class="fas fa-upload mr-2"></i>IMPORT SAVE
+            </button>
+            <input type="file" id="import-file-input" accept=".json" style="display: none;">
+            <button id="save-close-btn" class="mt-4 border border-gray-500 text-gray-400 hover:text-white hover:border-white py-2 px-8 rounded transition-all">
+                CLOSE
+            </button>
         </div>
     </div>
     
@@ -623,6 +696,7 @@
     <div id="gameover-screen" class="modal">
         <h2 class="text-5xl text-red-600 font-black mb-2 drop-shadow-[0_0_20px_rgba(255,56,96,0.5)]">TERMINATED</h2>
         <div class="flex gap-6 mb-2 font-mono text-gray-300">
+            <p>LEVEL: <span id="final-level" class="text-white text-xl">1</span></p>
             <p>SCORE: <span id="final-score" class="text-white text-xl">0</span></p>
             <p>TIME: <span id="final-time" class="text-white text-xl">00:00</span></p>
         </div>
@@ -644,7 +718,49 @@
             </div>
         </div>
         
-        <button id="restart-btn" class="border-2 border-teal-500 text-teal-500 hover:bg-teal-500 hover:text-white font-bold py-3 px-10 rounded-sm skew-x-[-10deg] transition-all"><span class="inline-block skew-x-[10deg]">RETURN</span></button>
+        <div class="flex flex-col gap-3 w-64">
+            <button id="restart-btn" class="border-2 border-teal-500 text-teal-500 hover:bg-teal-500 hover:text-white font-bold py-3 px-10 rounded-sm skew-x-[-10deg] transition-all"><span class="inline-block skew-x-[10deg]">RETURN</span></button>
+            <button id="gameover-export-btn" class="bg-gray-700 hover:bg-gray-600 text-white text-sm font-bold py-2 rounded transition-all">
+                <i class="fas fa-download mr-2"></i>EXPORT SAVE
+            </button>
+        </div>
+    </div>
+
+
+    <!-- Stats Screen -->
+    <div id="stats-screen" class="modal">
+        <h2 class="text-4xl text-teal-400 font-black mb-6 tracking-widest">PROGRESSION STATS</h2>
+        <div class="bg-gray-900 bg-opacity-80 border border-teal-500 rounded-lg p-6 w-80 font-mono">
+            <div class="space-y-3 text-left">
+                <div class="flex justify-between border-b border-gray-700 pb-2">
+                    <span class="text-gray-400">Nexus Cores:</span>
+                    <span id="stat-cores" class="text-purple-400 font-bold">0</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-700 pb-2">
+                    <span class="text-gray-400">Total Runs:</span>
+                    <span id="stat-runs" class="text-white font-bold">0</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-700 pb-2">
+                    <span class="text-gray-400">Total Kills:</span>
+                    <span id="stat-kills" class="text-orange-400 font-bold">0</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-700 pb-2">
+                    <span class="text-gray-400">Highest Level:</span>
+                    <span id="stat-level" class="text-yellow-400 font-bold">0</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-700 pb-2">
+                    <span class="text-gray-400">Highest Score:</span>
+                    <span id="stat-score" class="text-teal-400 font-bold">0</span>
+                </div>
+                <div class="flex justify-between">
+                    <span class="text-gray-400">Total Playtime:</span>
+                    <span id="stat-time" class="text-blue-400 font-bold">0h 0m</span>
+                </div>
+            </div>
+        </div>
+        <button id="close-stats-btn" class="mt-6 border border-gray-500 text-gray-400 hover:text-white hover:border-white py-2 px-8 rounded transition-all">
+            CLOSE
+        </button>
     </div>
 
 
@@ -702,7 +818,9 @@
 
         // --- Defs ---
         const weaponDefs = {
-            ion: { id: 'ion', type: 'weapon', name: 'Ion Cannon', icon: 'fa-crosshairs', desc: 'Stationed turrets firing energy blasts.', offensive: true, validUpgrades: ['dmg', 'rate'] },
+            ion: { id: 'ion', type: 'weapon', name: 'Ion Cannon', icon: 'fa-crosshairs', desc: 'Stationed turrets firing energy blasts.', offensive: true, validUpgrades: ['dmg', 'rate'], shipLocked: 'PATHFINDER' },
+            turret: { id: 'turret', type: 'weapon', name: 'Auto-Turret', icon: 'fa-chess-rook', desc: 'Deploys stationary turrets that auto-fire.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'ENGINEER' },
+            emp: { id: 'emp', type: 'weapon', name: 'EMP Pulse', icon: 'fa-bullseye', desc: 'Slowing pulses that create lingering fields.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'DISRUPTOR' },
             beam: { id: 'beam', type: 'weapon', name: 'Plasma Beam', icon: 'fa-fire', desc: 'Continuous energy beam.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             seeker: { id: 'seeker', type: 'weapon', name: 'Seeker Swarm', icon: 'fa-rocket', desc: 'Launches homing missiles.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             rad: { id: 'rad', type: 'weapon', name: 'Rad-Field', icon: 'fa-radiation', desc: 'Emits a damaging aura.', offensive: true, validUpgrades: ['dmg', 'area'] },
@@ -722,7 +840,7 @@
 
         const modDefs = {
             repulsor: { id: 'repulsor', name: 'Repulsor Field', icon: 'fa-shield-alt', desc: 'Constantly pushes drones and swarms away.' },
-            overclock: { id: 'overclock', name: 'Overclock Module', icon: 'fa-tachometer-alt', desc: '+15% fire rate for all weapons.' },
+            overclock: { id: 'overclock', name: 'Overclock Module', icon: 'fa-tachometer-alt', desc: '+25% fire rate for all weapons.' },
             chrono: { id: 'chrono', name: 'Chrono Shield', icon: 'fa-clock', desc: 'Time slows 50% for 10s at low HP, but YOU stay at 100% speed. 60s cooldown.' },
             revive: { id: 'revive', name: 'Second Chance', icon: 'fa-heart', desc: 'Survive fatal damage once per 2 min, restore 50% HP.' },
             laststand: { id: 'laststand', name: 'Last Stand', icon: 'fa-heart-pulse', desc: '+30% damage when below 30% HP.' },
@@ -749,12 +867,13 @@
 
 
         const elementalDefs = [
-            { id: 'fire', name: 'Pyro Mod', desc: 'Ramping burn damage.', icon: 'fa-fire', color: '#ff5722' },
-            { id: 'ice', name: 'Cryo Mod', desc: 'Applies spreading slow. Stay slowed 2s to freeze solid.', icon: 'fa-snowflake', color: '#88d8ff' },
-            { id: 'volt', name: 'Volt Mod', desc: 'Chain lightning on hit.', icon: 'fa-bolt', color: '#ffeb3b' },
-            { id: 'bio', name: 'Bio Mod', desc: 'Decay damage, spreads once.', icon: 'fa-biohazard', color: '#00cc44' },
-            { id: 'hack', name: 'Cyber Hack', desc: '50% Chance to confuse enemies.', icon: 'fa-terminal', color: '#00ffff' }
+            { id: 'fire', name: 'Pyro Mod', desc: 'Burns for ramping damage over time.', icon: 'fa-fire', color: '#ff5722' },
+            { id: 'ice', name: 'Cryo Mod', desc: 'Slows enemies, spreads to nearby, freezes after 2s.', icon: 'fa-snowflake', color: '#88d8ff' },
+            { id: 'volt', name: 'Volt Mod', desc: 'Chains lightning to nearby enemies.', icon: 'fa-bolt', color: '#ffeb3b' },
+            { id: 'bio', name: 'Bio Mod', desc: 'Decay damage spreads once to nearest enemy.', icon: 'fa-biohazard', color: '#00cc44' },
+            { id: 'hack', name: 'Cyber Hack', desc: 'Turns weaker enemies to fight for you temporarily.', icon: 'fa-terminal', color: '#9c27b0' }
         ];
+
 
         const masteryDefs = {
             fire: { id: 'fire', type: 'mastery', name: 'Pyro Mastery', desc: '+2s burn duration, +0.5% HP/tick', icon: 'fa-fire-alt', offensive: true },
@@ -797,15 +916,49 @@
                 this.critMult = 1.50; 
                 this.elementalMult = 1.0; 
                 this.invulnTimer = 0; this.pickupRadius = 120; // Slightly increased for better feel
+                this.pickupUpgradeCount = 0; // Track magnet upgrades for hard cap
 
+                // Ship selection
+                this.selectedShip = localStorage.getItem('neonrogue_selectedShip') || 'PATHFINDER';
+                
+                // Apply ship stat modifiers
+                const shipData = ships.find(s => s.name === this.selectedShip);
+                if (shipData) {
+                    // HP modifier
+                    this.maxHp = shipData.hp;
+                    this.hp = shipData.hp;
+                    
+                    // Damage modifier (stored as multiplier)
+                    this.shipDamageMult = parseFloat(shipData.dmg) / 100;
+                    
+                    // Speed modifier (stored as multiplier)
+                    this.shipSpeedMult = parseFloat(shipData.spd) / 100;
+                } else {
+                    // Defaults if ship not found
+                    this.shipDamageMult = 1.0;
+                    this.shipSpeedMult = 1.0;
+                }
 
-                this.weapons = { ion: 1, shield: 0, tesla: 0, seeker: 0, rad: 0, beam: 0, whip: 0, meteor: 0, railgun: 0, flak: 0, pylons: 0, mines: 0, gas: 0, ricochet: 0, drones: 0 };
+                this.weapons = { ion: 0, turret: 0, emp: 0, shield: 0, tesla: 0, seeker: 0, rad: 0, beam: 0, whip: 0, meteor: 0, railgun: 0, flak: 0, pylons: 0, mines: 0, gas: 0, ricochet: 0, drones: 0 };
+                
+                // Set starting weapon based on ship
+                if (this.selectedShip === 'PATHFINDER') this.weapons.ion = 1;
+                else if (this.selectedShip === 'ENGINEER') this.weapons.turret = 1;
+                else if (this.selectedShip === 'DISRUPTOR') this.weapons.emp = 1;
+                
                 this.weaponAugments = {}; // Single augment per weapon: { ion: 'fire', beam: 'ice', ... }
                 this.weaponStats = {};
                 Object.keys(this.weapons).forEach(k => {
                      this.weaponAugments[k] = null; // null = no augment yet
                      this.weaponStats[k] = { dmg: 1.0, rate: 1.0, area: 1.0, speed: 1.0 };
                 });
+                
+                // Turret tracking (for Engineer)
+                this.turrets = []; // Array of deployed turrets
+                this.turretTimer = 0;
+                
+                // EMP tracking (for Disruptor)
+                this.empFields = []; // Array of active EMP fields
                 
                 // Elemental Masteries (once per element)
                 this.elementalMasteries = {
@@ -843,16 +996,16 @@
 
 
                 this.fireRate = 500; this.lastShot = 0; // Increased from 340 to slow down rapid fire
-                this.damage = 15;
+                this.damage = 15 * this.shipDamageMult; // Apply ship damage modifier
                 
-                // Apply Overclock mod: +15% fire rate
+                // Apply Overclock mod: +25% fire rate
                 if (this.activeMod === 'overclock') {
-                    this.fireRate *= 1.15; // 15% faster
+                    this.fireRate *= 1.25; // 25% faster
                 }
                 this.projectileSpeed = 12; this.range = 450; this.pierce = 0;
                 
                 this.teslaTimer = 0; this.maxTeslaTimer = 150; // Increased from 110
-                this.seekerTimer = 0; this.maxSeekerTimer = 90; 
+                this.seekerTimer = 0; this.maxSeekerTimer = 110; // Increased from 90 (slower base cooldown - nerf) 
                 this.beamActive = false; this.beamTimer = 0; this.beamCooldown = 0; this.beamTarget = null;
                 this.beamTargets = [];
                 this.beamRampMap = new Map(); // Track damage ramp per enemy
@@ -1132,8 +1285,8 @@
                     }
                 }
 
-                // Calculate effective speed
-                const effectiveSpeed = this.speed;
+                // Calculate effective speed (apply ship multiplier)
+                const effectiveSpeed = this.speed * this.shipSpeedMult;
 
                 if (input.active) {
                     this.x += input.vector.x * effectiveSpeed * (dt/16);
@@ -1321,7 +1474,7 @@
                 // RAD
                 if (this.weapons.rad > 0) {
                     const radius = (60 + (this.weapons.rad * 15)) * this.weaponStats.rad.area;
-                    const baseDotDmg = (this.damage * 0.15 * this.weaponStats.rad.dmg) * (dt/16); // Buffed from 0.08 to 0.15 (87.5% increase)
+                    const baseDotDmg = (this.damage * 0.08 * this.weaponStats.rad.dmg) * (dt/16); // Reduced from 0.15 back to 0.08 (more balanced)
                     
                     // Tick counter that respects time dilation
                     if (!this.radTickCounter) this.radTickCounter = 0;
@@ -1332,10 +1485,10 @@
                          for(let e of entities.enemies) {
                             const distSq = (e.x-this.x)**2 + (e.y-this.y)**2;
                             if (distSq < radius*radius) {
-                                // Distance-based damage multiplier: 2.0x at center, 1.0x at edge
+                                // Distance-based damage multiplier: 1.5x at center, 0.75x at edge (less extreme)
                                 const dist = Math.sqrt(distSq);
                                 const distanceRatio = 1 - (dist / radius); // 1.0 at center, 0.0 at edge
-                                const damageMultiplier = 1.0 + distanceRatio; // 2.0x at center, 1.0x at edge
+                                const damageMultiplier = 0.75 + (distanceRatio * 0.75); // 1.5x at center, 0.75x at edge
                                 const tickDmg = baseDotDmg * 20 * damageMultiplier;
                                 this.dealElementalDamage(e, tickDmg, 'rad', '#ffffff', false); 
                             }
@@ -1427,7 +1580,7 @@
                         
                         // Only reset timer if we actually fired
                         if (didFire) {
-                            this.maxSeekerTimer = 90 / this.weaponStats.seeker.rate;
+                            this.maxSeekerTimer = 110 / this.weaponStats.seeker.rate;
                             this.seekerTimer = this.maxSeekerTimer;
                         } else {
                             // Didn't fire - try again sooner
@@ -1451,6 +1604,64 @@
                             const startAngle = centerAngle - arcAngle / 2;
                             const finalDmg = dmg * damageBonus;
                             
+                            // Plasma whip has 2x crit chance multiplier and +25% crit damage
+                            const originalCrit = this.critChance;
+                            const originalCritMult = this.critMult;
+                            this.critChance *= 2;
+                            this.critMult *= 1.25; // +25% crit damage
+                            
+                            // PROJECTILE DEFLECTION: Check for enemy projectiles in whip arc
+                            entities.enemyProjectiles.forEach(proj => {
+                                const dist = Math.sqrt((proj.x - this.x)**2 + (proj.y - this.y)**2);
+                                if (dist < range && !proj.deflected) {
+                                    const angleToProj = Math.atan2(proj.y - this.y, proj.x - this.x);
+                                    let angleDiff = angleToProj - centerAngle;
+                                    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                                    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                                    
+                                    if (Math.abs(angleDiff) <= arcAngle / 2) {
+                                        // Store the original shooter as the target
+                                        const originEnemy = entities.enemies.find(e => e === proj.shooter);
+                                        let targetEnemy = originEnemy;
+                                        
+                                        if (originEnemy && originEnemy.hp > 0) {
+                                            // Origin enemy is alive, target them
+                                            const angle = Math.atan2(originEnemy.y - proj.y, originEnemy.x - proj.x);
+                                            proj.vx = Math.cos(angle) * 12;
+                                            proj.vy = Math.sin(angle) * 12;
+                                        } else {
+                                            // If origin enemy is dead or not found, find nearest enemy
+                                            let nearestEnemy = null;
+                                            let minDist = Infinity;
+                                            entities.enemies.forEach(e => {
+                                                if (e.hp > 0) {
+                                                    const d = Math.sqrt((e.x - proj.x)**2 + (e.y - proj.y)**2);
+                                                    if (d < minDist) {
+                                                        minDist = d;
+                                                        nearestEnemy = e;
+                                                    }
+                                                }
+                                            });
+                                            if (nearestEnemy) {
+                                                targetEnemy = nearestEnemy;
+                                                const angle = Math.atan2(nearestEnemy.y - proj.y, nearestEnemy.x - proj.x);
+                                                proj.vx = Math.cos(angle) * 12;
+                                                proj.vy = Math.sin(angle) * 12;
+                                            }
+                                        }
+                                        
+                                        proj.deflected = true; // Mark as deflected
+                                        proj.originEnemy = targetEnemy; // Track target for homing (always set to valid enemy)
+                                        proj.deflectedDamage = finalDmg; // Full whip damage
+                                        proj.color = '#ff00ff'; // Change to plasma whip purple
+                                        proj.hitEnemies = []; // Track hit enemies to avoid double-hitting
+                                        
+                                        // Visual feedback
+                                        createExplosion(proj.x, proj.y, '#ff00ff', 15);
+                                    }
+                                }
+                            });
+                            
                             // Hit all enemies in arc
                             entities.enemies.forEach(e => {
                                 if (e.hp > 0) {
@@ -1467,6 +1678,10 @@
                                     }
                                 }
                             });
+                            
+                            // Restore original crit stats
+                            this.critChance = originalCrit;
+                            this.critMult = originalCritMult;
                             
                             // VISUAL: Energy whip arc - create bright visible slash
                             const numParticles = 30; // More particles
@@ -2030,7 +2245,9 @@
                             // Disc count: 1/1/2/2/3 by level
                             const discCount = this.weapons.ricochet <= 2 ? 1 : this.weapons.ricochet <= 4 ? 2 : 3;
                             const maxBounces = Math.min(12, 5 + this.weapons.ricochet * 2); // Much higher: 7-12 bounces
-                            const baseDmg = this.damage * 2.25 * this.weaponStats.ricochet.dmg * damageBonus; // Strong damage per bounce
+                            // Damage per disc nerfed when multiple discs: 2.25 → 1.8 → 1.5
+                            const dmgPerDisc = discCount === 1 ? 2.25 : discCount === 2 ? 1.8 : 1.5;
+                            const baseDmg = this.damage * dmgPerDisc * this.weaponStats.ricochet.dmg * damageBonus;
                             const bounceRange = (600 + this.weapons.ricochet * 150) * this.weaponStats.ricochet.area; // MASSIVE: 750-1350 range!
                             
                             // Track which enemies are already targeted
@@ -2304,6 +2521,113 @@
                     });
                 }
 
+                // AUTO-TURRET (Engineer weapon)
+                if (this.weapons.turret > 0) {
+                    const maxTurrets = Math.min(3, this.weapons.turret); // Max 3 turrets
+                    const deployInterval = Math.max(120, 240 / this.weaponStats.turret.rate); // 4 sec base, faster with upgrades
+                    const turretRange = (200 + this.weapons.turret * 25) * this.weaponStats.turret.area;
+                    const turretDmg = this.damage * 0.7 * this.weaponStats.turret.dmg; // 70% base damage
+                    const turretFireRate = 30; // Fires every 0.5 seconds
+                    
+                    // Deploy turret on cooldown
+                    this.turretTimer -= dt/16;
+                    if (this.turretTimer <= 0) {
+                        // Deploy turret at current position
+                        this.turrets.push({
+                            x: this.x,
+                            y: this.y,
+                            life: 1200, // 20 seconds lifespan
+                            fireTimer: 0
+                        });
+                        
+                        // Remove oldest if over limit
+                        while (this.turrets.length > maxTurrets) {
+                            this.turrets.shift();
+                        }
+                        
+                        this.turretTimer = deployInterval;
+                        createExplosion(this.x, this.y, '#ff8800', 15);
+                    }
+                    
+                    // Update and fire turrets
+                    this.turrets = this.turrets.filter(turret => {
+                        turret.life -= dt/16;
+                        if (turret.life <= 0) return false;
+                        
+                        turret.fireTimer -= dt/16;
+                        if (turret.fireTimer <= 0) {
+                            // Find nearest enemy in range
+                            let target = null;
+                            let minDist = turretRange;
+                            
+                            entities.enemies.forEach(e => {
+                                if (e.hp > 0) {
+                                    const dist = Math.sqrt((e.x - turret.x)**2 + (e.y - turret.y)**2);
+                                    if (dist < minDist) {
+                                        minDist = dist;
+                                        target = e;
+                                    }
+                                }
+                            });
+                            
+                            if (target) {
+                                const angle = Math.atan2(target.y - turret.y, target.x - turret.x);
+                                const vx = Math.cos(angle) * 10;
+                                const vy = Math.sin(angle) * 10;
+                                entities.projectiles.push(new Projectile(
+                                    turret.x, turret.y, vx, vy, turretDmg, 0, 'turret_shot', target, 'turret'
+                                ));
+                                turret.fireTimer = turretFireRate;
+                            }
+                        }
+                        
+                        return true;
+                    });
+                }
+                
+                // EMP PULSE (Disruptor weapon)
+                if (this.weapons.emp > 0) {
+                    if (!this.empTimer) this.empTimer = 0;
+                    const fireInterval = Math.max(60, 90 / this.weaponStats.emp.rate); // 1.5 sec base
+                    const empDmg = this.damage * 0.8 * this.weaponStats.emp.dmg; // 80% base damage
+                    const fieldRadius = (150 + this.weapons.emp * 15) * this.weaponStats.emp.area;
+                    
+                    this.empTimer -= dt/16;
+                    if (this.empTimer <= 0) {
+                        // Find nearest enemy
+                        let target = null;
+                        let minDist = 600;
+                        
+                        entities.enemies.forEach(e => {
+                            if (e.hp > 0) {
+                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    target = e;
+                                }
+                            }
+                        });
+                        
+                        if (target) {
+                            const angle = Math.atan2(target.y - this.y, target.x - this.x);
+                            const vx = Math.cos(angle) * 8;
+                            const vy = Math.sin(angle) * 8;
+                            entities.projectiles.push(new Projectile(
+                                this.x, this.y, vx, vy, empDmg, 0, 'emp_pulse', target, 'emp'
+                            ));
+                        }
+                        
+                        this.empTimer = fireInterval;
+                    }
+                    
+                    // Update EMP fields
+                    if (!this.empFields) this.empFields = [];
+                    this.empFields = this.empFields.filter(field => {
+                        field.life -= dt/16;
+                        return field.life > 0;
+                    });
+                }
+
             }
 
 
@@ -2454,6 +2778,15 @@
             dealElementalDamage(enemy, dmg, sourceId, color, allowCrit = true, type = 'normal') {
                 let isCrit = false;
                 let finalDmg = dmg;
+                
+                // CHAMPION ELEMENTAL DAMAGE CAP
+                // Champions take massive damage from elementals - cap it to prevent instant kills
+                if (enemy.isChampion) {
+                    const maxElementalDmg = enemy.maxHp * 0.08; // Max 8% of max HP per hit (reduced from 15%)
+                    if (finalDmg > maxElementalDmg) {
+                        finalDmg = maxElementalDmg;
+                    }
+                }
                 
                 // CRYO SHATTER: Cryo weapons hitting frozen enemies trigger shatter explosion
                 // This is the NEW controlled shatter mechanic
@@ -2633,7 +2966,9 @@
                         const wouldDie = enemy.hp - finalDmg <= 0;
                         if (wouldDie) {
                             enemy.hp = 1; // Set to 1 HP to prevent death
-                            enemy.hackState = { active: true, timer: baseDuration, diesAfter: true }; // Mark to die after
+                            // Voidwalkers should detonate, not die after hack
+                            const shouldDieAfter = enemy.type !== 'voidwalker';
+                            enemy.hackState = { active: true, timer: baseDuration, diesAfter: shouldDieAfter }; // Mark to die after (unless voidwalker)
                         } else {
                             enemy.hackState = { active: true, timer: baseDuration, diesAfter: false };
                         }
@@ -3067,6 +3402,92 @@
                         ctx.restore();
                     });
                 }
+                
+                // DRAW TURRETS (if Engineer)
+                if (this.turrets && this.turrets.length > 0) {
+                    this.turrets.forEach(turret => {
+                        ctx.save();
+                        ctx.translate(turret.x - this.x, turret.y - this.y); // Relative to player
+                        
+                        // Hexagonal base
+                        ctx.fillStyle = '#4a2511';
+                        ctx.strokeStyle = '#ff8800';
+                        ctx.lineWidth = 2;
+                        ctx.shadowBlur = 10;
+                        ctx.shadowColor = '#ff8800';
+                        ctx.beginPath();
+                        for (let i = 0; i < 6; i++) {
+                            const angle = (Math.PI / 3) * i;
+                            const x = Math.cos(angle) * 8;
+                            const y = Math.sin(angle) * 8;
+                            if (i === 0) ctx.moveTo(x, y);
+                            else ctx.lineTo(x, y);
+                        }
+                        ctx.closePath();
+                        ctx.fill();
+                        ctx.stroke();
+                        
+                        // Rotating barrel
+                        const barrelAngle = state.frameCount * 0.1;
+                        ctx.rotate(barrelAngle);
+                        ctx.fillStyle = '#ff8800';
+                        ctx.fillRect(-2, -1, 8, 2);
+                        
+                        ctx.shadowBlur = 0;
+                        ctx.restore();
+                    });
+                }
+                
+                // DRAW EMP FIELDS (if Disruptor)
+                if (this.empFields && this.empFields.length > 0) {
+                    this.empFields.forEach(field => {
+                        ctx.save();
+                        ctx.translate(field.x - this.x, field.y - this.y); // Relative to player
+                        
+                        const alpha = field.life / 150;
+                        const pulse = 0.7 + Math.sin(state.frameCount * 0.1) * 0.3;
+                        
+                        // Outer field ring
+                        ctx.strokeStyle = `rgba(168, 85, 247, ${alpha * 0.5})`;
+                        ctx.lineWidth = 3;
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = '#a855f7';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, field.radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                        
+                        // Inner glow
+                        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, field.radius);
+                        gradient.addColorStop(0, `rgba(168, 85, 247, ${alpha * 0.3 * pulse})`);
+                        gradient.addColorStop(0.6, `rgba(168, 85, 247, ${alpha * 0.1})`);
+                        gradient.addColorStop(1, 'rgba(168, 85, 247, 0)');
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, field.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        ctx.shadowBlur = 0;
+                        ctx.restore();
+                    });
+                }
+                
+                // SHIELD GLOW INDICATOR - Visible soft glow when at least one shield is up
+                const hasShield = this.shield1 > 0 || this.shield2 > 0;
+                if (hasShield) {
+                    const pulseIntensity = 0.7 + Math.sin(state.frameCount * 0.08) * 0.3;
+                    const glowRadius = 28;
+                    
+                    // Brighter radial glow - visible but soft, no hard edges
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
+                    gradient.addColorStop(0, `rgba(0, 255, 245, ${0.3 * pulseIntensity})`); // Brighter cyan at center
+                    gradient.addColorStop(0.4, `rgba(0, 209, 178, ${0.25 * pulseIntensity})`); 
+                    gradient.addColorStop(0.7, `rgba(0, 209, 178, ${0.15 * pulseIntensity})`);
+                    gradient.addColorStop(1, 'rgba(0, 209, 178, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, glowRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
 
                 ctx.rotate(this.angle);
                 ctx.fillStyle = '#1a1a2e'; ctx.strokeStyle = '#00d1b2'; ctx.lineWidth = 2;
@@ -3423,6 +3844,9 @@
                         // Grant one save charge for defeating boss/champion
                         state.saveCharges++;
                         
+                        // NEXUS CORE DROP - 1 per boss kill
+                        entities.pickups.push(new Pickup(this.x - 20, this.y, 0, 'nexus_core'));
+                        
                         // DROP MOD CRATE (only if one doesn't already exist on the map)
                         const existingModCrate = entities.pickups.find(p => p.type === 'mod_crate');
                         if (!existingModCrate) {
@@ -3482,7 +3906,11 @@
                             const magnetThreshold = 0.998 + (0.001 * (1 - timeScale)); // 0.998 → 0.999
                             
                             const r = seededRandom() + (player.luck * 0.003); // Reduced from 0.005 (40% nerf)
-                            if (r > magnetThreshold) entities.pickups.push(new Pickup(this.x, this.y, 0, 'magnet')); // Scaled drop rate
+                            
+                            // Hard cap: Max 3 magnet pickups on ground at once
+                            const magnetCount = entities.pickups.filter(p => p.type === 'magnet').length;
+                            
+                            if (r > magnetThreshold && magnetCount < 3) entities.pickups.push(new Pickup(this.x, this.y, 0, 'magnet')); // Scaled drop rate with cap
                             else if (r > 0.9975) entities.pickups.push(new Pickup(this.x, this.y, 0, 'shield_cell')); // 0.25% drop rate
                             else if (r > 0.99) entities.pickups.push(new Pickup(this.x, this.y, 0, 'health')); // 1% + luck
                         }
@@ -3548,6 +3976,19 @@
                     }
                 }
                 let cryoSlow = 1.0;
+                
+                // EMP SLOW: Apply diminishing stacking slow from EMP fields
+                let empSlow = 1.0;
+                if (this.empSlowStacks > 0) {
+                    // Diminishing returns on stacking
+                    // 1 field: 35% slow (move at 65%)
+                    // 2 fields: 55% slow (move at 45%)
+                    // 3+ fields: 65% slow (move at 35%)
+                    if (this.empSlowStacks === 1) empSlow = 0.65;
+                    else if (this.empSlowStacks === 2) empSlow = 0.45;
+                    else empSlow = 0.35; // Hard cap
+                }
+                
                 // CRYO: Slow duration tracking and freeze trigger
                 if (this.cryoState.frozen) {
                     // Frozen solid - no movement
@@ -3795,7 +4236,8 @@
                                         glowPhase: 0,
                                         targetWasPlayer: false, // Flag: this targets enemies
                                         piercing: true, // NEW: Pierces through all enemies
-                                        hitEnemies: new Set() // Track which enemies we've hit
+                                        hitEnemies: new Set(), // Track which enemies we've hit
+                                        shooter: this // Track origin enemy for whip deflection
                                     });
                                     
                                     // Visual feedback
@@ -4315,7 +4757,7 @@
                                 const spiralAngle = this.actionTimer * 0.2;
                                 for(let k=0; k<2; k++) {
                                      const ang = spiralAngle + (k * (Math.PI*2/2));
-                                     entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*5, vy: Math.sin(ang)*5, radius: 8, color: '#ff00ff', life: 200 });
+                                     entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*5, vy: Math.sin(ang)*5, radius: 8, color: '#ff00ff', life: 200, shooter: this });
                                 }
                             }
                         } else if (this.currentAttack === 1) { // Nova - Reduced frequency
@@ -4323,7 +4765,7 @@
                             if (Math.floor(this.actionTimer) % 100 === 0) {
                                 for(let k=0; k<12; k++) {
                                     const ang = (k * (Math.PI*2/12));
-                                    entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*4, vy: Math.sin(ang)*4, radius: 10, color: '#ff5500', life: 200 });
+                                    entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*4, vy: Math.sin(ang)*4, radius: 10, color: '#ff5500', life: 200, shooter: this });
                                 }
                             }
                         } else if (this.currentAttack === 2) { // Charge
@@ -4332,7 +4774,7 @@
                              this.vx = 0; this.vy = 0;
                              if (Math.floor(this.actionTimer) % 8 === 0) {
                                  const ang = Math.sin(this.actionTimer * 0.1) + Math.atan2(player.y-this.y, player.x-this.x);
-                                 entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*8, vy: Math.sin(ang)*8, radius: 6, color: '#00ffff', life: 150 });
+                                 entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*8, vy: Math.sin(ang)*8, radius: 6, color: '#00ffff', life: 150, shooter: this });
                              }
                         } else if (this.currentAttack === 4) { // Minion Summon
                              if (Math.floor(this.actionTimer) % 60 === 0) {
@@ -4346,7 +4788,7 @@
                                  for(let k=-2; k<=2; k++) { // 5-way spread
                                      const spread = k * 0.3; // 0.3 rad spread
                                      const ang = toPlayer + spread;
-                                     entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*6, vy: Math.sin(ang)*6, radius: 8, color: '#ff9900', life: 180 });
+                                     entities.enemyProjectiles.push({ x: this.x, y: this.y, vx: Math.cos(ang)*6, vy: Math.sin(ang)*6, radius: 8, color: '#ff9900', life: 180, shooter: this });
                                  }
                              }
                         } else if (this.currentAttack === 6) { // Ring Pulse (fair - expands outward)
@@ -4486,7 +4928,8 @@
                                     life: 150, // Reduced from 250 - travels less distance
                                     splitterShot: true, // Flag for special rendering
                                     glowPhase: 0, // For pulsing glow effect
-                                    targetWasPlayer: targetIsPlayer // Track what it was shot at
+                                    targetWasPlayer: targetIsPlayer, // Track what it was shot at
+                                    shooter: this // Track origin enemy for whip deflection
                                 });
                                 
                                 // Visual feedback - charging effect
@@ -4523,17 +4966,17 @@
 
                 // Swarmers have Flight
                 if(this.type === 'swarm') {
-                    this.x += (this.vx * cryoSlow) * (dt/16);
-                    this.y += (this.vy * cryoSlow) * (dt/16);
+                    this.x += (this.vx * cryoSlow * empSlow) * (dt/16);
+                    this.y += (this.vy * cryoSlow * empSlow) * (dt/16);
                 } else {
                     if (this.type !== 'tank' && !(this.type==='boss' && this.currentAttack===2 && this.actionState === 'attacking')) {
-                        this.x += (this.vx * cryoSlow) * (dt/16);
-                        this.y += (this.vy * cryoSlow) * (dt/16);
+                        this.x += (this.vx * cryoSlow * empSlow) * (dt/16);
+                        this.y += (this.vy * cryoSlow * empSlow) * (dt/16);
                     }
                     
                     if ((this.type === 'tank' || (this.type === 'boss' && this.currentAttack===2)) && (this.chargeState === 2 || this.chargeState === 0 || this.chargeState === 3)) {
-                          this.x += (this.vx * cryoSlow) * (dt/16);
-                          this.y += (this.vy * cryoSlow) * (dt/16);
+                          this.x += (this.vx * cryoSlow * empSlow) * (dt/16);
+                          this.y += (this.vy * cryoSlow * empSlow) * (dt/16);
                     }
 
 
@@ -5351,6 +5794,64 @@
                     }
                 }
                 
+                // TURRET SHOT - Basic homing projectile
+                if (this.type === 'turret_shot') {
+                    if (this.target && this.target.hp > 0) {
+                        const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                        const steerStrength = 0.08;
+                        const targetVx = Math.cos(angle) * 10;
+                        const targetVy = Math.sin(angle) * 10;
+                        this.vx = this.vx + (targetVx - this.vx) * steerStrength;
+                        this.vy = this.vy + (targetVy - this.vy) * steerStrength;
+                    }
+                    
+                    // Hit detection
+                    for (let e of entities.enemies) {
+                        if (e.hp > 0) {
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            if (dist < e.radius + 8) {
+                                player.dealElementalDamage(e, this.damage, 'turret', '#ff8800');
+                                return false;
+                            }
+                        }
+                    }
+                }
+                
+                // EMP PULSE - Slow projectile that creates field on hit
+                if (this.type === 'emp_pulse') {
+                    if (this.target && this.target.hp > 0) {
+                        const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                        const steerStrength = 0.05;
+                        const targetVx = Math.cos(angle) * 8;
+                        const targetVy = Math.sin(angle) * 8;
+                        this.vx = this.vx + (targetVx - this.vx) * steerStrength;
+                        this.vy = this.vy + (targetVy - this.vy) * steerStrength;
+                    }
+                    
+                    // Hit detection
+                    for (let e of entities.enemies) {
+                        if (e.hp > 0) {
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            if (dist < e.radius + 10) {
+                                // Deal damage
+                                player.dealElementalDamage(e, this.damage, 'emp', '#a855f7');
+                                
+                                // Create EMP field at impact point
+                                const fieldRadius = (150 + player.weapons.emp * 15) * player.weaponStats.emp.area;
+                                player.empFields.push({
+                                    x: this.x,
+                                    y: this.y,
+                                    radius: fieldRadius,
+                                    life: 150 // 2.5 seconds
+                                });
+                                
+                                createExplosion(this.x, this.y, '#a855f7', 20);
+                                return false;
+                            }
+                        }
+                    }
+                }
+                
                 this.x += this.vx * (dt/16); this.y += this.vy * (dt/16);
                 this.life -= (dt/16); 
                 if (this.type === 'ricochet' && this.life <= 0) {
@@ -5936,6 +6437,46 @@
                     
                     ctx.shadowBlur = 0;
                     ctx.restore();
+                } else if (this.type === 'turret_shot') {
+                    // Orange turret shot - simple glowing orb
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ff8800';
+                    ctx.fillStyle = '#ff8800';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                } else if (this.type === 'emp_pulse') {
+                    // Purple EMP pulse - pulsing orb
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    
+                    const pulse = 0.8 + Math.sin(state.frameCount * 0.15) * 0.2;
+                    
+                    ctx.shadowBlur = 20 * pulse;
+                    ctx.shadowColor = '#a855f7';
+                    ctx.fillStyle = '#a855f7';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 6 * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.fillStyle = '#c084fc';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 4 * pulse, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
                 } else {
                     ctx.strokeStyle = 'rgba(0,255,245,0.5)'; ctx.lineWidth = 2; ctx.beginPath();
                     this.trail.forEach((p,i) => { if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
@@ -6031,6 +6572,12 @@
                         createExplosion(player.x, player.y, '#00d1b2', 20);
                     }
                     if (this.type === 'magnet') { activateMagnet(); }
+                    if (this.type === 'nexus_core') {
+                        // Collect Nexus Core - increment counter
+                        const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+                        localStorage.setItem('neonrogue_nexusCores', currentCores + 1);
+                        createExplosion(player.x, player.y, '#ff00ff', 30);
+                    }
                     if (this.type === 'core') { gainXp(state.xpToNext * 3); } 
                     if (this.type === 'mod_crate') { 
                         if(state.screen !== 'game') return true; 
@@ -6146,6 +6693,67 @@
                     ctx.arc(0, 0, 12, 0, Math.PI*2);
                     ctx.fill();
                     ctx.globalAlpha = 1;
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                } else if (this.type === 'nexus_core') {
+                    // Nexus Core - Premium purple/magenta glowing crystal
+                    const pulse = 0.6 + Math.sin(Date.now() * 0.004) * 0.4;
+                    const rotation = Date.now() * 0.001;
+                    
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(rotation);
+                    
+                    // Outer glow aura
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 25);
+                    gradient.addColorStop(0, `rgba(255, 0, 255, ${0.4 * pulse})`);
+                    gradient.addColorStop(0.5, `rgba(180, 0, 200, ${0.2 * pulse})`);
+                    gradient.addColorStop(1, 'rgba(255, 0, 255, 0)');
+                    ctx.fillStyle = gradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 25, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Main hexagon crystal
+                    ctx.fillStyle = '#aa00ff';
+                    ctx.strokeStyle = '#ff00ff';
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#ff00ff';
+                    ctx.shadowBlur = 20 * pulse;
+                    ctx.beginPath();
+                    for (let i = 0; i < 6; i++) {
+                        const angle = (Math.PI / 3) * i;
+                        const x = Math.cos(angle) * 12;
+                        const y = Math.sin(angle) * 12;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Inner glow core
+                    ctx.fillStyle = '#ffffff';
+                    ctx.globalAlpha = pulse;
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    
+                    // Energy particles orbiting
+                    for (let i = 0; i < 4; i++) {
+                        const orbitAngle = rotation * 2 + (i * Math.PI / 2);
+                        const orbitRadius = 16;
+                        const px = Math.cos(orbitAngle) * orbitRadius;
+                        const py = Math.sin(orbitAngle) * orbitRadius;
+                        ctx.fillStyle = `rgba(255, 100, 255, ${pulse})`;
+                        ctx.shadowBlur = 8;
+                        ctx.beginPath();
+                        ctx.arc(px, py, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
                     
                     ctx.shadowBlur = 0;
                     ctx.restore();
@@ -6906,12 +7514,87 @@
             const playerDt = (player.activeMod === 'chrono' && player.chronoActive) ? dt : scaledDt;
             player.update(playerDt); player.draw(ctx);
             
+            // Apply EMP field effects before enemy updates
+            if (player.empFields && player.empFields.length > 0) {
+                entities.enemies.forEach(e => {
+                    e.empSlowStacks = 0; // Reset stacks each frame
+                    
+                    player.empFields.forEach(field => {
+                        const dist = Math.sqrt((e.x - field.x)**2 + (e.y - field.y)**2);
+                        if (dist < field.radius) {
+                            e.empSlowStacks++;
+                        }
+                    });
+                });
+            }
+            
             // Enemy updates with spatial culling
             entities.enemies = entities.enemies.filter(e => { 
                 e.update(scaledDt); 
                 e.draw(ctx); 
                 return e.hp>0; 
             });
+            
+            // OFF-SCREEN CHAMPION INDICATORS
+            // Draw distinct orange indicators for champions that are off-screen
+            ctx.save();
+            const screenHalfW = (width / state.zoom) / 2;
+            const screenHalfH = (height / state.zoom) / 2;
+            
+            entities.enemies.forEach(e => {
+                if (!e.isChampion) return; // Only for champions
+                
+                const dx = e.x - player.x;
+                const dy = e.y - player.y;
+                
+                // Check if champion is off-screen
+                const isOffScreen = Math.abs(dx) > screenHalfW || Math.abs(dy) > screenHalfH;
+                if (!isOffScreen) return;
+                
+                // Calculate edge position
+                const angle = Math.atan2(dy, dx);
+                const edgeX = Math.cos(angle) * (screenHalfW - 40);
+                const edgeY = Math.sin(angle) * (screenHalfH - 40);
+                
+                ctx.translate(edgeX, edgeY);
+                ctx.rotate(angle);
+                
+                // Pulsing orange champion indicator (larger and more distinct)
+                const pulse = 0.7 + Math.sin(state.frameCount * 0.15) * 0.3;
+                
+                // Outer glow
+                ctx.shadowBlur = 25 * pulse;
+                ctx.shadowColor = '#ff6600';
+                
+                // Large triangle (champion indicator)
+                ctx.fillStyle = `rgba(255, 102, 0, ${0.9 * pulse})`;
+                ctx.beginPath();
+                ctx.moveTo(20, 0);
+                ctx.lineTo(-12, -14);
+                ctx.lineTo(-12, 14);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Bright outline
+                ctx.strokeStyle = '#ffaa00';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+                
+                // Inner accent
+                ctx.fillStyle = '#ffcc00';
+                ctx.beginPath();
+                ctx.moveTo(14, 0);
+                ctx.lineTo(-6, -8);
+                ctx.lineTo(-6, 8);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.shadowBlur = 0;
+                ctx.setTransform(1, 0, 0, 1, 0, 0);
+                ctx.translate(width / 2 - player.x * state.zoom, height / 2 - player.y * state.zoom);
+                ctx.scale(state.zoom, state.zoom);
+            });
+            ctx.restore();
             
             // Particle system with performance limits
             entities.particles = entities.particles.filter(p => { 
@@ -6995,6 +7678,45 @@
                     return ep.life > 0;
                 }
                 
+                // Homing for DEFLECTED projectiles - track origin enemy
+                if (ep.deflected && ep.originEnemy) {
+                    // Check if origin enemy is still alive
+                    if (ep.originEnemy.hp > 0) {
+                        const dx = ep.originEnemy.x - ep.x;
+                        const dy = ep.originEnemy.y - ep.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        if (dist > 0) {
+                            const turnSpeed = 0.12; // Strong homing for deflected shots
+                            const targetAngle = Math.atan2(dy, dx);
+                            const currentAngle = Math.atan2(ep.vy, ep.vx);
+                            let angleDiff = targetAngle - currentAngle;
+                            while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+                            while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+                            
+                            const newAngle = currentAngle + angleDiff * turnSpeed;
+                            const speed = Math.sqrt(ep.vx*ep.vx + ep.vy*ep.vy);
+                            ep.vx = Math.cos(newAngle) * speed;
+                            ep.vy = Math.sin(newAngle) * speed;
+                        }
+                    } else {
+                        // Origin enemy died, target nearest enemy
+                        let nearestEnemy = null;
+                        let minDist = Infinity;
+                        entities.enemies.forEach(e => {
+                            if (e.hp > 0) {
+                                const d = Math.sqrt((e.x - ep.x)**2 + (e.y - ep.y)**2);
+                                if (d < minDist) {
+                                    minDist = d;
+                                    nearestEnemy = e;
+                                }
+                            }
+                        });
+                        if (nearestEnemy) {
+                            ep.originEnemy = nearestEnemy; // Update target
+                        }
+                    }
+                }
+                
                 // Homing behavior for flagged projectiles
                 if (ep.homing && ep.life > 0) {
                     const dx = player.x - ep.x;
@@ -7017,8 +7739,69 @@
                 
                 ep.x += ep.vx * (scaledDt/16); ep.y += ep.vy * (scaledDt/16); ep.life -= (scaledDt/16);
                 
+                // Special rendering for DEFLECTED projectiles - purple glow and trail
+                if (ep.deflected) {
+                    ep.glowPhase = (ep.glowPhase || 0) + 0.2;
+                    const glowIntensity = 0.8 + Math.sin(ep.glowPhase) * 0.2;
+                    
+                    // Create purple trail particles
+                    if (Math.random() < 0.3) {
+                        entities.particles.push({
+                            x: ep.x,
+                            y: ep.y,
+                            vx: 0,
+                            vy: 0,
+                            color: '#ff00ff',
+                            life: 15,
+                            size: ep.radius * 0.8,
+                            update: function(dt) {
+                                this.life -= dt/16;
+                                this.size *= 0.95;
+                                return this.life > 0;
+                            },
+                            draw: function(ctx) {
+                                ctx.globalAlpha = this.life / 15;
+                                ctx.fillStyle = this.color;
+                                ctx.shadowBlur = 10;
+                                ctx.shadowColor = this.color;
+                                ctx.beginPath();
+                                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.globalAlpha = 1;
+                                ctx.shadowBlur = 0;
+                            }
+                        });
+                    }
+                    
+                    // Outer purple glow
+                    ctx.shadowBlur = 25 * glowIntensity;
+                    ctx.shadowColor = '#ff00ff';
+                    ctx.fillStyle = '#ff00ff';
+                    ctx.globalAlpha = 0.5;
+                    ctx.beginPath();
+                    ctx.arc(ep.x, ep.y, ep.radius * 1.5, 0, Math.PI*2);
+                    ctx.fill();
+                    
+                    // Core projectile
+                    ctx.globalAlpha = 1;
+                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(ep.x, ep.y, ep.radius, 0, Math.PI*2);
+                    ctx.fill();
+                    
+                    // Inner purple core
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#ff00ff';
+                    ctx.beginPath();
+                    ctx.arc(ep.x, ep.y, ep.radius * 0.6, 0, Math.PI*2);
+                    ctx.fill();
+                    
+                    ctx.globalAlpha = 1;
+                    ctx.shadowBlur = 0;
+                }
                 // Special rendering for splitter shots - HIGHLY VISIBLE
-                if (ep.splitterShot) {
+                else if (ep.splitterShot) {
                     ep.glowPhase = (ep.glowPhase || 0) + 0.15;
                     const glowIntensity = 0.7 + Math.sin(ep.glowPhase) * 0.3;
                     
@@ -7057,6 +7840,40 @@
                 }
                 
                 const dx = player.x - ep.x; const dy = player.y - ep.y;
+                
+                // Deflected projectiles damage enemies along their path
+                if (ep.deflected) {
+                    let hitAnyEnemy = false;
+                    for(let e of entities.enemies) {
+                        if (ep.hitEnemies && ep.hitEnemies.includes(e)) continue; // Skip already hit
+                        
+                        const edx = e.x - ep.x;
+                        const edy = e.y - ep.y;
+                        const dist = Math.sqrt(edx*edx + edy*edy);
+                        
+                        if(dist < e.radius + ep.radius) {
+                            // Check if this is the origin enemy for auto-crit
+                            const isOriginEnemy = (ep.originEnemy && ep.originEnemy === e);
+                            
+                            if (isOriginEnemy) {
+                                // AUTO-CRIT on origin enemy at full strength
+                                const originalCrit = player.critChance;
+                                player.critChance = 1.0; // 100% crit chance
+                                player.dealElementalDamage(e, ep.deflectedDamage, 'whip', '#ff00ff');
+                                player.critChance = originalCrit;
+                                hitAnyEnemy = true;
+                                break; // Remove projectile after hitting origin
+                            } else {
+                                // 50% damage to other enemies in path
+                                player.dealElementalDamage(e, ep.deflectedDamage * 0.5, 'whip', '#ff00ff', false);
+                                if (!ep.hitEnemies) ep.hitEnemies = [];
+                                ep.hitEnemies.push(e);
+                                // Don't break - continue through enemies
+                            }
+                        }
+                    }
+                    if (hitAnyEnemy) return false; // Remove projectile if hit origin
+                }
                 
                 // Splitter shots from hacked splitters damage enemies instead of player
                 if (ep.splitterShot && !ep.targetWasPlayer) {
@@ -7269,10 +8086,10 @@
                     const currentAug = player.weaponAugments[weap];
                     const hasAugment = currentAug !== null;
                     const elName = `${wName} ${el.name.split(' ')[0]}`; 
-                    let desc = `Adds ${el.name.split(' ')[0]} effect to ${wName}.`;
+                    let desc = `${el.desc}`; // Use actual element description
                     if (hasAugment) {
                         const currentElName = elementalDefs.find(e => e.id === currentAug).name.split(' ')[0];
-                        desc = `Replace ${currentElName} with ${el.name.split(' ')[0]} on ${wName}.`;
+                        desc = `Replace ${currentElName} with ${el.name.split(' ')[0]}. ${el.desc}`;
                     }
                     createCard(container, elName, desc, el.icon, 'elemental', (e) => {
                         if(e.target.closest('.card').classList.contains('disabled')) return;
@@ -7297,7 +8114,11 @@
 
             let options = []; let offensivePool = []; let otherPool = [];
             Object.keys(weaponDefs).forEach(k => { 
-                if(k !== 'multi') offensivePool.push({ ...weaponDefs[k], id: k }); 
+                const weaponDef = weaponDefs[k];
+                // Filter weapons by ship: only show if no ship lock OR matches player's ship
+                if (k !== 'multi' && (!weaponDef.shipLocked || weaponDef.shipLocked === player.selectedShip)) {
+                    offensivePool.push({ ...weaponDef, id: k });
+                }
             });
             statDefs.forEach(s => { 
                 // Flux Emitter only available at level 10+ (when elementals unlock)
@@ -7366,6 +8187,12 @@
             const pickedIds = new Set();
             const createOption = (forceType = null) => {
                  let pool = [...offensivePool, ...otherPool];
+                 
+                 // Remove magnet (pickup) from pool if at cap (6 upgrades)
+                 if (player.pickupUpgradeCount >= 6) {
+                     pool = pool.filter(o => o.id !== 'pickup');
+                 }
+                 
                  if (locked) {
                      pool = pool.filter(o => o.type !== 'weapon' || player.weapons[o.id] > 0);
                  } else if (forceType === 'new_weapon') {
@@ -7535,7 +8362,7 @@
                         desc = `Move Speed: +${sVal}%`;
                     }
                     else if (opt.id === 'pickup') {
-                         desc = `Magnet Range: +${Math.floor(15*mult)}%`;
+                         desc = `Magnet Range: +${Math.floor(10*mult)}%`;
                     }
                     else if (opt.id === 'armor') {
                         let armorVal = 1;
@@ -7610,11 +8437,11 @@
                             if (currentLevel > 0) {
                                 // Apply base increases across all stats (multiplicative)
                                 // More aggressive scaling since weapons rarely get past level 10 in typical runs
-                                // At level 5: ~32% dmg, 23% rate, 23% area
-                                // At level 10: ~74% dmg, 51% rate, 51% area
+                                // At level 5: ~32% dmg, 23% rate, 12% area
+                                // At level 10: ~74% dmg, 51% rate, 25% area
                                 player.weaponStats[opt.id].dmg *= 1.055;   // +5.5% dmg per level (increased from 2%)
                                 player.weaponStats[opt.id].rate *= 1.04;   // +4% rate per level (increased from 1.5%)
-                                player.weaponStats[opt.id].area *= 1.04;   // +4% area per level (increased from 1.5%)
+                                player.weaponStats[opt.id].area *= 1.02;   // +2% area per level (reduced from 4% - half as strong)
                             }
                             
                             // Legendary weapon upgrades grant +2 levels to that weapon
@@ -7628,9 +8455,16 @@
                             if (opt.upgradeAttr && opt.upgradeAmount) {
                                 const attr = opt.upgradeAttr;
                                 const amt = opt.upgradeAmount;
-                                // Apply bonus based on rarity
-                                const bonusMap = { 'common': 0.05, 'uncommon': 0.075, 'rare': 0.15, 'epic': 0.30, 'legendary': 0.40 };
-                                const bonus = bonusMap[opt.rarity] || 0.05;
+                                // Apply bonus based on rarity - reduced area bonuses
+                                const bonusMap = { 
+                                    'common': { dmg: 0.05, rate: 0.05, area: 0.03 },      // Area: 3% (was 5%)
+                                    'uncommon': { dmg: 0.075, rate: 0.075, area: 0.05 },  // Area: 5% (was 7.5%)
+                                    'rare': { dmg: 0.15, rate: 0.15, area: 0.08 },        // Area: 8% (was 15%)
+                                    'epic': { dmg: 0.30, rate: 0.30, area: 0.15 },        // Area: 15% (was 30%)
+                                    'legendary': { dmg: 0.40, rate: 0.40, area: 0.20 }    // Area: 20% (was 40%)
+                                };
+                                const bonuses = bonusMap[opt.rarity] || bonusMap['common'];
+                                const bonus = bonuses[attr] || 0.05;
                                 
                                 if (attr === 'dmg') {
                                     player.weaponStats[opt.id].dmg *= (1 + bonus);
@@ -7779,7 +8613,10 @@
             }
             // Global damage and cooldown removed - only weapon-specific now
             if(id==='armor') player.armor += 4*mult; // Increased from 3 to 4 (33% buff)
-            if(id==='pickup') player.pickupRadius *= (1 + 0.15*mult); // Multiplicative
+            if(id==='pickup') {
+                player.pickupRadius *= (1 + 0.06*mult); // Reduced from 0.10 to 0.06 (40% nerf)
+                player.pickupUpgradeCount += mult; // Track upgrades for cap
+            }
             if(id==='regen') {
                 // Regen now ticks every 1 second instead of 5 seconds, so values are 5x smaller
                 let regenAmt = 0.2; // Base: 0.2 HP/sec
@@ -8016,6 +8853,7 @@
         
         function gameOver() {
             state.screen = 'gameover'; 
+            document.getElementById('final-level').innerText = state.level;
             document.getElementById('final-score').innerText = state.score;
             document.getElementById('final-seed').innerText = state.seed.toString().padStart(6, '0');
             
@@ -8100,6 +8938,9 @@
             table.appendChild(totalsRow);
             statsList.appendChild(table);
             
+            // Update meta progression stats
+            updateMetaStats();
+            
             document.getElementById('gameover-screen').classList.add('active');
         }
 
@@ -8126,16 +8967,32 @@
         window.addEventListener('mouseup', handleEnd);
 
 
-        document.getElementById('start-btn').onclick = () => { 
-            document.getElementById('menu-screen').classList.remove('active'); 
-            initGame(); 
-        };
-        document.getElementById('restart-btn').onclick = () => { 
-            document.getElementById('gameover-screen').classList.remove('active'); 
-            document.getElementById('menu-screen').classList.add('active');
-            // Clear seed input when returning to menu
-            document.getElementById('seed-input').value = '';
-        };
+        const startBtn = document.getElementById('start-btn');
+        console.log('Start button:', startBtn ? 'found' : 'NOT FOUND');
+        if (startBtn) {
+            startBtn.onclick = () => {
+                console.log('Start button clicked!');
+                // Save selected ship
+                const selectedShip = ships[currentShipIndex];
+                if (!selectedShip.locked) {
+                    localStorage.setItem('neonrogue_selectedShip', selectedShip.name);
+                }
+                
+                document.getElementById('menu-screen').classList.remove('active'); 
+                initGame(); 
+            };
+        }
+        
+        const restartBtn = document.getElementById('restart-btn');
+        if (restartBtn) {
+            restartBtn.onclick = () => { 
+                document.getElementById('gameover-screen').classList.remove('active'); 
+                document.getElementById('menu-screen').classList.add('active');
+                // Clear seed input when returning to menu
+                const seedInput = document.getElementById('seed-input');
+                if (seedInput) seedInput.value = '';
+            };
+        }
         
         
         // Copy seed button - use event delegation since gameover screen might not be loaded yet
@@ -8196,6 +9053,445 @@
         document.getElementById('seed-input').addEventListener('input', (e) => {
             e.target.value = e.target.value.replace(/\D/g, '').slice(0, 6);
         });
+        
+        // ===== SAVE/LOAD SYSTEM =====
+        
+        // Save data structure for meta progression
+        function getSaveData() {
+            return {
+                version: 1, // For future compatibility
+                timestamp: Date.now(),
+                // Add your meta progression data here when you implement it
+                // For now, we'll just save a placeholder
+                metaProgress: {
+                    totalRuns: parseInt(localStorage.getItem('neonrogue_totalRuns') || '0'),
+                    totalKills: parseInt(localStorage.getItem('neonrogue_totalKills') || '0'),
+                    highestLevel: parseInt(localStorage.getItem('neonrogue_highestLevel') || '0'),
+                    highestScore: parseInt(localStorage.getItem('neonrogue_highestScore') || '0'),
+                    totalPlaytime: parseInt(localStorage.getItem('neonrogue_totalPlaytime') || '0'),
+                    nexusCores: parseInt(localStorage.getItem('neonrogue_nexusCores') || '0')
+                }
+            };
+        }
+        
+        // Load save data from object
+        function loadSaveData(data) {
+            if (!data || !data.metaProgress) {
+                alert('Invalid save file!');
+                return false;
+            }
+            
+            // Load meta progression data
+            const meta = data.metaProgress;
+            localStorage.setItem('neonrogue_totalRuns', meta.totalRuns || 0);
+            localStorage.setItem('neonrogue_totalKills', meta.totalKills || 0);
+            localStorage.setItem('neonrogue_highestLevel', meta.highestLevel || 0);
+            localStorage.setItem('neonrogue_highestScore', meta.highestScore || 0);
+            localStorage.setItem('neonrogue_totalPlaytime', meta.totalPlaytime || 0);
+            localStorage.setItem('neonrogue_nexusCores', meta.nexusCores || 0);
+            
+            return true;
+        }
+        
+        // Export save to file
+        function exportSave() {
+            const saveData = getSaveData();
+            const dataStr = JSON.stringify(saveData, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `neonrogue_save_${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            // Visual feedback
+            const btn = document.getElementById('export-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check mr-2"></i>EXPORTED!';
+            btn.classList.add('bg-teal-600');
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove('bg-teal-600');
+            }, 2000);
+        }
+        
+        // Import save from file
+        function importSave(file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (loadSaveData(data)) {
+                        // Show detailed feedback
+                        const meta = data.metaProgress;
+                        const msg = `Save imported successfully!\n\n` +
+                            `Total Runs: ${meta.totalRuns || 0}\n` +
+                            `Total Kills: ${meta.totalKills || 0}\n` +
+                            `Highest Level: ${meta.highestLevel || 0}\n` +
+                            `Highest Score: ${meta.highestScore || 0}\n\n` +
+                            `Page will reload to apply changes.`;
+                        alert(msg);
+                        // Refresh the page to apply changes
+                        location.reload();
+                    }
+                } catch (err) {
+                    alert('Error reading save file: ' + err.message);
+                }
+            };
+            reader.readAsText(file);
+        }
+        
+        // Display stats screen
+        function showStats() {
+            const nexusCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+            const totalRuns = parseInt(localStorage.getItem('neonrogue_totalRuns') || '0');
+            const totalKills = parseInt(localStorage.getItem('neonrogue_totalKills') || '0');
+            const highestLevel = parseInt(localStorage.getItem('neonrogue_highestLevel') || '0');
+            const highestScore = parseInt(localStorage.getItem('neonrogue_highestScore') || '0');
+            const totalPlaytime = parseInt(localStorage.getItem('neonrogue_totalPlaytime') || '0');
+            
+            // Update display
+            document.getElementById('stat-cores').textContent = nexusCores.toLocaleString();
+            document.getElementById('stat-runs').textContent = totalRuns.toLocaleString();
+            document.getElementById('stat-kills').textContent = totalKills.toLocaleString();
+            document.getElementById('stat-level').textContent = highestLevel;
+            document.getElementById('stat-score').textContent = highestScore.toLocaleString();
+            
+            // Format playtime
+            const hours = Math.floor(totalPlaytime / 3600);
+            const minutes = Math.floor((totalPlaytime % 3600) / 60);
+            document.getElementById('stat-time').textContent = `${hours}h ${minutes}m`;
+            
+            // Show modal
+            document.getElementById('stats-screen').classList.add('active');
+        }
+        
+        // Export button handlers
+        document.getElementById('export-btn').addEventListener('click', exportSave);
+        document.getElementById('gameover-export-btn').addEventListener('click', exportSave);
+        
+        // Import button handler
+        document.getElementById('import-btn').addEventListener('click', () => {
+            document.getElementById('import-file-input').click();
+        });
+        
+        document.getElementById('import-file-input').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                importSave(file);
+            }
+            // Reset input so same file can be selected again
+            e.target.value = '';
+        });
+        
+        // Stats screen handlers
+        document.getElementById('view-stats-btn').addEventListener('click', showStats);
+        document.getElementById('close-stats-btn').addEventListener('click', () => {
+            document.getElementById('stats-screen').classList.remove('active');
+        });
+        
+        // Ship carousel (currently locked, for future expansion)
+        console.log('Initializing ship system...');
+        let currentShipIndex = 0;
+        const ships = [
+            {
+                name: 'PATHFINDER',
+                desc: 'Balanced all-around vessel',
+                hp: 150,
+                dmg: '100%',
+                spd: '100%',
+                weapon: 'Ion Cannons',
+                locked: false
+            },
+            {
+                name: 'ENGINEER',
+                desc: 'Deploy turrets as you move',
+                hp: 150,
+                dmg: '90%',
+                spd: '100%',
+                weapon: 'Auto-Turret',
+                unlockCores: 10,
+                unlockAchievement: 'Survive to Level 20',
+                locked: true
+            },
+            {
+                name: 'DISRUPTOR',
+                desc: 'Crowd control specialist',
+                hp: 130,
+                dmg: '95%',
+                spd: '110%',
+                weapon: 'EMP Pulse',
+                unlockCores: 20,
+                unlockAchievement: 'Survive to Level 30',
+                locked: true
+            }
+        ];
+        console.log('Ships defined:', ships.length, 'ships');
+        
+        // Draw ship on canvas
+        function drawShipIcon() {
+            console.log('drawShipIcon called');
+            const canvas = document.getElementById('ship-canvas');
+            if (!canvas) {
+                console.error('Canvas not found!');
+                return;
+            }
+            console.log('Canvas found, drawing ship:', ships[currentShipIndex].name);
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const ship = ships[currentShipIndex];
+            
+            // Center the ship
+            ctx.save();
+            ctx.translate(35, 35);
+            ctx.scale(1.8, 1.8);
+            
+            if (ship.name === 'PATHFINDER') {
+                // PATHFINDER - Sleek Arrowhead Fighter (Teal/Cyan)
+                
+                // Main body - sharp arrowhead
+                ctx.fillStyle = '#0d3b47';
+                ctx.strokeStyle = '#00d1b2';
+                ctx.lineWidth = 2.5;
+                ctx.shadowColor = '#00d1b2';
+                ctx.shadowBlur = 15;
+                ctx.beginPath();
+                ctx.moveTo(14, 0);    // Sharp front
+                ctx.lineTo(-6, 7);    // Bottom wing
+                ctx.lineTo(-3, 0);    // Back center
+                ctx.lineTo(-6, -7);   // Top wing
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Glowing engine
+                ctx.fillStyle = '#00fff5';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#00fff5';
+                ctx.beginPath();
+                ctx.arc(-2, 0, 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+            } else if (ship.name === 'ENGINEER') {
+                // ENGINEER - Hexagonal Utility Ship (Orange/Bronze)
+                
+                // Hexagon body
+                ctx.fillStyle = '#4a2511';
+                ctx.strokeStyle = '#ff8800';
+                ctx.lineWidth = 2.5;
+                ctx.shadowColor = '#ff8800';
+                ctx.shadowBlur = 15;
+                ctx.beginPath();
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Math.PI / 3) * i;
+                    const x = Math.cos(angle) * 8;
+                    const y = Math.sin(angle) * 8;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Orange core
+                ctx.fillStyle = '#ff8800';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff8800';
+                ctx.beginPath();
+                ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                ctx.fill();
+                
+            } else if (ship.name === 'DISRUPTOR') {
+                // DISRUPTOR - Diamond Lightning Ship (Purple/Violet)
+                
+                // Diamond body
+                ctx.fillStyle = '#2d1b4e';
+                ctx.strokeStyle = '#a855f7';
+                ctx.lineWidth = 2.5;
+                ctx.shadowColor = '#a855f7';
+                ctx.shadowBlur = 15;
+                ctx.beginPath();
+                ctx.moveTo(12, 0);    // Front
+                ctx.lineTo(0, 8);     // Bottom
+                ctx.lineTo(-8, 0);    // Back
+                ctx.lineTo(0, -8);    // Top
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Purple energy core
+                ctx.fillStyle = '#c084fc';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#a855f7';
+                ctx.beginPath();
+                ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        }
+        
+        // Draw ship icon on page load
+        drawShipIcon();
+        
+        // Check if ships are unlocked
+        function checkShipUnlocks() {
+            const nexusCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+            const highestLevel = parseInt(localStorage.getItem('neonrogue_highestLevel') || '0');
+            
+            ships.forEach(ship => {
+                if (ship.unlockCores !== undefined) {
+                    // Check if unlock requirements are met
+                    const coresUnlocked = nexusCores >= ship.unlockCores;
+                    const levelUnlocked = highestLevel >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
+                    ship.canUnlock = coresUnlocked && levelUnlocked;
+                    // Ship stays locked until player manually unlocks it (and spends cores)
+                    if (ship.locked === undefined) ship.locked = true; // Default to locked
+                }
+            });
+        }
+        
+        // Unlock a ship (spend cores)
+        function unlockShip(ship) {
+            if (!ship.canUnlock) return;
+            
+            // Deduct cores
+            const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+            const newCores = currentCores - ship.unlockCores;
+            localStorage.setItem('neonrogue_nexusCores', newCores.toString());
+            
+            // Unlock ship
+            ship.locked = false;
+            
+            // Refresh display
+            checkShipUnlocks();
+            updateShipDisplay();
+        }
+        window.unlockShip = unlockShip; // Make globally accessible for inline onclick
+        
+        // Update ship display
+        function updateShipDisplay() {
+            const ship = ships[currentShipIndex];
+            document.getElementById('ship-name').textContent = ship.locked ? 'CLASSIFIED' : ship.name;
+            document.getElementById('ship-desc').textContent = ship.locked ? 'Requirements not met' : ship.desc;
+            
+            if (ship.locked) {
+                const nexusCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+                const canUnlock = ship.canUnlock;
+                
+                document.getElementById('ship-stats').innerHTML = `
+                    <div class="${canUnlock ? 'text-teal-400' : 'text-red-400'}">${canUnlock ? 'READY TO UNLOCK' : 'LOCKED'}</div>
+                    <div class="text-xs">Requires: ${ship.unlockCores} Nexus Cores ${canUnlock ? `(You have ${nexusCores})` : ''}</div>
+                    <div class="text-xs">${ship.unlockAchievement}</div>
+                    ${canUnlock ? `<button onclick="unlockShip(ships[${currentShipIndex}])" class="mt-2 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded font-bold">UNLOCK (Spend ${ship.unlockCores} Cores)</button>` : ''}
+                `;
+            } else {
+                document.getElementById('ship-stats').innerHTML = `
+                    <div>HP: <span class="text-white">${ship.hp}</span> • DMG: <span class="text-white">${ship.dmg}</span> • SPD: <span class="text-white">${ship.spd}</span></div>
+                    <div>WEAPON: <span class="text-teal-400">${ship.weapon}</span></div>
+                `;
+            }
+            
+            drawShipIcon();
+            
+            // Update arrow states
+            document.getElementById('ship-prev').disabled = currentShipIndex === 0;
+            document.getElementById('ship-next').disabled = currentShipIndex === ships.length - 1;
+        }
+        
+        // Check unlocks on load
+        checkShipUnlocks();
+        updateShipDisplay();
+        
+        const shipPrevBtn = document.getElementById('ship-prev');
+        const shipNextBtn = document.getElementById('ship-next');
+        
+        if (shipPrevBtn) {
+            shipPrevBtn.addEventListener('click', () => {
+                if (currentShipIndex > 0) {
+                    currentShipIndex--;
+                    updateShipDisplay();
+                }
+            });
+        }
+        
+        if (shipNextBtn) {
+            shipNextBtn.addEventListener('click', () => {
+                if (currentShipIndex < ships.length - 1) {
+                    currentShipIndex++;
+                    updateShipDisplay();
+                }
+            });
+        }
+        
+        // Corner icon buttons - open modals
+        const seedCornerBtn = document.getElementById('seed-corner-btn');
+        const saveCornerBtn = document.getElementById('save-corner-btn');
+        
+        if (seedCornerBtn) {
+            seedCornerBtn.addEventListener('click', () => {
+                document.getElementById('seed-modal').classList.add('active');
+            });
+        }
+        
+        if (saveCornerBtn) {
+            saveCornerBtn.addEventListener('click', () => {
+                document.getElementById('save-modal').classList.add('active');
+            });
+        }
+        
+        // Modal close buttons
+        const seedCloseBtn = document.getElementById('seed-close-btn');
+        const saveCloseBtn = document.getElementById('save-close-btn');
+        
+        if (seedCloseBtn) {
+            seedCloseBtn.addEventListener('click', () => {
+                document.getElementById('seed-modal').classList.remove('active');
+            });
+        }
+        
+        if (saveCloseBtn) {
+            saveCloseBtn.addEventListener('click', () => {
+                document.getElementById('save-modal').classList.remove('active');
+            });
+        }
+        
+        // Auto-save stats after each run (you can call this from game over)
+        function updateMetaStats() {
+            // Increment total runs
+            const totalRuns = parseInt(localStorage.getItem('neonrogue_totalRuns') || '0') + 1;
+            localStorage.setItem('neonrogue_totalRuns', totalRuns);
+            
+            // Update highest level
+            const highestLevel = parseInt(localStorage.getItem('neonrogue_highestLevel') || '0');
+            if (state.level > highestLevel) {
+                localStorage.setItem('neonrogue_highestLevel', state.level);
+            }
+            
+            // Update highest score
+            const highestScore = parseInt(localStorage.getItem('neonrogue_highestScore') || '0');
+            if (state.score > highestScore) {
+                localStorage.setItem('neonrogue_highestScore', state.score);
+            }
+            
+            // Update total playtime (in seconds)
+            const totalPlaytime = parseInt(localStorage.getItem('neonrogue_totalPlaytime') || '0');
+            const runTime = Math.floor((Date.now() - state.startTime) / 1000);
+            localStorage.setItem('neonrogue_totalPlaytime', totalPlaytime + runTime);
+            
+            // Total kills - you'll need to track this in your enemy death code
+            // For now, just use score as a proxy
+            const totalKills = parseInt(localStorage.getItem('neonrogue_totalKills') || '0');
+            localStorage.setItem('neonrogue_totalKills', totalKills + Math.floor(state.score / 10));
+        }
+        
+        // ===== END SAVE/LOAD SYSTEM =====
         
         document.getElementById('pause-btn').onclick = togglePause;
         document.getElementById('resume-btn').onclick = togglePause;
