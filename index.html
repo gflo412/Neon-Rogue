@@ -848,6 +848,41 @@
             cascade: { id: 'cascade', name: 'Cascade Amplifier', icon: 'fa-sitemap', desc: 'Multistrikes can chain. +25% multistrike chance, +25% multistrike damage.' }
         };
 
+        // Ship data (global so it's accessible during Player initialization)
+        const shipDataMap = {
+            'PATHFINDER': {
+                name: 'PATHFINDER',
+                desc: 'Balanced all-around vessel',
+                hp: 150,
+                dmg: '100%',
+                spd: '100%',
+                weapon: 'Ion Cannons',
+                locked: false
+            },
+            'ENGINEER': {
+                name: 'ENGINEER',
+                desc: 'Deploy turrets as you move',
+                hp: 150,
+                dmg: '90%',
+                spd: '100%',
+                weapon: 'Auto-Turret',
+                unlockCores: 10,
+                unlockAchievement: 'Survive to Level 20',
+                locked: true
+            },
+            'DISRUPTOR': {
+                name: 'DISRUPTOR',
+                desc: 'Crowd control specialist',
+                hp: 130,
+                dmg: '95%',
+                spd: '110%',
+                weapon: 'EMP Pulse',
+                unlockCores: 20,
+                unlockAchievement: 'Survive to Level 30',
+                locked: true
+            }
+        };
+
 
         const statDefs = [
             { id: 'hp', type: 'stat', name: 'Hull Repair', desc: 'Max HP & Heal', icon: 'fa-heart', offensive: false },
@@ -922,7 +957,7 @@
                 this.selectedShip = localStorage.getItem('neonrogue_selectedShip') || 'PATHFINDER';
                 
                 // Apply ship stat modifiers
-                const shipData = ships.find(s => s.name === this.selectedShip);
+                const shipData = shipDataMap[this.selectedShip];
                 if (shipData) {
                     // HP modifier
                     this.maxHp = shipData.hp;
@@ -2067,9 +2102,12 @@
                 if (this.weapons.mines > 0) {
                     this.minesTimer -= dt/16;
                     if (this.minesTimer <= 0) {
-                        const mineCount = 1; // Always 1 mine for balance
+                        // Multi-mine deployment based on level
+                        let mineCount = 1; // Level 1-2: 1 mine
+                        if (this.weapons.mines >= 5) mineCount = 3; // Level 5+: 3 mines
+                        else if (this.weapons.mines >= 3) mineCount = 2; // Level 3-4: 2 mines
                         
-                        const deployMine = (dmgMult = 1.0, depth = 0) => {
+                        const deployMine = (dmgMult = 1.0, depth = 0, angleOffset = 0) => {
                             // Find dense enemy clusters to target
                             const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
                             const maxSearchRadius = 450; // Slightly longer range than gas
@@ -2105,17 +2143,17 @@
                             
                             if (!bestTarget) bestTarget = targetPool[0];
                             
-                            // Deploy mine
-                            const baseAngle = Math.atan2(bestTarget.y - this.y, bestTarget.x - this.x);
+                            // Deploy mine with angle spread for multiple mines
+                            const baseAngle = Math.atan2(bestTarget.y - this.y, bestTarget.x - this.x) + angleOffset;
                             const speed = 12;
                             const vx = Math.cos(baseAngle) * speed;
                             const vy = Math.sin(baseAngle) * speed;
                             
-                            // Balanced damage - not too weak, not OP
-                            const levelScaling = 1 + (this.weapons.mines * 0.15); // +15% per level
+                            // Balanced damage - same base as before (3.0x)
+                            const levelScaling = 1 + (this.weapons.mines * 0.15); // Same 15% per level
                             const baseDmg = this.damage * 3.0 * levelScaling * this.weaponStats.mines.dmg * dmgMult;
                             const detectionRadius = 60 + (this.weaponStats.mines.area * 10);
-                            const blastRadius = 80 + (this.weaponStats.mines.area * 20);
+                            const blastRadius = (100 + (this.weaponStats.mines.area * 15)) * 1.0; // Buffed base: 100 (was 80), reduced scaling: 15/level (was 20)
                             
                             entities.projectiles.push(new Projectile(
                                 this.x, this.y, vx, vy, baseDmg, blastRadius, 'mine', bestTarget, 'mines', detectionRadius
@@ -2124,7 +2162,17 @@
                             checkMultistrike(deployMine, 1.25, depth);
                         };
                         
-                        deployMine();
+                        // Deploy multiple mines with angle spread
+                        if (mineCount === 1) {
+                            deployMine(1.0, 0, 0);
+                        } else if (mineCount === 2) {
+                            deployMine(1.0, 0, -0.15); // Spread 15 degrees left
+                            deployMine(1.0, 0, 0.15);  // Spread 15 degrees right
+                        } else if (mineCount === 3) {
+                            deployMine(1.0, 0, -0.2);  // Spread 20 degrees left
+                            deployMine(1.0, 0, 0);     // Center
+                            deployMine(1.0, 0, 0.2);   // Spread 20 degrees right
+                        }
                         
                         this.maxMinesTimer = Math.max(90, 180 / this.weaponStats.mines.rate); // 180 frames base (3 seconds)
                         this.minesTimer = this.maxMinesTimer;
@@ -2523,11 +2571,12 @@
 
                 // AUTO-TURRET (Engineer weapon)
                 if (this.weapons.turret > 0) {
-                    const maxTurrets = Math.min(3, this.weapons.turret); // Max 3 turrets
+                    const maxTurrets = Math.min(4, this.weapons.turret); // Max 4 turrets (reduced from 6)
                     const deployInterval = Math.max(120, 240 / this.weaponStats.turret.rate); // 4 sec base, faster with upgrades
                     const turretRange = (200 + this.weapons.turret * 25) * this.weaponStats.turret.area;
                     const turretDmg = this.damage * 0.7 * this.weaponStats.turret.dmg; // 70% base damage
-                    const turretFireRate = 30; // Fires every 0.5 seconds
+                    const turretFireRate = 24; // Fires every 0.4 seconds (increased from 30 = 0.5s)
+                    const maxTargetsPerTurret = this.weapons.turret; // Multi-target: level 1 = 1 target, level 2 = 2 targets, etc.
                     
                     // Deploy turret on cooldown
                     this.turretTimer -= dt/16;
@@ -2537,7 +2586,8 @@
                             x: this.x,
                             y: this.y,
                             life: 1200, // 20 seconds lifespan
-                            fireTimer: 0
+                            fireTimer: 0,
+                            range: turretRange // Store range for visual indicator
                         });
                         
                         // Remove oldest if over limit
@@ -2556,27 +2606,60 @@
                         
                         turret.fireTimer -= dt/16;
                         if (turret.fireTimer <= 0) {
-                            // Find nearest enemy in range
-                            let target = null;
-                            let minDist = turretRange;
+                            // Priority targeting system (same as combat drones)
+                            const priorityOrder = (enemy) => {
+                                // Skip invulnerable voidwalkers
+                                if (enemy.type === 'voidwalker' && enemy.cloaked) return -1;
+                                
+                                let priority = 0;
+                                if (enemy.isChampion) priority = 7;
+                                else if (enemy.type === 'voidwalker') priority = 6; // Only if not cloaked
+                                else if (enemy.type === 'tank') priority = 5;
+                                else if (enemy.type === 'splitter') priority = 4;
+                                else if (enemy.type === 'swarmer') priority = 3.5;
+                                else if (enemy.type === 'drone') priority = 2;
+                                else if (enemy.isHacked) priority = 1;
+                                
+                                // Boost priority if enemy is close to player (protector role)
+                                const distToPlayer = Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2);
+                                if (distToPlayer < 150) priority += 0.5;
+                                
+                                return priority;
+                            };
                             
-                            entities.enemies.forEach(e => {
-                                if (e.hp > 0) {
-                                    const dist = Math.sqrt((e.x - turret.x)**2 + (e.y - turret.y)**2);
-                                    if (dist < minDist) {
-                                        minDist = dist;
-                                        target = e;
+                            // Find multiple targets based on turret level, sorted by priority
+                            const targetsWithPriority = entities.enemies
+                                .filter(e => e.hp > 0)
+                                .map(e => ({
+                                    enemy: e,
+                                    dist: Math.sqrt((e.x - turret.x)**2 + (e.y - turret.y)**2),
+                                    priority: priorityOrder(e)
+                                }))
+                                .filter(({dist, priority}) => dist < turretRange && priority >= 0)
+                                .sort((a, b) => {
+                                    // Sort by priority first, then distance
+                                    if (b.priority !== a.priority) return b.priority - a.priority;
+                                    return a.dist - b.dist;
+                                })
+                                .slice(0, maxTargetsPerTurret);
+                            
+                            // Fire at each target with staggered timing
+                            targetsWithPriority.forEach(({enemy: target}, index) => {
+                                const staggerDelay = index * 3; // 3 frames between each shot
+                                
+                                setTimeout(() => {
+                                    if (target.hp > 0) { // Check target still alive
+                                        const angle = Math.atan2(target.y - turret.y, target.x - turret.x);
+                                        const vx = Math.cos(angle) * 10;
+                                        const vy = Math.sin(angle) * 10;
+                                        entities.projectiles.push(new Projectile(
+                                            turret.x, turret.y, vx, vy, turretDmg, 0, 'turret_shot', target, 'turret'
+                                        ));
                                     }
-                                }
+                                }, staggerDelay * 16); // Convert frames to ms
                             });
                             
-                            if (target) {
-                                const angle = Math.atan2(target.y - turret.y, target.x - turret.x);
-                                const vx = Math.cos(angle) * 10;
-                                const vy = Math.sin(angle) * 10;
-                                entities.projectiles.push(new Projectile(
-                                    turret.x, turret.y, vx, vy, turretDmg, 0, 'turret_shot', target, 'turret'
-                                ));
+                            if (targetsWithPriority.length > 0) {
                                 turret.fireTimer = turretFireRate;
                             }
                         }
@@ -2589,33 +2672,55 @@
                 if (this.weapons.emp > 0) {
                     if (!this.empTimer) this.empTimer = 0;
                     const fireInterval = Math.max(60, 90 / this.weaponStats.emp.rate); // 1.5 sec base
-                    const empDmg = this.damage * 0.8 * this.weaponStats.emp.dmg; // 80% base damage
-                    const fieldRadius = (150 + this.weapons.emp * 15) * this.weaponStats.emp.area;
+                    const empDmg = this.damage * 1.2 * this.weaponStats.emp.dmg; // Buffed from 0.8x to 1.2x
+                    const fieldRadius = (60 + this.weapons.emp * 10) * this.weaponStats.emp.area; // Reduced: 60 base (was 80), +10/level (was 15)
                     
                     this.empTimer -= dt/16;
                     if (this.empTimer <= 0) {
-                        // Find nearest enemy
-                        let target = null;
-                        let minDist = 600;
+                        // CLUSTER TARGETING - Find densest enemy cluster (like missiles/railgun)
+                        const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
+                        const maxSearchRadius = 500;
                         
-                        entities.enemies.forEach(e => {
-                            if (e.hp > 0) {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                if (dist < minDist) {
-                                    minDist = dist;
-                                    target = e;
-                                }
-                            }
+                        // Find enemies in visible range first
+                        const visibleEnemies = entities.enemies.filter(e => {
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            return dist < visibleRadius && e.hp > 0;
                         });
                         
-                        if (target) {
-                            const angle = Math.atan2(target.y - this.y, target.x - this.x);
-                            const vx = Math.cos(angle) * 8;
-                            const vy = Math.sin(angle) * 8;
-                            entities.projectiles.push(new Projectile(
-                                this.x, this.y, vx, vy, empDmg, 0, 'emp_pulse', target, 'emp'
-                            ));
+                        let targetPool = visibleEnemies.length > 0 ? visibleEnemies : entities.enemies.filter(e => {
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            return dist < maxSearchRadius && e.hp > 0;
+                        });
+                        
+                        if (targetPool.length === 0) {
+                            this.empTimer = fireInterval;
+                            return;
                         }
+                        
+                        // Find densest cluster
+                        let bestTarget = null;
+                        let bestDensity = 0;
+                        
+                        for (let e of targetPool) {
+                            const nearby = targetPool.filter(e2 => {
+                                const dist = Math.sqrt((e.x - e2.x)**2 + (e.y - e2.y)**2);
+                                return dist < 200; // Cluster radius
+                            }).length;
+                            
+                            if (nearby > bestDensity) {
+                                bestDensity = nearby;
+                                bestTarget = e;
+                            }
+                        }
+                        
+                        if (!bestTarget) bestTarget = targetPool[0];
+                        
+                        const angle = Math.atan2(bestTarget.y - this.y, bestTarget.x - this.x);
+                        const vx = Math.cos(angle) * 8;
+                        const vy = Math.sin(angle) * 8;
+                        entities.projectiles.push(new Projectile(
+                            this.x, this.y, vx, vy, empDmg, fieldRadius, 'emp_pulse', bestTarget, 'emp'
+                        ));
                         
                         this.empTimer = fireInterval;
                     }
@@ -2633,7 +2738,7 @@
 
             getActiveWeaponCount() {
                 let c = 0; 
-                const keys = ['ion', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones'];
+                const keys = ['ion', 'turret', 'emp', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones'];
                 keys.forEach(k => { if(this.weapons[k] > 0) c++; });
                 return c;
             }
@@ -2734,17 +2839,19 @@
                     .slice(0, maxTargets);
                 
                 // Spread freeze to nearby enemies (no damage)
+                // Only create visual explosions for successfully frozen enemies (performance optimization)
                 nearbyEnemies.forEach(({enemy: e, dist}) => {
                     // Chance to freeze nearby enemies
                     if (seededRandom() < freezeChance && e.type !== 'boss' && !e.isChampion && e.cryoState.frozenTimer <= 0) {
                         e.cryoState.frozenTimer = 90; // 1.5s freeze
-                        createExplosion(e.x, e.y, '#88d8ff', 5);
+                        // Small explosion only for frozen targets (reduced performance impact)
+                        createExplosion(e.x, e.y, '#88d8ff', 3);
                     }
                 });
                 
-                // Ice particles for visual feedback
-                for (let i = 0; i < 6; i++) {
-                    const angle = (Math.PI * 2 / 6) * i;
+                // Reduced ice particles for visual feedback (6 -> 4 for better performance)
+                for (let i = 0; i < 4; i++) {
+                    const angle = (Math.PI * 2 / 4) * i;
                     const speed = 2 + seededRandom() * 2;
                     entities.particles.push({
                         x: enemy.x,
@@ -2819,6 +2926,8 @@
                         // Boss is alone - apply weapon-specific boss damage bonuses
                         const bossBonuses = {
                             'ion': 1.4,        // Precision weapon
+                            'turret': 1.4,     // Stationary weapon
+                            'emp': 1.5,        // Control weapon with AOE
                             'beam': 1.6,       // Sustained damage weapon (plus multi-beam bonus)
                             'seeker': 1.5,     // Homing weapon
                             'railgun': 1.8,    // Anti-armor weapon
@@ -3409,6 +3518,18 @@
                         ctx.save();
                         ctx.translate(turret.x - this.x, turret.y - this.y); // Relative to player
                         
+                        // Visible range indicator - soft gradient glow (no hard ring)
+                        const rangeAlpha = 0.12 + Math.sin(state.frameCount * 0.03) * 0.04; // Gentle pulse
+                        const gradient = ctx.createRadialGradient(0, 0, turret.range * 0.7, 0, 0, turret.range);
+                        gradient.addColorStop(0, 'rgba(255, 136, 0, 0)'); // Transparent center
+                        gradient.addColorStop(0.7, `rgba(255, 136, 0, ${rangeAlpha * 0.15})`); // Very faint middle
+                        gradient.addColorStop(0.9, `rgba(255, 136, 0, ${rangeAlpha})`); // Visible edge
+                        gradient.addColorStop(1, 'rgba(255, 136, 0, 0)'); // Fade out at edge
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, turret.range, 0, Math.PI * 2);
+                        ctx.fill();
+                        
                         // Hexagonal base
                         ctx.fillStyle = '#4a2511';
                         ctx.strokeStyle = '#ff8800';
@@ -3490,10 +3611,103 @@
                 }
 
                 ctx.rotate(this.angle);
-                ctx.fillStyle = '#1a1a2e'; ctx.strokeStyle = '#00d1b2'; ctx.lineWidth = 2;
-                ctx.beginPath(); ctx.moveTo(10, 0); ctx.lineTo(-8, 8); ctx.lineTo(-5, 0); ctx.lineTo(-8, -8); ctx.closePath();
-                ctx.fill(); ctx.stroke(); ctx.fillStyle = '#00fff5'; ctx.shadowColor = '#00fff5'; ctx.shadowBlur = 15;
-                ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
+                
+                // Draw ship based on selectedShip
+                if (this.selectedShip === 'ENGINEER') {
+                    // ENGINEER - Hexagonal/industrial design with orange accents (LARGER)
+                    ctx.scale(1.3, 1.3); // 30% larger
+                    ctx.fillStyle = '#2a2511';
+                    ctx.strokeStyle = '#ff8800';
+                    ctx.lineWidth = 2;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ff8800';
+                    
+                    // Main hexagonal body
+                    ctx.beginPath();
+                    for (let i = 0; i < 6; i++) {
+                        const angle = (Math.PI / 3) * i;
+                        const x = Math.cos(angle) * 8;
+                        const y = Math.sin(angle) * 8;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Front panel
+                    ctx.fillStyle = '#ff8800';
+                    ctx.fillRect(-2, -3, 6, 6);
+                    
+                    // Core glow
+                    ctx.fillStyle = '#ffaa44';
+                    ctx.shadowBlur = 8;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                } else if (this.selectedShip === 'DISRUPTOR') {
+                    // DISRUPTOR - Sleek diamond design with purple accents (LARGER)
+                    ctx.scale(1.3, 1.3); // 30% larger
+                    ctx.fillStyle = '#1a0f2e';
+                    ctx.strokeStyle = '#a855f7';
+                    ctx.lineWidth = 2;
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#a855f7';
+                    
+                    // Diamond/kite shape
+                    ctx.beginPath();
+                    ctx.moveTo(12, 0);      // Front point
+                    ctx.lineTo(-4, 6);      // Top wing
+                    ctx.lineTo(-8, 0);      // Back point
+                    ctx.lineTo(-4, -6);     // Bottom wing
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Wing accents
+                    ctx.strokeStyle = '#c084fc';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(6, 0);
+                    ctx.lineTo(-2, 4);
+                    ctx.moveTo(6, 0);
+                    ctx.lineTo(-2, -4);
+                    ctx.stroke();
+                    
+                    // Core glow
+                    ctx.fillStyle = '#c084fc';
+                    ctx.shadowBlur = 12;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                } else {
+                    // PATHFINDER (default) - Classic triangle design with cyan
+                    ctx.fillStyle = '#1a1a2e';
+                    ctx.strokeStyle = '#00d1b2';
+                    ctx.lineWidth = 2;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#00fff5';
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(10, 0);
+                    ctx.lineTo(-8, 8);
+                    ctx.lineTo(-5, 0);
+                    ctx.lineTo(-8, -8);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Core glow
+                    ctx.fillStyle = '#00fff5';
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                ctx.shadowBlur = 0;
                 ctx.restore();
             }
         }
@@ -5833,16 +6047,26 @@
                         if (e.hp > 0) {
                             const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
                             if (dist < e.radius + 10) {
-                                // Deal damage
+                                // Deal full damage to main target
                                 player.dealElementalDamage(e, this.damage, 'emp', '#a855f7');
                                 
-                                // Create EMP field at impact point
-                                const fieldRadius = (150 + player.weapons.emp * 15) * player.weaponStats.emp.area;
+                                // Create EMP field at impact point - use radius from weapon calculation
+                                const fieldRadius = this.pierce; // Use pierce which holds the field radius
                                 player.empFields.push({
                                     x: this.x,
                                     y: this.y,
                                     radius: fieldRadius,
                                     life: 150 // 2.5 seconds
+                                });
+                                
+                                // Deal 50% damage to all other enemies in the field area
+                                entities.enemies.forEach(enemy => {
+                                    if (enemy !== e && enemy.hp > 0) {
+                                        const enemyDist = Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2);
+                                        if (enemyDist < fieldRadius) {
+                                            player.dealElementalDamage(enemy, this.damage * 0.5, 'emp', '#a855f7');
+                                        }
+                                    }
                                 });
                                 
                                 createExplosion(this.x, this.y, '#a855f7', 20);
@@ -7284,7 +7508,7 @@
                                     <div class="text-center">
                                         <div class="text-gray-400">Cooldown</div>
                                         <div class="${rateModified ? 'text-yellow-400 font-bold' : 'text-white'}">
-                                            -${((1.0 - wStats.rate) * 100).toFixed(0)}%
+                                            ${wStats.rate >= 1.0 ? '-' : '+'}${Math.abs((wStats.rate - 1.0) * 100).toFixed(0)}%
                                         </div>
                                     </div>
                                     <div class="text-center">
@@ -7737,7 +7961,20 @@
                     }
                 }
                 
-                ep.x += ep.vx * (scaledDt/16); ep.y += ep.vy * (scaledDt/16); ep.life -= (scaledDt/16);
+                // EMP FIELD SLOW - Slow down enemy projectiles in EMP fields
+                let empProjectileSlow = 1.0;
+                if (player.empFields && player.empFields.length > 0) {
+                    player.empFields.forEach(field => {
+                        const dist = Math.sqrt((ep.x - field.x)**2 + (ep.y - field.y)**2);
+                        if (dist < field.radius) {
+                            empProjectileSlow = 0.4; // 60% slow (move at 40% speed)
+                        }
+                    });
+                }
+                
+                ep.x += ep.vx * empProjectileSlow * (scaledDt/16); 
+                ep.y += ep.vy * empProjectileSlow * (scaledDt/16); 
+                ep.life -= (scaledDt/16);
                 
                 // Special rendering for DEFLECTED projectiles - purple glow and trail
                 if (ep.deflected) {
@@ -8870,6 +9107,8 @@
             // Weapon display names - only actual weapons
             const weaponNames = {
                 'ion': 'Ion Cannon',
+                'turret': 'Auto-Turret',
+                'emp': 'EMP Pulse',
                 'beam': 'Plasma Beam',
                 'seeker': 'Seeker Missiles',
                 'rad': 'Radiation Field',
@@ -9197,40 +9436,24 @@
         // Ship carousel (currently locked, for future expansion)
         console.log('Initializing ship system...');
         let currentShipIndex = 0;
+        
+        // Use ship data from global shipDataMap
         const ships = [
-            {
-                name: 'PATHFINDER',
-                desc: 'Balanced all-around vessel',
-                hp: 150,
-                dmg: '100%',
-                spd: '100%',
-                weapon: 'Ion Cannons',
-                locked: false
-            },
-            {
-                name: 'ENGINEER',
-                desc: 'Deploy turrets as you move',
-                hp: 150,
-                dmg: '90%',
-                spd: '100%',
-                weapon: 'Auto-Turret',
-                unlockCores: 10,
-                unlockAchievement: 'Survive to Level 20',
-                locked: true
-            },
-            {
-                name: 'DISRUPTOR',
-                desc: 'Crowd control specialist',
-                hp: 130,
-                dmg: '95%',
-                spd: '110%',
-                weapon: 'EMP Pulse',
-                unlockCores: 20,
-                unlockAchievement: 'Survive to Level 30',
-                locked: true
-            }
+            shipDataMap['PATHFINDER'],
+            shipDataMap['ENGINEER'],
+            shipDataMap['DISRUPTOR']
         ];
         console.log('Ships defined:', ships.length, 'ships');
+        
+        // Sync currentShipIndex with saved ship selection
+        const savedShipName = localStorage.getItem('neonrogue_selectedShip');
+        if (savedShipName) {
+            const savedShipIndex = ships.findIndex(s => s.name === savedShipName);
+            if (savedShipIndex !== -1) {
+                currentShipIndex = savedShipIndex;
+                console.log('Loaded saved ship:', savedShipName, 'at index', savedShipIndex);
+            }
+        }
         
         // Draw ship on canvas
         function drawShipIcon() {
@@ -9345,14 +9568,23 @@
             const nexusCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
             const highestLevel = parseInt(localStorage.getItem('neonrogue_highestLevel') || '0');
             
+            // Load unlocked ships from localStorage
+            const unlockedShipsJSON = localStorage.getItem('neonrogue_unlockedShips');
+            const unlockedShips = unlockedShipsJSON ? JSON.parse(unlockedShipsJSON) : [];
+            
             ships.forEach(ship => {
                 if (ship.unlockCores !== undefined) {
-                    // Check if unlock requirements are met
-                    const coresUnlocked = nexusCores >= ship.unlockCores;
-                    const levelUnlocked = highestLevel >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
-                    ship.canUnlock = coresUnlocked && levelUnlocked;
-                    // Ship stays locked until player manually unlocks it (and spends cores)
-                    if (ship.locked === undefined) ship.locked = true; // Default to locked
+                    // Check if already unlocked (saved in localStorage)
+                    if (unlockedShips.includes(ship.name)) {
+                        ship.locked = false;
+                    } else {
+                        // Check if unlock requirements are met
+                        const coresUnlocked = nexusCores >= ship.unlockCores;
+                        const levelUnlocked = highestLevel >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
+                        ship.canUnlock = coresUnlocked && levelUnlocked;
+                        // Ship stays locked until player manually unlocks it (and spends cores)
+                        if (ship.locked === undefined) ship.locked = true; // Default to locked
+                    }
                 }
             });
         }
@@ -9368,6 +9600,14 @@
             
             // Unlock ship
             ship.locked = false;
+            
+            // Save unlocked ships to localStorage
+            const unlockedShipsJSON = localStorage.getItem('neonrogue_unlockedShips');
+            const unlockedShips = unlockedShipsJSON ? JSON.parse(unlockedShipsJSON) : [];
+            if (!unlockedShips.includes(ship.name)) {
+                unlockedShips.push(ship.name);
+                localStorage.setItem('neonrogue_unlockedShips', JSON.stringify(unlockedShips));
+            }
             
             // Refresh display
             checkShipUnlocks();
