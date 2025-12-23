@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NEON ROGUE: Undertrained. Overkill.</title>
+    <title>NEON ROGUE</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script>
@@ -467,6 +467,7 @@
                         <div class="flex gap-2">
                             <i id="shield-orb-1" class="fas fa-shield-alt" style="font-size: 14px; color: #00d1b2; filter: drop-shadow(0 0 6px #00d1b2); transition: all 0.3s;"></i>
                             <i id="shield-orb-2" class="fas fa-shield-alt" style="font-size: 14px; color: #00d1b2; filter: drop-shadow(0 0 6px #00d1b2); transition: all 0.3s;"></i>
+                            <i id="shield-orb-3" class="fas fa-shield-alt" style="font-size: 14px; color: #00d1b2; filter: drop-shadow(0 0 6px #00d1b2); transition: all 0.3s; display: none;"></i>
                         </div>
                         <!-- Level text - right aligned -->
                         <div id="lvl-text" class="text-[10px] text-gray-400 font-mono">LVL 1</div>
@@ -812,6 +813,7 @@
 
 
         let player;
+        let nextEnemyId = 0; // Global counter for unique enemy IDs
         let entities = { enemies: [], projectiles: [], enemyProjectiles: [], particles: [], pickups: [], texts: [], lightnings: [], gasClouds: [] };
         let animationFrameId;
 
@@ -821,6 +823,8 @@
             ion: { id: 'ion', type: 'weapon', name: 'Ion Cannon', icon: 'fa-crosshairs', desc: 'Stationed turrets firing energy blasts.', offensive: true, validUpgrades: ['dmg', 'rate'], shipLocked: 'PATHFINDER' },
             turret: { id: 'turret', type: 'weapon', name: 'Auto-Turret', icon: 'fa-chess-rook', desc: 'Deploys stationary turrets that auto-fire.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'ENGINEER' },
             emp: { id: 'emp', type: 'weapon', name: 'EMP Pulse', icon: 'fa-bullseye', desc: 'Slowing pulses that create lingering fields.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'DISRUPTOR' },
+            barrier: { id: 'barrier', type: 'weapon', name: 'Kinetic Barrier', icon: 'fa-shield-alt', desc: 'Energized aura damages on contact and reflects projectiles.', offensive: true, validUpgrades: ['dmg', 'area'], shipLocked: 'VANGUARD' },
+            orbital: { id: 'orbital', type: 'weapon', name: 'Orbital Bladestorm', icon: 'fa-compact-disc', desc: 'Spinning energy blades orbit the ship at close range.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'REAPER' },
             beam: { id: 'beam', type: 'weapon', name: 'Plasma Beam', icon: 'fa-fire', desc: 'Continuous energy beam.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             seeker: { id: 'seeker', type: 'weapon', name: 'Seeker Swarm', icon: 'fa-rocket', desc: 'Launches homing missiles.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             rad: { id: 'rad', type: 'weapon', name: 'Rad-Field', icon: 'fa-radiation', desc: 'Emits a damaging aura.', offensive: true, validUpgrades: ['dmg', 'area'] },
@@ -862,7 +866,7 @@
             'ENGINEER': {
                 name: 'ENGINEER',
                 desc: 'Deploy turrets as you move',
-                hp: 150,
+                hp: 175,
                 dmg: '90%',
                 spd: '100%',
                 weapon: 'Auto-Turret',
@@ -880,6 +884,28 @@
                 unlockCores: 20,
                 unlockAchievement: 'Survive to Level 30',
                 locked: true
+            },
+            'VANGUARD': {
+                name: 'VANGUARD',
+                desc: 'Ramming juggernaut with barrier',
+                hp: 225,
+                dmg: '90%',
+                spd: '80%',
+                weapon: 'Kinetic Barrier',
+                unlockCores: 30,
+                unlockAchievement: 'Survive to Level 40',
+                locked: true
+            },
+            'REAPER': {
+                name: 'REAPER',
+                desc: 'Glass cannon - high risk, high reward',
+                hp: 100,
+                dmg: '110%',
+                spd: '130%',
+                weapon: 'Orbital Bladestorm',
+                unlockCores: 20,
+                unlockAchievement: 'Complete 35 Runs',
+                locked: true // Properly locked
             }
         };
 
@@ -936,11 +962,16 @@
         class Player {
             constructor() {
                 this.x = 0; this.y = 0; this.radius = 16; this.speed = 2.5; // Base move speed (increased from 2.2) 
+                this.vx = 0; this.vy = 0; // Velocity components
                 this.hp = 150; this.maxHp = 150; this.armor = 15; // Base Armor increased from 10 to 15
-                this.shield1 = 100; // Shield bar 1 (0-100%)
-                this.shield2 = 100; // Shield bar 2 (0-100%)
+                
+                // Ship-specific shield configuration (set after selectedShip is loaded)
+                this.shield1 = 0; // Will be set based on ship
+                this.shield2 = 0;
+                this.shield3 = 0; // Vanguard only
                 this.shield1RechargeTimer = 0; // Time until bar 1 starts recharging
                 this.shield2RechargeTimer = 0; // Time until bar 2 starts recharging
+                this.shield3RechargeTimer = 0; // Vanguard only
                 this.shieldRechargeDelay = 600; // 10 seconds (60fps × 10)
                 this.shieldRechargeRate = 20; // 20% per second (100% in 5 seconds) 
                 this.regen = 0; this.regenTimer = 60; // Ticks every 1 second (60 frames)
@@ -974,12 +1005,34 @@
                     this.shipSpeedMult = 1.0;
                 }
 
-                this.weapons = { ion: 0, turret: 0, emp: 0, shield: 0, tesla: 0, seeker: 0, rad: 0, beam: 0, whip: 0, meteor: 0, railgun: 0, flak: 0, pylons: 0, mines: 0, gas: 0, ricochet: 0, drones: 0 };
+                this.weapons = { ion: 0, turret: 0, emp: 0, barrier: 0, orbital: 0, shield: 0, tesla: 0, seeker: 0, rad: 0, beam: 0, whip: 0, meteor: 0, railgun: 0, flak: 0, pylons: 0, mines: 0, gas: 0, ricochet: 0, drones: 0 };
                 
                 // Set starting weapon based on ship
                 if (this.selectedShip === 'PATHFINDER') this.weapons.ion = 1;
                 else if (this.selectedShip === 'ENGINEER') this.weapons.turret = 1;
                 else if (this.selectedShip === 'DISRUPTOR') this.weapons.emp = 1;
+                else if (this.selectedShip === 'VANGUARD') this.weapons.barrier = 1;
+                else if (this.selectedShip === 'REAPER') this.weapons.orbital = 1;
+                
+                // Ship-specific shield charges
+                if (this.selectedShip === 'DISRUPTOR') {
+                    this.shield1 = 100; // 1 shield only
+                    this.shield2 = 0;
+                    this.shield3 = 0;
+                } else if (this.selectedShip === 'VANGUARD') {
+                    this.shield1 = 100; // 3 shields
+                    this.shield2 = 100;
+                    this.shield3 = 100;
+                } else if (this.selectedShip === 'REAPER') {
+                    this.shield1 = 0; // 0 shields - glass cannon
+                    this.shield2 = 0;
+                    this.shield3 = 0;
+                } else {
+                    // Pathfinder and Engineer: 2 shields (default)
+                    this.shield1 = 100;
+                    this.shield2 = 100;
+                    this.shield3 = 0;
+                }
                 
                 this.weaponAugments = {}; // Single augment per weapon: { ion: 'fire', beam: 'ice', ... }
                 this.weaponStats = {};
@@ -1085,37 +1138,154 @@
                 // Check if we have any FULL shield bars (100% = fully charged)
                 const hasShield1 = this.shield1 >= 100;
                 const hasShield2 = this.shield2 >= 100;
+                const hasShield3 = this.shield3 >= 100;
                 
                 // Check if any shield is actively charging (can't be interrupted)
                 const shield1Charging = this.shield1 < 100 && this.shield1RechargeTimer <= 0;
                 const shield2Charging = this.shield2 < 100 && this.shield2RechargeTimer <= 0;
+                const shield3Charging = this.shield3 < 100 && this.shield3RechargeTimer <= 0;
+                
+                // REAPER HAS NO SHIELDS - skip shield logic entirely
+                const canUseShields = this.selectedShip !== 'REAPER';
                 
                 // If we have at least one full shield bar, consume it and block damage
-                // Deplete from RIGHT to LEFT (shield2 → shield1)
+                // Deplete from RIGHT to LEFT (shield3 → shield2 → shield1) for Vanguard
                 // CRITICAL: Never deplete a shield that is actively charging
-                if (hasShield1 || hasShield2) {
-                    // Deplete shield2 (right) first if it's full and not charging
-                    if (hasShield2 && !shield2Charging) {
+                if (canUseShields && (hasShield1 || hasShield2 || hasShield3)) {
+                    let shieldBroken = false;
+                    
+                    // Deplete shield3 (rightmost, Vanguard only) first if it's full and not charging
+                    if (hasShield3 && !shield3Charging) {
+                        this.shield3 = 0;
+                        this.shield3RechargeTimer = this.shieldRechargeDelay;
+                        shieldBroken = true;
+                    }
+                    // Then deplete shield2 (middle) if it's full and not charging
+                    else if (hasShield2 && !shield2Charging) {
                         this.shield2 = 0;
-                        // Start 5-second delay before recharge
                         this.shield2RechargeTimer = this.shieldRechargeDelay;
+                        shieldBroken = true;
                     } 
                     // Otherwise deplete shield1 (left) if it's full and not charging
                     else if (hasShield1 && !shield1Charging) {
                         this.shield1 = 0;
-                        // Start 5-second delay before recharge
                         this.shield1RechargeTimer = this.shieldRechargeDelay;
+                        shieldBroken = true;
                     }
                     // Edge case: Shield is full but charging (shouldn't happen, but for safety deplete it)
-                    else if (hasShield2) {
+                    else if (hasShield3) {
+                        this.shield3 = 0;
+                        this.shield3RechargeTimer = this.shieldRechargeDelay;
+                        shieldBroken = true;
+                    } else if (hasShield2) {
                         this.shield2 = 0;
                         this.shield2RechargeTimer = this.shieldRechargeDelay;
+                        shieldBroken = true;
                     } else {
                         this.shield1 = 0;
                         this.shield1RechargeTimer = this.shieldRechargeDelay;
+                        shieldBroken = true;
+                    }
+                    
+                    // VANGUARD PASSIVE: Shield break causes massive shockwave
+                    if (shieldBroken && this.selectedShip === 'VANGUARD') {
+                        const explosionRadius = 400; // MASSIVE: almost screen-wide (was 160)
+                        // Level-scaled damage: starts at 2.0x, +0.15x per level
+                        const levelScaling = 1 + (state.level * 0.15);
+                        const baseDamage = this.damage * 2.0 * levelScaling;
+                        
+                        entities.enemies.forEach(e => {
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            if (dist < explosionRadius && e.hp > 0) {
+                                // DAMAGE FALLOFF: 100% at center → 30% at edge
+                                const falloff = 1.0 - (dist / explosionRadius * 0.7); // 100% to 30%
+                                const finalDamage = baseDamage * falloff;
+                                
+                                this.dealElementalDamage(e, finalDamage, 'barrier', '#c0cfe0');
+                                // Extra visual feedback on each enemy hit
+                                createExplosion(e.x, e.y, '#8b9dc3', 12);
+                            }
+                        });
+                        
+                        // SHOCKWAVE RING ANIMATION - expands outward
+                        const ringDuration = 40; // Frames
+                        const maxRadius = explosionRadius;
+                        entities.particles.push({
+                            x: this.x,
+                            y: this.y,
+                            life: ringDuration,
+                            maxLife: ringDuration,
+                            currentRadius: 0,
+                            maxRadius: maxRadius,
+                            update() {
+                                const progress = 1 - (this.life / this.maxLife); // 0 to 1
+                                this.currentRadius = this.maxRadius * progress;
+                                this.life--;
+                                return this.life > 0;
+                            },
+                            draw(ctx) {
+                                const progress = 1 - (this.life / this.maxLife);
+                                const alpha = Math.max(0, 1 - progress); // Fades as it expands
+                                const thickness = 8 - (progress * 4); // Gets thinner
+                                
+                                // Outer bright ring
+                                ctx.strokeStyle = `rgba(192, 207, 224, ${alpha * 0.8})`;
+                                ctx.lineWidth = thickness;
+                                ctx.shadowBlur = 20 * alpha;
+                                ctx.shadowColor = `rgba(192, 207, 224, ${alpha})`;
+                                ctx.beginPath();
+                                ctx.arc(this.x, this.y, this.currentRadius, 0, Math.PI * 2);
+                                ctx.stroke();
+                                
+                                // Inner glow ring
+                                ctx.strokeStyle = `rgba(139, 157, 195, ${alpha * 0.5})`;
+                                ctx.lineWidth = thickness * 0.6;
+                                ctx.shadowBlur = 15 * alpha;
+                                ctx.beginPath();
+                                ctx.arc(this.x, this.y, this.currentRadius * 0.9, 0, Math.PI * 2);
+                                ctx.stroke();
+                                
+                                ctx.shadowBlur = 0;
+                            }
+                        });
+                        
+                        // Center explosion flash
+                        createExplosion(this.x, this.y, '#c0cfe0', 50);
+                        
+                        // Additional particles for visual feedback
+                        for (let i = 0; i < 12; i++) {
+                            const angle = (Math.PI * 2 / 12) * i;
+                            entities.particles.push({
+                                x: this.x,
+                                y: this.y,
+                                vx: Math.cos(angle) * 8,
+                                vy: Math.sin(angle) * 8,
+                                color: '#c0cfe0',
+                                life: 30,
+                                size: 3,
+                                update: function(dt) {
+                                    this.x += this.vx * (dt/16);
+                                    this.y += this.vy * (dt/16);
+                                    this.life -= dt/16;
+                                    this.vx *= 0.95;
+                                    this.vy *= 0.95;
+                                    return this.life > 0;
+                                },
+                                draw: function(ctx) {
+                                    ctx.fillStyle = this.color;
+                                    ctx.shadowBlur = 8;
+                                    ctx.shadowColor = this.color;
+                                    ctx.beginPath();
+                                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    ctx.shadowBlur = 0;
+                                }
+                            });
+                        }
                     }
                     
                     // Visual feedback - shield hit
+                    // Shield hit visual feedback
                     const flash = document.getElementById('damage-flash');
                     flash.style.opacity = 0.3; // Lighter flash for shield hit
                     flash.style.background = '#00d1b2'; // Cyan for shield
@@ -1123,6 +1293,9 @@
                         flash.style.opacity = 0;
                         flash.style.background = '#ff0000'; // Reset to red
                     }, 100);
+                    
+                    // Subtle camera shake for shield hit
+                    state.shake = 5;
                     
                     this.invulnTimer = 60;
                     return; // No HP damage taken
@@ -1142,11 +1315,36 @@
                 let actualDmg = amount * (1 - reduction) * defensiveScaling;
                 
                 if (actualDmg > 0) {
-                    this.hp -= actualDmg; state.shake = 10;
+                    this.hp -= actualDmg; 
+                    
+                    // Enhanced camera shake based on damage amount
+                    const shakeIntensity = Math.min(20, 8 + actualDmg * 0.3);
+                    state.shake = shakeIntensity;
+                    
                     this.lastDamageTime = Date.now(); // Track when damage was taken
                     const flash = document.getElementById('damage-flash');
                     flash.style.opacity = 0.6; setTimeout(() => flash.style.opacity = 0, 100);
                     this.invulnTimer = 30; // Back to 0.5 seconds - was 60 (1 second)
+                    
+                    // RED DAMAGE NUMBER for player
+                    entities.texts.push({
+                        x: this.x + (Math.random() - 0.5) * 30,
+                        y: this.y - 20,
+                        vx: (Math.random() - 0.5) * 2,
+                        vy: -2,
+                        text: `-${Math.round(actualDmg)}`,
+                        color: '#ff3860', // Red for player damage
+                        life: 60,
+                        size: 18,
+                        update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
+                        draw(ctx) {
+                            const alpha = Math.min(1, this.life / 20);
+                            ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                            ctx.font = `bold ${this.size}px Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(this.text, this.x, this.y);
+                        }
+                    });
                     
                     // Start recharge timers for depleted shields that aren't already charging
                     if (this.shield1 < 100 && this.shield1RechargeTimer > 0) {
@@ -1224,42 +1422,71 @@
                 // SHIELD RECHARGE SYSTEM
                 // Once a shield STARTS charging (timer <= 0), it NEVER stops until 100%
                 // Only ONE shield can be charging at a time
-                // Priority when both depleted: Left (shield1) charges first
+                // Priority when multiple depleted: Left to right (shield1 → shield2 → shield3)
                 
                 // Determine which shield is actively charging
                 const shield1Charging = this.shield1 < 100 && this.shield1RechargeTimer <= 0;
                 const shield2Charging = this.shield2 < 100 && this.shield2RechargeTimer <= 0;
+                const shield3Charging = this.shield3 < 100 && this.shield3RechargeTimer <= 0;
                 
-                // Shield 1 recharge (LEFT)
-                if (shield1Charging) {
-                    // Actively charging - NEVER STOPS
-                    this.shield1 += this.shieldRechargeRate * (dt/16) / 60; // 20% per second
-                    if (this.shield1 >= 100) {
-                        this.shield1 = 100;
-                        // Shield 1 finished - if shield 2 needs charging, start its timer
-                        if (this.shield2 < 100 && this.shield2RechargeTimer > 0) {
-                            this.shield2RechargeTimer = this.shieldRechargeDelay; // Reset to 5 sec delay
+                // REAPER HAS NO SHIELDS - skip all recharge logic
+                if (this.selectedShip !== 'REAPER') {
+                    // Shield 1 recharge (LEFT)
+                    if (shield1Charging) {
+                        // Actively charging - NEVER STOPS
+                        this.shield1 += this.shieldRechargeRate * (dt/16) / 60; // 20% per second
+                        if (this.shield1 >= 100) {
+                            this.shield1 = 100;
+                            // Shield 1 finished - if shield 2 or 3 needs charging, start timer
+                            if (this.shield2 < 100 && this.shield2RechargeTimer > 0) {
+                                this.shield2RechargeTimer = this.shieldRechargeDelay;
+                            }
+                            if (this.shield3 < 100 && this.shield3RechargeTimer > 0) {
+                                this.shield3RechargeTimer = this.shieldRechargeDelay;
+                            }
                         }
+                    } else if (this.shield1 < 100 && this.shield1RechargeTimer > 0 && !shield2Charging && !shield3Charging) {
+                        // Waiting to start charging (only count down if no other shield is charging)
+                        this.shield1RechargeTimer -= dt/16;
                     }
-                } else if (this.shield1 < 100 && this.shield1RechargeTimer > 0 && !shield2Charging) {
-                    // Waiting to start charging (only count down if no other shield is charging)
-                    this.shield1RechargeTimer -= dt/16;
-                }
-                
-                // Shield 2 recharge (RIGHT) - only if shield 1 is NOT charging
-                if (shield2Charging && !shield1Charging) {
-                    // Actively charging - NEVER STOPS
-                    this.shield2 += this.shieldRechargeRate * (dt/16) / 60; // 20% per second
-                    if (this.shield2 >= 100) {
-                        this.shield2 = 100;
-                        // Shield 2 finished - if shield 1 needs charging, start its timer
-                        if (this.shield1 < 100 && this.shield1RechargeTimer > 0) {
-                            this.shield1RechargeTimer = this.shieldRechargeDelay; // Reset to 5 sec delay
+                    
+                    // Shield 2 recharge (MIDDLE) - only if shield 1 is NOT charging
+                    if (shield2Charging && !shield1Charging) {
+                        // Actively charging - NEVER STOPS
+                        this.shield2 += this.shieldRechargeRate * (dt/16) / 60; // 20% per second
+                        if (this.shield2 >= 100) {
+                            this.shield2 = 100;
+                            // Shield 2 finished - if shield 1 or 3 needs charging, start timer
+                            if (this.shield1 < 100 && this.shield1RechargeTimer > 0) {
+                                this.shield1RechargeTimer = this.shieldRechargeDelay;
+                            }
+                            if (this.shield3 < 100 && this.shield3RechargeTimer > 0) {
+                                this.shield3RechargeTimer = this.shieldRechargeDelay;
+                            }
                         }
+                    } else if (this.shield2 < 100 && this.shield2RechargeTimer > 0 && !shield1Charging && !shield2Charging && !shield3Charging) {
+                        // Waiting to start charging (only count down if no shield is charging)
+                        this.shield2RechargeTimer -= dt/16;
                     }
-                } else if (this.shield2 < 100 && this.shield2RechargeTimer > 0 && !shield1Charging && !shield2Charging) {
-                    // Waiting to start charging (only count down if no shield is charging)
-                    this.shield2RechargeTimer -= dt/16;
+                    
+                    // Shield 3 recharge (RIGHT, Vanguard only) - only if shield 1 and 2 are NOT charging
+                    if (shield3Charging && !shield1Charging && !shield2Charging) {
+                        // Actively charging - NEVER STOPS
+                        this.shield3 += this.shieldRechargeRate * (dt/16) / 60; // 20% per second
+                        if (this.shield3 >= 100) {
+                            this.shield3 = 100;
+                            // Shield 3 finished - if shield 1 or 2 needs charging, start timer
+                            if (this.shield1 < 100 && this.shield1RechargeTimer > 0) {
+                                this.shield1RechargeTimer = this.shieldRechargeDelay;
+                            }
+                            if (this.shield2 < 100 && this.shield2RechargeTimer > 0) {
+                                this.shield2RechargeTimer = this.shieldRechargeDelay;
+                            }
+                        }
+                    } else if (this.shield3 < 100 && this.shield3RechargeTimer > 0 && !shield1Charging && !shield2Charging && !shield3Charging) {
+                        // Waiting to start charging (only count down if no shield is charging)
+                        this.shield3RechargeTimer -= dt/16;
+                    }
                 }
                 
                 if (this.regen > 0) {
@@ -1324,13 +1551,21 @@
                 const effectiveSpeed = this.speed * this.shipSpeedMult;
 
                 if (input.active) {
-                    this.x += input.vector.x * effectiveSpeed * (dt/16);
-                    this.y += input.vector.y * effectiveSpeed * (dt/16);
+                    // Calculate actual velocity (for weapons that need speed info like barrier)
+                    this.vx = input.vector.x * effectiveSpeed;
+                    this.vy = input.vector.y * effectiveSpeed;
+                    
+                    this.x += this.vx * (dt/16);
+                    this.y += this.vy * (dt/16);
                     this.angle = Math.atan2(input.vector.y, input.vector.x);
                     if (state.frameCount % 5 === 0) {
                         const backAngle = this.angle + Math.PI;
                         entities.particles.push(new Particle(this.x + Math.cos(backAngle)*15, this.y + Math.sin(backAngle)*15, '#00d1b2', 0.8));
                     }
+                } else {
+                    // Not moving - zero velocity
+                    this.vx = 0;
+                    this.vy = 0;
                 }
                 if(Number.isNaN(this.x)) this.x = 0; 
                 if(Number.isNaN(this.y)) this.y = 0;
@@ -1784,11 +2019,15 @@
                                  return Math.abs(e.x - this.x) < width/state.zoom/2.5 && Math.abs(e.y - this.y) < height/state.zoom/2.5;
                             });
                             
+                            // PRIORITY: Target champions if available
+                            const visibleChampions = visibleEnemies.filter(e => e.type === 'champion');
+                            const targetPool = visibleChampions.length > 0 ? visibleChampions : visibleEnemies;
+                            
                             // Find best cluster: enemy with most nearby allies
                             let bestTarget = null;
                             let maxNearby = 0;
                             
-                            visibleEnemies.forEach(e => {
+                            targetPool.forEach(e => {
                                 let nearbyCount = 0;
                                 visibleEnemies.forEach(other => {
                                     if (other !== e) {
@@ -1796,6 +2035,9 @@
                                         if (dist < 150) nearbyCount++; // Count enemies within 150 units
                                     }
                                 });
+                                // Bonus weight for champions
+                                if (e.type === 'champion') nearbyCount += 5;
+                                
                                 if (nearbyCount > maxNearby) {
                                     maxNearby = nearbyCount;
                                     bestTarget = e;
@@ -2145,7 +2387,13 @@
                             
                             // Deploy mine with angle spread for multiple mines
                             const baseAngle = Math.atan2(bestTarget.y - this.y, bestTarget.x - this.x) + angleOffset;
-                            const speed = 12;
+                            
+                            // Variable speed based on distance to prevent overlap when close
+                            const distToTarget = Math.sqrt((bestTarget.x - this.x)**2 + (bestTarget.y - this.y)**2);
+                            const baseSpeed = 12;
+                            const speedVariation = distToTarget < 200 ? (Math.random() * 4 + 2) : 0; // Add 2-6 speed variance when close
+                            const speed = baseSpeed + speedVariation;
+                            
                             const vx = Math.cos(baseAngle) * speed;
                             const vy = Math.sin(baseAngle) * speed;
                             
@@ -2166,12 +2414,12 @@
                         if (mineCount === 1) {
                             deployMine(1.0, 0, 0);
                         } else if (mineCount === 2) {
-                            deployMine(1.0, 0, -0.15); // Spread 15 degrees left
-                            deployMine(1.0, 0, 0.15);  // Spread 15 degrees right
+                            deployMine(1.0, 0, -0.25); // Spread 25 degrees left (was 15)
+                            deployMine(1.0, 0, 0.25);  // Spread 25 degrees right
                         } else if (mineCount === 3) {
-                            deployMine(1.0, 0, -0.2);  // Spread 20 degrees left
+                            deployMine(1.0, 0, -0.35);  // Spread 35 degrees left (was 20)
                             deployMine(1.0, 0, 0);     // Center
-                            deployMine(1.0, 0, 0.2);   // Spread 20 degrees right
+                            deployMine(1.0, 0, 0.35);   // Spread 35 degrees right
                         }
                         
                         this.maxMinesTimer = Math.max(90, 180 / this.weaponStats.mines.rate); // 180 frames base (3 seconds)
@@ -2571,12 +2819,13 @@
 
                 // AUTO-TURRET (Engineer weapon)
                 if (this.weapons.turret > 0) {
-                    const maxTurrets = Math.min(4, this.weapons.turret); // Max 4 turrets (reduced from 6)
+                    // Scaling: Level 1-5 increases turret count and targets, Level 6+ only stats
+                    const maxTurrets = Math.min(4, this.weapons.turret); // 1 turret at L1, 2 at L2... caps at 4
                     const deployInterval = Math.max(120, 240 / this.weaponStats.turret.rate); // 4 sec base, faster with upgrades
-                    const turretRange = (200 + this.weapons.turret * 25) * this.weaponStats.turret.area;
-                    const turretDmg = this.damage * 0.7 * this.weaponStats.turret.dmg; // 70% base damage
-                    const turretFireRate = 24; // Fires every 0.4 seconds (increased from 30 = 0.5s)
-                    const maxTargetsPerTurret = this.weapons.turret; // Multi-target: level 1 = 1 target, level 2 = 2 targets, etc.
+                    const turretRange = (120 + this.weapons.turret * 18) * this.weaponStats.turret.area; // Increased base: 120 (was 100), reduced scaling: +18/level (was 20)
+                    const turretDmg = this.damage * 0.8 * this.weaponStats.turret.dmg; // Buffed: 80% base damage (was 70%)
+                    const turretFireRate = 24; // Fires every 0.4 seconds
+                    const maxTargetsPerTurret = Math.min(4, this.weapons.turret); // 1 target at L1, 2 at L2... caps at 4
                     
                     // Deploy turret on cooldown
                     this.turretTimer -= dt/16;
@@ -2645,7 +2894,7 @@
                             
                             // Fire at each target with staggered timing
                             targetsWithPriority.forEach(({enemy: target}, index) => {
-                                const staggerDelay = index * 3; // 3 frames between each shot
+                                const staggerDelay = index * 5; // 5 frames between each shot (increased from 3)
                                 
                                 setTimeout(() => {
                                     if (target.hp > 0) { // Check target still alive
@@ -2732,13 +2981,414 @@
                         return field.life > 0;
                     });
                 }
+                
+                // KINETIC BARRIER (Vanguard weapon)
+                if (this.weapons.barrier > 0) {
+                    // Fixed area - only scales with upgrade cards, not weapon level (INCREASED BASE)
+                    const barrierRadius = 65 * this.weaponStats.barrier.area; // 65px base
+                    
+                    // Track which enemies are inside barrier (for one-time impact on entry)
+                    if (!this.barrierEnemies) this.barrierEnemies = new Set();
+                    const currentBarrierEnemies = new Set();
+                    
+                    // Tick system - damage every 10 frames (6 times per second)
+                    if (!this.barrierTickCounter) this.barrierTickCounter = 0;
+                    this.barrierTickCounter += dt/16;
+                    
+                    if (this.barrierTickCounter >= 10) {
+                        this.barrierTickCounter -= 10;
+                        
+                        // Calculate speed ratio for movement multiplier
+                        const currentSpeed = Math.sqrt(this.vx**2 + this.vy**2);
+                        const maxSpeed = this.speed * this.shipSpeedMult;
+                        const speedRatio = Math.min(1.0, currentSpeed / maxSpeed); // 0 to 1
+                        
+                        // IMPROVED DAMAGE FORMULA: Better scaling with stats
+                        // Base components (normalized to baseline values)
+                        const hpComponent = this.maxHp / 150; // Baseline 150 HP (Pathfinder)
+                        const armorComponent = this.armor / 15; // Baseline 15 armor
+                        const speedComponent = (this.speed * this.shipSpeedMult) / 2.5; // Baseline 2.5 speed
+                        const damageComponent = this.damage / 15; // Baseline 15 damage
+                        
+                        // Combined scaling - now MULTIPLIES instead of averages (much stronger)
+                        const statScaling = Math.sqrt(hpComponent * armorComponent * speedComponent * damageComponent);
+                        
+                        // Base impact damage - BUFFED from 0.8x to 1.5x
+                        const baseImpactDamage = this.damage * 1.5 * statScaling * this.weaponStats.barrier.dmg;
+                        
+                        // Movement speed multiplier: 10% to 100%
+                        const movementMultiplier = 0.1 + (speedRatio * 0.9);
+                        const impactDamage = baseImpactDamage * movementMultiplier;
+                        
+                        // DOT damage - applies every tick while inside (BUFFED from 0.12x to 0.2x)
+                        const dotDamage = this.damage * 0.2 * statScaling * this.weaponStats.barrier.dmg;
+                        
+                        // Damage enemies in barrier - ENTIRE AREA
+                        for(let e of entities.enemies) {
+                            if (e.hp <= 0) continue;
+                            
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            const enemyId = e.id;
+                            
+                            // ENTIRE BARRIER: Impact on entry + DOT while inside
+                            if (dist < barrierRadius + e.radius) {
+                                currentBarrierEnemies.add(enemyId);
+                                
+                                // IMPACT DAMAGE: Only on first entry
+                                if (!this.barrierEnemies.has(enemyId)) {
+                                    this.dealElementalDamage(e, impactDamage, 'barrier', '#c0cfe0', true, 'normal');
+                                    // Impact visual
+                                    createExplosion(e.x, e.y, '#c0cfe0', 8);
+                                    for (let i = 0; i < 6; i++) {
+                                        const angle = (Math.PI * 2 / 6) * i;
+                                        const px = e.x + Math.cos(angle) * 10;
+                                        const py = e.y + Math.sin(angle) * 10;
+                                        entities.particles.push({
+                                            x: px, y: py,
+                                            vx: Math.cos(angle) * 2,
+                                            vy: Math.sin(angle) * 2,
+                                            life: 12,
+                                            maxLife: 12,
+                                            color: '#8b9dc3',
+                                            radius: 2.5,
+                                            update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
+                                            draw(ctx) {
+                                                const alpha = this.life / this.maxLife;
+                                                ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                                                ctx.beginPath();
+                                                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                                                ctx.fill();
+                                            }
+                                        });
+                                    }
+                                }
+                                
+                                // DOT DAMAGE: Every tick while inside
+                                this.dealElementalDamage(e, dotDamage, 'barrier', '#8b9dc3', false, 'dot');
+                            }
+                        }
+                        
+                        // Update tracked enemies (for next frame)
+                        this.barrierEnemies = currentBarrierEnemies;
+                    }
+                    
+                    // Projectile partial absorption (50% damage absorbed, 50% to shooter)
+                    // ONLY if projectile hits the PLAYER SHIP (16px radius), not the barrier area
+                    entities.enemyProjectiles.forEach(ep => {
+                        const dist = Math.sqrt((ep.x - this.x)**2 + (ep.y - this.y)**2);
+                        // Check against player ship hitbox (16px), NOT barrier radius
+                        if (dist < this.radius && !ep.barrierProcessed) {
+                            ep.barrierProcessed = true; // Mark as processed
+                            
+                            const originalDamage = ep.damage || 10;
+                            
+                            // Player takes 50% damage
+                            this.takeHit(originalDamage * 0.5);
+                            
+                            // Deal 50% damage back to the SHOOTER (not nearest enemy)
+                            if (ep.shooter && ep.shooter.hp > 0) {
+                                ep.shooter.takeDamage(originalDamage * 0.5, '#8b9dc3', false, 'normal', 'barrier', null);
+                                // Visual feedback on shooter
+                                createExplosion(ep.shooter.x, ep.shooter.y, '#8b9dc3', 10);
+                            }
+                            
+                            // Remove the projectile (absorbed)
+                            ep.life = 0;
+                            
+                            createExplosion(ep.x, ep.y, '#8b9dc3', 8);
+                        }
+                    });
+                    
+                    // Store barrier radius for visual
+                    this.barrierRadius = barrierRadius;
+                }
+                
+                // ORBITAL BLADESTORM (Reaper weapon) - Close-range melee + projectile throws
+                if (this.weapons.orbital > 0) {
+                    const numBlades = 5; // 5 blades for better coverage
+                    const innerRadius = 35; // Fixed inner radius - always this close to ship
+                    const baseOuterRadius = 55; // Base outer reach
+                    const maxOuterRadius = 150; // Max outer reach (increased)
+                    
+                    // Calculate outer radius - grows with area upgrades AND level
+                    const levelAreaBonus = this.weapons.orbital * 3; // +3px per weapon level (was 2)
+                    const outerRadius = Math.min(maxOuterRadius, baseOuterRadius + levelAreaBonus + (this.weaponStats.orbital.area - 1) * 20);
+                    
+                    // Blades orbit at outer radius (tips reach far, but collision starts closer)
+                    const orbitRadius = outerRadius;
+                    
+                    // Rotation speed - scales with rate AND level
+                    const levelBonus = 1 + (this.weapons.orbital * 0.15); // +15% per level
+                    const rotationSpeed = 0.1 * this.weaponStats.orbital.rate * levelBonus; // Faster base
+                    
+                    // Update rotation angle
+                    if (!this.orbitalAngle) this.orbitalAngle = 0;
+                    this.orbitalAngle += rotationSpeed * (dt / 16);
+                    
+                    // Blade length scales slightly with level
+                    const bladeLength = 30 + (this.weapons.orbital * 2); // +2px per level
+                    
+                    // Blade damage - buffed further
+                    const baseDamageMultiplier = 1.75; // Increased from 1.6
+                    const levelScaling = 1 + (this.weapons.orbital * 0.12); // +12% damage per level (was 10%)
+                    const bladeDamage = this.damage * baseDamageMultiplier * levelScaling * this.weaponStats.orbital.dmg;
+                    
+                    // BLADE THROWING MECHANIC - burst fire: 3 rapid shots, then pause
+                    if (!this.orbitalThrowTimer) this.orbitalThrowTimer = 0;
+                    if (!this.orbitalBurstCount) this.orbitalBurstCount = 0;
+                    
+                    const burstInterval = 9 / this.weaponStats.orbital.rate; // 0.15s between shots in burst
+                    const pauseInterval = 72 / this.weaponStats.orbital.rate; // 1.2s pause after burst
+                    const shotsPerBurst = 3;
+                    
+                    this.orbitalThrowTimer += dt / 16;
+                    
+                    // Check if we should fire
+                    let shouldFire = false;
+                    if (this.orbitalBurstCount < shotsPerBurst) {
+                        // In burst mode - fire rapidly
+                        if (this.orbitalThrowTimer >= burstInterval) {
+                            shouldFire = true;
+                            this.orbitalBurstCount++;
+                            this.orbitalThrowTimer = 0;
+                        }
+                    } else {
+                        // Burst complete - wait for pause
+                        if (this.orbitalThrowTimer >= pauseInterval) {
+                            shouldFire = true;
+                            this.orbitalBurstCount = 1; // Reset to 1 (we're firing the first of next burst)
+                            this.orbitalThrowTimer = 0;
+                        }
+                    }
+                    
+                    if (shouldFire) {
+                        // Find nearby enemies to target
+                        const maxThrowRange = 350 * this.weaponStats.orbital.area;
+                        const nearbyEnemies = entities.enemies.filter(e => {
+                            if (e.hp <= 0) return false;
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            return dist < maxThrowRange;
+                        });
+                        
+                        if (nearbyEnemies.length > 0) {
+                            // Pick random enemy to target
+                            const target = nearbyEnemies[Math.floor(Math.random() * nearbyEnemies.length)];
+                            
+                            // Calculate angle from ship to target
+                            const targetAngle = Math.atan2(target.y - this.y, target.x - this.x);
+                            
+                            // Spawn blade from the side of ship facing the target (at orbit radius)
+                            const spawnX = this.x + Math.cos(targetAngle) * orbitRadius;
+                            const spawnY = this.y + Math.sin(targetAngle) * orbitRadius;
+                            
+                            // Direction toward target (straight line from spawn to target)
+                            const dx = target.x - spawnX;
+                            const dy = target.y - spawnY;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            const dirX = dx / dist;
+                            const dirY = dy / dist;
+                            
+                            const speed = 8; // Medium speed projectile
+                            const vx = dirX * speed;
+                            const vy = dirY * speed;
+                            
+                            const bladeAngle = Math.atan2(vy, vx);
+                            
+                            entities.projectiles.push({
+                                x: spawnX,
+                                y: spawnY,
+                                vx: vx,
+                                vy: vy,
+                                damage: bladeDamage,
+                                life: 150,
+                                color: '#ff3333',
+                                source: 'orbital',
+                                pierceCount: 0,
+                                maxPierce: 3,
+                                hitEnemies: new Set(),
+                                distanceTraveled: 0,
+                                maxDistance: maxThrowRange,
+                                angle: bladeAngle,
+                                bladeLength: bladeLength,
+                                update() {
+                                    this.x += this.vx;
+                                    this.y += this.vy;
+                                    this.distanceTraveled += Math.sqrt(this.vx**2 + this.vy**2);
+                                    this.angle = Math.atan2(this.vy, this.vx);
+                                    this.life--;
+                                    
+                                    // Check for enemy hits - pierce up to 3 enemies
+                                    if (this.pierceCount < this.maxPierce) {
+                                        entities.enemies.forEach(e => {
+                                            if (e.hp <= 0 || this.hitEnemies.has(e.id)) return;
+                                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                                            if (dist < 18 + e.radius) { // Increased detection radius
+                                                this.hitEnemies.add(e.id);
+                                                this.pierceCount++;
+                                                
+                                                // Use dealElementalDamage for proper elemental procs
+                                                player.dealElementalDamage(e, this.damage, 'orbital', '#ff3333');
+                                                createExplosion(e.x, e.y, '#ff3333', 10);
+                                            }
+                                        });
+                                    }
+                                    
+                                    // Die after 3 hits OR max distance, whichever comes first
+                                    return this.life > 0 && this.distanceTraveled < this.maxDistance && this.pierceCount < this.maxPierce;
+                                },
+                                draw(ctx) {
+                                    ctx.save();
+                                    ctx.translate(this.x, this.y);
+                                    ctx.rotate(this.angle);
+                                    
+                                    const len = this.bladeLength * 0.6; // Smaller thrown blade
+                                    const wid = 8; // Narrower too
+                                    
+                                    // Triangle pointing forward
+                                    const tipX = len;
+                                    const tipY = 0;
+                                    const base1X = -len * 0.3;
+                                    const base1Y = wid / 2;
+                                    const base2X = -len * 0.3;
+                                    const base2Y = -wid / 2;
+                                    
+                                    // Dark red base
+                                    ctx.fillStyle = '#cc0000';
+                                    ctx.shadowBlur = 15;
+                                    ctx.shadowColor = '#ff0000';
+                                    ctx.beginPath();
+                                    ctx.moveTo(tipX, tipY);
+                                    ctx.lineTo(base1X, base1Y);
+                                    ctx.lineTo(base2X, base2Y);
+                                    ctx.closePath();
+                                    ctx.fill();
+                                    
+                                    // Bright red core
+                                    ctx.fillStyle = '#ff3333';
+                                    ctx.shadowBlur = 20;
+                                    ctx.shadowColor = '#ff3333';
+                                    ctx.beginPath();
+                                    ctx.moveTo(tipX * 0.7, tipY);
+                                    ctx.lineTo(base1X * 0.7, base1Y * 0.7);
+                                    ctx.lineTo(base2X * 0.7, base2Y * 0.7);
+                                    ctx.closePath();
+                                    ctx.fill();
+                                    
+                                    // Gold edge
+                                    ctx.strokeStyle = '#ffcc00';
+                                    ctx.lineWidth = 2;
+                                    ctx.shadowBlur = 15;
+                                    ctx.shadowColor = '#ffcc00';
+                                    ctx.beginPath();
+                                    ctx.moveTo(tipX, tipY);
+                                    ctx.lineTo(base1X, base1Y);
+                                    ctx.lineTo(base2X, base2Y);
+                                    ctx.closePath();
+                                    ctx.stroke();
+                                    
+                                    ctx.restore();
+                                }
+                            });
+                            
+                            // Visual effect - red flash at spawn
+                            createExplosion(spawnX, spawnY, '#ff3333', 8);
+                        }
+                    }
+                    
+                    // Initialize per-blade hit tracking on enemies if needed
+                    entities.enemies.forEach(e => {
+                        if (!e.orbitalBladeHits) e.orbitalBladeHits = {}; // Track last hit time per blade (in game milliseconds)
+                    });
+                    
+                    // Check each blade for collisions along their length
+                    for (let i = 0; i < numBlades; i++) {
+                        const bladeAngle = this.orbitalAngle + (Math.PI * 2 / numBlades) * i;
+                        
+                        // Blade extends from inner radius to outer radius
+                        const innerX = this.x + Math.cos(bladeAngle) * innerRadius;
+                        const innerY = this.y + Math.sin(bladeAngle) * innerRadius;
+                        const outerX = this.x + Math.cos(bladeAngle) * outerRadius;
+                        const outerY = this.y + Math.sin(bladeAngle) * outerRadius;
+                        
+                        entities.enemies.forEach(e => {
+                            if (e.hp <= 0) return;
+                            
+                            // Per-blade cooldown using game time (respects time dilation)
+                            const bladeKey = `blade_${i}`;
+                            const lastHitTime = e.orbitalBladeHits[bladeKey] || 0;
+                            const timeSinceLastHit = state.gameTime - lastHitTime;
+                            if (timeSinceLastHit < 333) return; // 333ms = 0.33 seconds, respects slow motion
+                            
+                            // Check distance to blade line segment (inner to outer)
+                            // Project enemy position onto blade line
+                            const dx = outerX - innerX;
+                            const dy = outerY - innerY;
+                            const length = Math.sqrt(dx * dx + dy * dy);
+                            const ex = e.x - innerX;
+                            const ey = e.y - innerY;
+                            
+                            // Dot product to find closest point on line
+                            const t = Math.max(0, Math.min(1, (ex * dx + ey * dy) / (length * length)));
+                            const closestX = innerX + t * dx;
+                            const closestY = innerY + t * dy;
+                            
+                            const dist = Math.sqrt((e.x - closestX)**2 + (e.y - closestY)**2);
+                            const bladeWidth = 15; // Hit detection width
+                            
+                            if (dist < bladeWidth + e.radius) {
+                                e.orbitalBladeHits[bladeKey] = state.gameTime; // Mark hit time in game milliseconds
+                                
+                                // Use dealElementalDamage for proper elemental procs
+                                this.dealElementalDamage(e, bladeDamage, 'orbital', '#ff3333');
+                                createExplosion(e.x, e.y, '#ff3333', 12);
+                                
+                                // Gold sparks
+                                for (let j = 0; j < 4; j++) {
+                                    const angle = Math.random() * Math.PI * 2;
+                                    entities.particles.push({
+                                        x: e.x,
+                                        y: e.y,
+                                        vx: Math.cos(angle) * 3,
+                                        vy: Math.sin(angle) * 3,
+                                        life: 12,
+                                        maxLife: 12,
+                                        color: '#ffcc00',
+                                        radius: 2,
+                                        update() { 
+                                            this.x += this.vx; 
+                                            this.y += this.vy;
+                                            this.vx *= 0.9;
+                                            this.vy *= 0.9;
+                                            this.life--; 
+                                            return this.life > 0; 
+                                        },
+                                        draw(ctx) {
+                                            const alpha = this.life / this.maxLife;
+                                            ctx.fillStyle = `rgba(255, 204, 0, ${alpha})`;
+                                            ctx.beginPath();
+                                            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                                            ctx.fill();
+                                        }
+                                    });
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Store for visual
+                    this.orbitalRadius = outerRadius; // Outer edge for blade positioning
+                    this.orbitalInnerRadius = innerRadius; // Inner edge (stays fixed)
+                    this.orbitalBladeCount = numBlades;
+                    this.orbitalBladeLength = bladeLength;
+                }
+                
 
             }
 
 
             getActiveWeaponCount() {
                 let c = 0; 
-                const keys = ['ion', 'turret', 'emp', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones'];
+                const keys = ['ion', 'turret', 'emp', 'barrier', 'orbital', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones'];
                 keys.forEach(k => { if(this.weapons[k] > 0) c++; });
                 return c;
             }
@@ -2928,6 +3578,7 @@
                             'ion': 1.4,        // Precision weapon
                             'turret': 1.4,     // Stationary weapon
                             'emp': 1.5,        // Control weapon with AOE
+                            'barrier': 1.3,    // Contact weapon (requires close range)
                             'beam': 1.6,       // Sustained damage weapon (plus multi-beam bonus)
                             'seeker': 1.5,     // Homing weapon
                             'railgun': 1.8,    // Anti-armor weapon
@@ -3363,6 +4014,190 @@
                      
                      ctx.restore();
                 }
+                
+                // KINETIC BARRIER VISUAL (Vanguard weapon)
+                if (this.weapons.barrier > 0 && this.barrierRadius) {
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    ctx.rotate(this.angle);
+                    
+                    const radius = this.barrierRadius;
+                    const octSegments = 8;
+                    
+                    // Speed-based brightness
+                    const currentSpeed = Math.sqrt(this.vx**2 + this.vy**2);
+                    const maxSpeed = this.speed * this.shipSpeedMult;
+                    const speedRatio = Math.min(1.0, currentSpeed / maxSpeed);
+                    
+                    // Steady pulse for subtle animation
+                    const pulseValue = (Math.sin(state.frameCount * 0.08) + 1) / 2;
+                    
+                    // UNIFIED GRADIENT: Bright edge → fades to center
+                    // Edge intensity based on speed
+                    const edgeIntensity = 0.3 + (speedRatio * 0.5) + (pulseValue * (0.05 + speedRatio * 0.15));
+                    const centerIntensity = 0.08 + (pulseValue * 0.06);
+                    
+                    // Create single unified octagon
+                    ctx.beginPath();
+                    for (let i = 0; i <= octSegments; i++) {
+                        const angle = (Math.PI * 2 / octSegments) * i;
+                        const x = Math.cos(angle) * radius;
+                        const y = Math.sin(angle) * radius;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    
+                    // Smooth radial gradient from edge to center
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+                    gradient.addColorStop(0, `rgba(139, 157, 195, ${centerIntensity})`); // Dim blue center
+                    gradient.addColorStop(0.5, `rgba(160, 180, 210, ${centerIntensity * 1.5})`); // Transition
+                    gradient.addColorStop(0.75, `rgba(192, 207, 224, ${edgeIntensity * 0.6})`); // Approaching edge
+                    gradient.addColorStop(0.9, `rgba(192, 207, 224, ${edgeIntensity * 0.85})`); // Near edge
+                    gradient.addColorStop(1, `rgba(192, 207, 224, ${edgeIntensity})`); // Bright edge
+                    
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                    
+                    // OUTER OCTAGONAL EDGE GLOW - intensifies with speed
+                    const edgeAlpha = 0.5 + (speedRatio * 0.4);
+                    const edgeBlur = 12 + (speedRatio * 18);
+                    
+                    ctx.strokeStyle = `rgba(192, 207, 224, ${edgeAlpha})`;
+                    ctx.lineWidth = 3 + (speedRatio * 2);
+                    ctx.shadowBlur = edgeBlur;
+                    ctx.shadowColor = `rgba(192, 207, 224, ${speedRatio * 0.9})`;
+                    
+                    ctx.beginPath();
+                    for (let i = 0; i <= octSegments; i++) {
+                        const angle = (Math.PI * 2 / octSegments) * i;
+                        const x = Math.cos(angle) * radius;
+                        const y = Math.sin(angle) * radius;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                }
+                
+                // ORBITAL BLADESTORM VISUAL (Reaper weapon) - Red sawblade with spiral
+                if (this.weapons.orbital > 0 && this.orbitalRadius) {
+                    ctx.save();
+                    
+                    const outerRadius = this.orbitalRadius;
+                    const innerRadius = this.orbitalInnerRadius || 35;
+                    const numBlades = this.orbitalBladeCount || 5;
+                    const angle = this.orbitalAngle || 0;
+                    const bladeLength = this.orbitalBladeLength || 30;
+                    
+                    for (let i = 0; i < numBlades; i++) {
+                        const bladeAngle = angle + (Math.PI * 2 / numBlades) * i;
+                        
+                        // Blade orbits at middle of collision range for best visual
+                        const orbitRadius = (innerRadius + outerRadius) / 2;
+                        const bladeX = this.x + Math.cos(bladeAngle) * orbitRadius;
+                        const bladeY = this.y + Math.sin(bladeAngle) * orbitRadius;
+                        
+                        // MIRRORED blade - wide end OUTWARD, tip INWARD
+                        const bladeWidth = 14; // Width at outer end
+                        
+                        // MORE EXTREME SPIRAL ANGLE - 35 degrees outward
+                        const spiralAngle = 0.61; // ~35 degrees in radians
+                        const rotationDirection = bladeAngle + Math.PI / 2 + spiralAngle;
+                        const radialDirection = bladeAngle;
+                        
+                        // MIRRORED triangle vertices - tip points INWARD (toward ship)
+                        const tipX = bladeX - Math.cos(rotationDirection) * bladeLength; // INWARD
+                        const tipY = bladeY - Math.sin(rotationDirection) * bladeLength;
+                        
+                        // Wide base at OUTER edge
+                        const base1X = bladeX + Math.cos(radialDirection) * bladeWidth / 2;
+                        const base1Y = bladeY + Math.sin(radialDirection) * bladeWidth / 2;
+                        const base2X = bladeX - Math.cos(radialDirection) * bladeWidth / 2;
+                        const base2Y = bladeY - Math.sin(radialDirection) * bladeWidth / 2;
+                        
+                        // RED TRAIL - more prominent
+                        const trailDirection = rotationDirection + Math.PI;
+                        
+                        for (let t = 0; t < 5; t++) {
+                            const trailFade = (1 - t / 5);
+                            const trailAlpha = 0.5 * trailFade;
+                            const trailScale = 0.4 + trailFade * 0.6;
+                            
+                            const trailCenterX = bladeX + Math.cos(trailDirection) * (t + 1) * 8;
+                            const trailCenterY = bladeY + Math.sin(trailDirection) * (t + 1) * 8;
+                            
+                            // Mirrored trail triangles
+                            const tTipX = trailCenterX - Math.cos(rotationDirection) * bladeLength * trailScale;
+                            const tTipY = trailCenterY - Math.sin(rotationDirection) * bladeLength * trailScale;
+                            const tBase1X = trailCenterX + Math.cos(radialDirection) * bladeWidth / 2 * trailScale;
+                            const tBase1Y = trailCenterY + Math.sin(radialDirection) * bladeWidth / 2 * trailScale;
+                            const tBase2X = trailCenterX - Math.cos(radialDirection) * bladeWidth / 2 * trailScale;
+                            const tBase2Y = trailCenterY - Math.sin(radialDirection) * bladeWidth / 2 * trailScale;
+                            
+                            // Alternate red and gold
+                            const isRed = t % 2 === 0;
+                            ctx.fillStyle = isRed ? `rgba(255, 51, 51, ${trailAlpha})` : `rgba(255, 204, 0, ${trailAlpha})`;
+                            ctx.shadowBlur = 15;
+                            ctx.shadowColor = isRed ? `rgba(255, 51, 51, ${trailAlpha})` : `rgba(255, 204, 0, ${trailAlpha})`;
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(tTipX, tTipY);
+                            ctx.lineTo(tBase1X, tBase1Y);
+                            ctx.lineTo(tBase2X, tBase2Y);
+                            ctx.closePath();
+                            ctx.fill();
+                        }
+                        
+                        // DARK RED BASE
+                        ctx.fillStyle = '#cc0000';
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = '#ff0000';
+                        ctx.beginPath();
+                        ctx.moveTo(tipX, tipY);
+                        ctx.lineTo(base1X, base1Y);
+                        ctx.lineTo(base2X, base2Y);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // BRIGHT RED CORE - smaller inner triangle
+                        const innerScale = 0.7;
+                        const iTipX = bladeX - Math.cos(rotationDirection) * bladeLength * innerScale;
+                        const iTipY = bladeY - Math.sin(rotationDirection) * bladeLength * innerScale;
+                        const iBase1X = bladeX + Math.cos(radialDirection) * bladeWidth / 2 * innerScale;
+                        const iBase1Y = bladeY + Math.sin(radialDirection) * bladeWidth / 2 * innerScale;
+                        const iBase2X = bladeX - Math.cos(radialDirection) * bladeWidth / 2 * innerScale;
+                        const iBase2Y = bladeY - Math.sin(radialDirection) * bladeWidth / 2 * innerScale;
+                        
+                        ctx.fillStyle = '#ff3333';
+                        ctx.shadowBlur = 30;
+                        ctx.shadowColor = '#ff3333';
+                        ctx.beginPath();
+                        ctx.moveTo(iTipX, iTipY);
+                        ctx.lineTo(iBase1X, iBase1Y);
+                        ctx.lineTo(iBase2X, iBase2Y);
+                        ctx.closePath();
+                        ctx.fill();
+                        
+                        // GOLD EDGE accent
+                        ctx.strokeStyle = '#ffcc00';
+                        ctx.lineWidth = 2;
+                        ctx.shadowBlur = 25;
+                        ctx.shadowColor = '#ffcc00';
+                        ctx.beginPath();
+                        ctx.moveTo(tipX, tipY);
+                        ctx.lineTo(base1X, base1Y);
+                        ctx.lineTo(base2X, base2Y);
+                        ctx.closePath();
+                        ctx.stroke();
+                    }
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
+                }
 
 
                 if (this.invulnTimer > 0 && Math.floor(state.frameCount / 4) % 2 === 0) return;
@@ -3593,8 +4428,9 @@
                 }
                 
                 // SHIELD GLOW INDICATOR - Visible soft glow when at least one shield is up
-                const hasShield = this.shield1 > 0 || this.shield2 > 0;
-                if (hasShield) {
+                // Shield glow - only show when at least 1 shield is FULL (100%) AND not Reaper
+                const hasFullShield = (this.shield1 >= 100 || this.shield2 >= 100 || this.shield3 >= 100) && this.selectedShip !== 'REAPER';
+                if (hasFullShield) {
                     const pulseIntensity = 0.7 + Math.sin(state.frameCount * 0.08) * 0.3;
                     const glowRadius = 28;
                     
@@ -3613,7 +4449,110 @@
                 ctx.rotate(this.angle);
                 
                 // Draw ship based on selectedShip
-                if (this.selectedShip === 'ENGINEER') {
+                if (this.selectedShip === 'VANGUARD') {
+                    // VANGUARD - Heavy armored OCTAGON with steel/silver armor
+                    ctx.scale(1.4, 1.4); // 40% larger - heavy ship
+                    ctx.fillStyle = '#2a3845';
+                    ctx.strokeStyle = '#8b9dc3';
+                    ctx.lineWidth = 3;
+                    ctx.shadowBlur = 12;
+                    ctx.shadowColor = '#5b7ba8';
+                    
+                    // Main OCTAGONAL armored body (8 sides)
+                    ctx.beginPath();
+                    for (let i = 0; i < 8; i++) {
+                        const angle = (Math.PI / 4) * i;
+                        const x = Math.cos(angle) * 10;
+                        const y = Math.sin(angle) * 10;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Front armor wedge (bright steel)
+                    ctx.fillStyle = '#c0cfe0';
+                    ctx.beginPath();
+                    ctx.moveTo(13, 0);
+                    ctx.lineTo(6, -4);
+                    ctx.lineTo(6, 4);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Shield emitter nodes (4 cardinal points - blue glow)
+                    const nodePositions = [0, 2, 4, 6]; // Right, top, left, bottom
+                    nodePositions.forEach(i => {
+                        const angle = (Math.PI / 4) * i;
+                        const nx = Math.cos(angle) * 8;
+                        const ny = Math.sin(angle) * 8;
+                        
+                        ctx.fillStyle = '#5b9bd5';
+                        ctx.shadowBlur = 10;
+                        ctx.beginPath();
+                        ctx.arc(nx, ny, 2.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    });
+                    
+                    // Core glow (steel/blue)
+                    ctx.fillStyle = '#8b9dc3';
+                    ctx.shadowBlur = 15;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                } else if (this.selectedShip === 'REAPER') {
+                    // REAPER - Glass cannon aggressive design with red/gold
+                    ctx.scale(1.2, 1.2); // 20% larger - menacing presence
+                    ctx.fillStyle = '#2a0a0a';
+                    ctx.strokeStyle = '#ff3333';
+                    ctx.lineWidth = 2.5;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ff3333';
+                    
+                    // Sharp aggressive wedge body
+                    ctx.beginPath();
+                    ctx.moveTo(14, 0);      // Sharp front
+                    ctx.lineTo(-5, 7);      // Bottom wing
+                    ctx.lineTo(-8, 5);      // Bottom back
+                    ctx.lineTo(-6, 0);      // Center back
+                    ctx.lineTo(-8, -5);     // Top back
+                    ctx.lineTo(-5, -7);     // Top wing
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Gold accent blades
+                    ctx.strokeStyle = '#ffcc00';
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#ffcc00';
+                    ctx.shadowBlur = 12;
+                    ctx.beginPath();
+                    ctx.moveTo(10, 0);
+                    ctx.lineTo(4, -5);
+                    ctx.stroke();
+                    ctx.beginPath();
+                    ctx.moveTo(10, 0);
+                    ctx.lineTo(4, 5);
+                    ctx.stroke();
+                    
+                    // Red energy core
+                    ctx.fillStyle = '#ff6666';
+                    ctx.shadowBlur = 18;
+                    ctx.shadowColor = '#ff3333';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Gold engine glow
+                    ctx.fillStyle = '#ffcc00';
+                    ctx.shadowBlur = 12;
+                    ctx.shadowColor = '#ffcc00';
+                    ctx.beginPath();
+                    ctx.arc(-5, 0, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                } else if (this.selectedShip === 'ENGINEER') {
                     // ENGINEER - Hexagonal/industrial design with orange accents (LARGER)
                     ctx.scale(1.3, 1.3); // 30% larger
                     ctx.fillStyle = '#2a2511';
@@ -3715,6 +4654,7 @@
 
         class Enemy {
             constructor(type) {
+                this.id = nextEnemyId++; // Assign unique ID
                 const angle = seededRandom() * Math.PI * 2;
                 const dist = width/state.zoom/2 + 50 + seededRandom() * 100; 
                 this.x = player.x + Math.cos(angle) * dist; this.y = player.y + Math.sin(angle) * dist;
@@ -3937,6 +4877,11 @@
                 // Boss Damage Resistance: Bosses take 35% less damage from all sources
                 if (this.type === 'boss') {
                     amt *= 0.65;
+                }
+                
+                // CHAMPION ELEMENTAL RESISTANCE: Champions take 40% less damage from elemental DOT effects
+                if (this.isChampion && elementType && ['fire', 'ice', 'volt', 'bio', 'hack'].includes(elementType)) {
+                    amt *= 0.6; // 40% reduction
                 }
                 
                 // Ionization: Enemies hit by Ion take +30% damage from all sources
@@ -6786,11 +7731,13 @@
                     if (this.type === 'xp') gainXp(this.val);
                     if (this.type === 'health') { player.heal(30, true); } // Reduced from 50 to 30 
                     if (this.type === 'shield_cell') { 
-                        // Instantly restore one full shield bar (prioritize depleted bars)
+                        // Instantly restore one full shield bar (prioritize depleted bars left to right)
                         if (player.shield1 < 100) {
                             player.shield1 = 100;
                         } else if (player.shield2 < 100) {
                             player.shield2 = 100;
+                        } else if (player.shield3 < 100) {
+                            player.shield3 = 100; // Vanguard's 3rd shield
                         }
                         // Visual/audio feedback
                         createExplosion(player.x, player.y, '#00d1b2', 20);
@@ -7446,7 +8393,10 @@
 
                 addStat('LEVEL', state.level);
                 addStat('HP', `${Math.floor(player.hp)} / ${Math.floor(player.maxHp)}`, player.maxHp > 150);
-                addStat('DAMAGE', `+${Math.round((player.damage/15 - 1)*100)}%`, player.damage > 15);
+                // Show damage relative to THIS ship's base (15 * shipDamageMult)
+                const shipBaseDamage = 15 * player.shipDamageMult;
+                const damageIncrease = Math.round((player.damage / shipBaseDamage - 1) * 100);
+                addStat('DAMAGE', `+${damageIncrease}%`, player.damage > shipBaseDamage);
                 const cdr = Math.round((1 - (player.fireRate / 500)) * 100); // Base is 500
                 addStat('COOLDOWN REDUCTION', `${cdr > 0 ? '-' : ''}${cdr}%`, cdr !== 0); // Don't highlight at 0%
                 addStat('ARMOR', player.armor, player.armor > 20);
@@ -7783,35 +8733,33 @@
                 ctx.translate(edgeX, edgeY);
                 ctx.rotate(angle);
                 
-                // Pulsing orange champion indicator (larger and more distinct)
+                // LARGER more obvious champion indicator with skull
                 const pulse = 0.7 + Math.sin(state.frameCount * 0.15) * 0.3;
                 
-                // Outer glow
-                ctx.shadowBlur = 25 * pulse;
-                ctx.shadowColor = '#ff6600';
+                // Much larger outer glow
+                ctx.shadowBlur = 40 * pulse;
+                ctx.shadowColor = '#ff3300';
                 
-                // Large triangle (champion indicator)
-                ctx.fillStyle = `rgba(255, 102, 0, ${0.9 * pulse})`;
+                // LARGER triangle (champion indicator) - 50% bigger
+                ctx.fillStyle = `rgba(255, 51, 0, ${0.95 * pulse})`;
                 ctx.beginPath();
-                ctx.moveTo(20, 0);
-                ctx.lineTo(-12, -14);
-                ctx.lineTo(-12, 14);
+                ctx.moveTo(30, 0); // Was 20
+                ctx.lineTo(-18, -21); // Was -12, -14
+                ctx.lineTo(-18, 21);
                 ctx.closePath();
                 ctx.fill();
                 
-                // Bright outline
+                // Bright outline - thicker
                 ctx.strokeStyle = '#ffaa00';
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 4; // Was 3
                 ctx.stroke();
                 
-                // Inner accent
-                ctx.fillStyle = '#ffcc00';
-                ctx.beginPath();
-                ctx.moveTo(14, 0);
-                ctx.lineTo(-6, -8);
-                ctx.lineTo(-6, 8);
-                ctx.closePath();
-                ctx.fill();
+                // Skull icon in center
+                ctx.fillStyle = '#ffffff';
+                ctx.font = 'bold 18px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('☠', 0, 0); // Skull emoji
                 
                 ctx.shadowBlur = 0;
                 ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -8176,7 +9124,7 @@
             entities.projectiles = entities.projectiles.filter(p => {
                 const active = p.update(scaledDt);
                 if(!active) return false;
-                if (p.type !== 'meteor_warning' && p.type !== 'mine' && p.type !== 'grenade' && p.type !== 'railgun' && p.type !== 'flak_shell' && p.type !== 'bio_spore' && p.type !== 'ricochet') {
+                if (p.type !== 'meteor_warning' && p.type !== 'mine' && p.type !== 'grenade' && p.type !== 'railgun' && p.type !== 'flak_shell' && p.type !== 'bio_spore' && p.type !== 'ricochet' && p.source !== 'orbital') {
                     let hit = false;
                     // Optimize: only check enemies that could possibly collide
                     for(let e of entities.enemies) {
@@ -8238,7 +9186,8 @@
             // Faster early game: reduced XP for levels 1-5
             if (state.level < 5) nextCurve = 8 + (state.level * 6); // 14, 20, 26, 32 (was 20, 30, 40, 50)
             else if (state.level < 10) nextCurve = 10 + (state.level * 10); // 60, 70, 80, 90, 100
-            else nextCurve = 110 + ((state.level - 10) * 15); 
+            else if (state.level < 30) nextCurve = 110 + ((state.level - 10) * 15); // Linear through level 30
+            else nextCurve = 410 + ((state.level - 30) * 25); // Steeper after level 30: +25 per level (was +15) 
 
 
             if(state.xp >= state.xpToNext) {
@@ -8900,42 +9849,77 @@
             hpTextEl.innerText = `${currentHp} / ${Math.ceil(player.maxHp)}`;
             
             // Update shield orbs based on charge level
-            // Note: Shield 2 is RIGHT orb, Shield 1 is LEFT orb (depletes right to left)
+            // Note: Shields deplete right to left (shield3 → shield2 → shield1)
             const orb1 = document.getElementById('shield-orb-1'); // LEFT
-            const orb2 = document.getElementById('shield-orb-2'); // RIGHT
+            const orb2 = document.getElementById('shield-orb-2'); // MIDDLE
+            const orb3 = document.getElementById('shield-orb-3'); // RIGHT (Vanguard only)
             
-            // Left orb (shield1)
-            if (player.shield1 >= 100) {
-                orb1.style.color = '#00d1b2';
-                orb1.style.filter = 'drop-shadow(0 0 8px #00d1b2)';
-                orb1.style.opacity = '1';
-            } else if (player.shield1 > 0) {
-                // Charging - slightly dimmed with reduced glow
-                orb1.style.color = '#00d1b2';
-                orb1.style.filter = 'drop-shadow(0 0 3px #00d1b2)';
-                orb1.style.opacity = '0.6';
+            // Hide ALL shield icons for Reaper (no shields)
+            if (player.selectedShip === 'REAPER') {
+                orb1.style.display = 'none';
+                orb2.style.display = 'none';
+                orb3.style.display = 'none';
             } else {
-                // Empty
-                orb1.style.color = 'rgba(0,209,178,0.3)';
-                orb1.style.filter = 'none';
-                orb1.style.opacity = '0.3';
-            }
-            
-            // Right orb (shield2) - depletes first
-            if (player.shield2 >= 100) {
-                orb2.style.color = '#00d1b2';
-                orb2.style.filter = 'drop-shadow(0 0 8px #00d1b2)';
-                orb2.style.opacity = '1';
-            } else if (player.shield2 > 0) {
-                // Charging - slightly dimmed with reduced glow
-                orb2.style.color = '#00d1b2';
-                orb2.style.filter = 'drop-shadow(0 0 3px #00d1b2)';
-                orb2.style.opacity = '0.6';
-            } else {
-                // Empty
-                orb2.style.color = 'rgba(0,209,178,0.3)';
-                orb2.style.filter = 'none';
-                orb2.style.opacity = '0.3';
+                orb1.style.display = 'inline-block';
+                orb2.style.display = 'inline-block';
+                
+                // Show/hide 3rd orb based on ship
+                if (player.selectedShip === 'VANGUARD') {
+                    orb3.style.display = 'inline-block';
+                } else {
+                    orb3.style.display = 'none';
+                }
+                
+                // Left orb (shield1)
+                if (player.shield1 >= 100) {
+                    orb1.style.color = '#00d1b2';
+                    orb1.style.filter = 'drop-shadow(0 0 8px #00d1b2)';
+                    orb1.style.opacity = '1';
+                } else if (player.shield1 > 0) {
+                    // Charging - slightly dimmed with reduced glow
+                    orb1.style.color = '#00d1b2';
+                    orb1.style.filter = 'drop-shadow(0 0 3px #00d1b2)';
+                    orb1.style.opacity = '0.6';
+                } else {
+                    // Empty
+                    orb1.style.color = 'rgba(0,209,178,0.3)';
+                    orb1.style.filter = 'none';
+                    orb1.style.opacity = '0.3';
+                }
+                
+                // Middle orb (shield2)
+                if (player.shield2 >= 100) {
+                    orb2.style.color = '#00d1b2';
+                    orb2.style.filter = 'drop-shadow(0 0 8px #00d1b2)';
+                    orb2.style.opacity = '1';
+                } else if (player.shield2 > 0) {
+                    // Charging - slightly dimmed with reduced glow
+                    orb2.style.color = '#00d1b2';
+                    orb2.style.filter = 'drop-shadow(0 0 3px #00d1b2)';
+                    orb2.style.opacity = '0.6';
+                } else {
+                    // Empty
+                    orb2.style.color = 'rgba(0,209,178,0.3)';
+                    orb2.style.filter = 'none';
+                    orb2.style.opacity = '0.3';
+                }
+                
+                // Right orb (shield3, Vanguard only) - depletes first
+                if (player.shield3 >= 100) {
+                    orb3.style.color = '#00d1b2';
+                    orb3.style.filter = 'drop-shadow(0 0 8px #00d1b2)';
+                    orb3.style.opacity = '1';
+                } else if (player.shield3 > 0) {
+                    // Charging - slightly dimmed with reduced glow
+                    orb3.style.color = '#00d1b2';
+                    orb3.style.filter = 'drop-shadow(0 0 3px #00d1b2)';
+                    orb3.style.opacity = '0.6';
+                } else {
+                    // Empty
+                    orb3.style.color = 'rgba(0,209,178,0.3)';
+                    orb3.style.filter = 'none';
+                    orb3.style.opacity = '0.3';
+                }
             }
             
             document.getElementById('xp-bar').style.width = `${xpPct}%`;
@@ -9109,6 +10093,8 @@
                 'ion': 'Ion Cannon',
                 'turret': 'Auto-Turret',
                 'emp': 'EMP Pulse',
+                'barrier': 'Kinetic Barrier',
+                'orbital': 'Orbital Bladestorm',
                 'beam': 'Plasma Beam',
                 'seeker': 'Seeker Missiles',
                 'rad': 'Radiation Field',
@@ -9441,7 +10427,9 @@
         const ships = [
             shipDataMap['PATHFINDER'],
             shipDataMap['ENGINEER'],
-            shipDataMap['DISRUPTOR']
+            shipDataMap['DISRUPTOR'],
+            shipDataMap['VANGUARD'],
+            shipDataMap['REAPER']
         ];
         console.log('Ships defined:', ships.length, 'ships');
         
@@ -9554,6 +10542,106 @@
                 ctx.beginPath();
                 ctx.arc(0, 0, 4, 0, Math.PI * 2);
                 ctx.fill();
+                
+            } else if (ship.name === 'VANGUARD') {
+                // VANGUARD - Octagonal Heavy Tank (Steel/Silver Armor)
+                
+                // Octagonal armored body (8 sides, not hexagon like Engineer)
+                ctx.fillStyle = '#2a3845';
+                ctx.strokeStyle = '#8b9dc3';
+                ctx.lineWidth = 3;
+                ctx.shadowColor = '#5b7ba8';
+                ctx.shadowBlur = 15;
+                ctx.beginPath();
+                for (let i = 0; i < 8; i++) {
+                    const angle = (Math.PI / 4) * i;
+                    const x = Math.cos(angle) * 9;
+                    const y = Math.sin(angle) * 9;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Front armor wedge (bright steel)
+                ctx.fillStyle = '#c0cfe0';
+                ctx.beginPath();
+                ctx.moveTo(11, 0);
+                ctx.lineTo(6, -3);
+                ctx.lineTo(6, 3);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Shield emitter nodes (4 corners - blue glow)
+                const nodeAngles = [Math.PI/4, 3*Math.PI/4, 5*Math.PI/4, 7*Math.PI/4];
+                nodeAngles.forEach(angle => {
+                    const nx = Math.cos(angle) * 7;
+                    const ny = Math.sin(angle) * 7;
+                    ctx.fillStyle = '#5b9bd5';
+                    ctx.shadowBlur = 12;
+                    ctx.beginPath();
+                    ctx.arc(nx, ny, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+                
+                // Steel/blue core
+                ctx.fillStyle = '#8b9dc3';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#5b7ba8';
+                ctx.beginPath();
+                ctx.arc(0, 0, 4, 0, Math.PI * 2);
+                ctx.fill();
+                
+            } else if (ship.name === 'REAPER') {
+                // REAPER - Aggressive Glass Cannon (Red/Gold)
+                
+                // Main body - aggressive wedge
+                ctx.fillStyle = '#4a1111';
+                ctx.strokeStyle = '#ff3333';
+                ctx.lineWidth = 2.5;
+                ctx.shadowColor = '#ff3333';
+                ctx.shadowBlur = 15;
+                ctx.beginPath();
+                ctx.moveTo(16, 0);     // Sharp aggressive front
+                ctx.lineTo(-4, 6);     // Bottom wing
+                ctx.lineTo(-8, 4);     // Bottom back
+                ctx.lineTo(-6, 0);     // Center back
+                ctx.lineTo(-8, -4);    // Top back
+                ctx.lineTo(-4, -6);    // Top wing
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                
+                // Gold accent blades
+                ctx.strokeStyle = '#ffcc00';
+                ctx.lineWidth = 2;
+                ctx.shadowColor = '#ffcc00';
+                ctx.shadowBlur = 10;
+                ctx.beginPath();
+                ctx.moveTo(12, 0);
+                ctx.lineTo(6, -4);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(12, 0);
+                ctx.lineTo(6, 4);
+                ctx.stroke();
+                
+                // Red energy core
+                ctx.fillStyle = '#ff6666';
+                ctx.shadowBlur = 20;
+                ctx.shadowColor = '#ff3333';
+                ctx.beginPath();
+                ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Gold engine glow
+                ctx.fillStyle = '#ffcc00';
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ffcc00';
+                ctx.beginPath();
+                ctx.arc(-5, 0, 2, 0, Math.PI * 2);
+                ctx.fill();
             }
             
             ctx.shadowBlur = 0;
@@ -9580,8 +10668,19 @@
                     } else {
                         // Check if unlock requirements are met
                         const coresUnlocked = nexusCores >= ship.unlockCores;
-                        const levelUnlocked = highestLevel >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
-                        ship.canUnlock = coresUnlocked && levelUnlocked;
+                        
+                        // Check achievement requirement (level OR runs)
+                        let achievementUnlocked = false;
+                        if (ship.unlockAchievement.includes('Level')) {
+                            // Level requirement
+                            achievementUnlocked = highestLevel >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
+                        } else if (ship.unlockAchievement.includes('Runs')) {
+                            // Run count requirement
+                            const totalRuns = parseInt(localStorage.getItem('neonrogue_totalRuns') || '0');
+                            achievementUnlocked = totalRuns >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
+                        }
+                        
+                        ship.canUnlock = coresUnlocked && achievementUnlocked;
                         // Ship stays locked until player manually unlocks it (and spends cores)
                         if (ship.locked === undefined) ship.locked = true; // Default to locked
                     }
@@ -9591,11 +10690,27 @@
         
         // Unlock a ship (spend cores)
         function unlockShip(ship) {
-            if (!ship.canUnlock) return;
+            // Double check unlock availability
+            const nexusCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+            const highestLevel = parseInt(localStorage.getItem('neonrogue_highestLevel') || '0');
+            const totalRuns = parseInt(localStorage.getItem('neonrogue_totalRuns') || '0');
+            const coresUnlocked = nexusCores >= ship.unlockCores;
+            
+            // Check achievement requirement (level OR runs)
+            let achievementUnlocked = false;
+            if (ship.unlockAchievement.includes('Level')) {
+                achievementUnlocked = highestLevel >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
+            } else if (ship.unlockAchievement.includes('Runs')) {
+                achievementUnlocked = totalRuns >= parseInt(ship.unlockAchievement.match(/\d+/)[0]);
+            }
+            
+            if (!coresUnlocked || !achievementUnlocked) {
+                alert('Requirements not met!');
+                return;
+            }
             
             // Deduct cores
-            const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
-            const newCores = currentCores - ship.unlockCores;
+            const newCores = nexusCores - ship.unlockCores;
             localStorage.setItem('neonrogue_nexusCores', newCores.toString());
             
             // Unlock ship
@@ -9632,8 +10747,24 @@
                     ${canUnlock ? `<button onclick="unlockShip(ships[${currentShipIndex}])" class="mt-2 px-4 py-2 bg-teal-500 hover:bg-teal-600 text-white rounded font-bold">UNLOCK (Spend ${ship.unlockCores} Cores)</button>` : ''}
                 `;
             } else {
+                // Determine shield count for display
+                let shieldCount = 2; // Default for Pathfinder/Engineer
+                if (ship.name === 'DISRUPTOR') shieldCount = 1;
+                else if (ship.name === 'VANGUARD') shieldCount = 3;
+                else if (ship.name === 'REAPER') shieldCount = 0;
+                
+                // Generate shield icons
+                let shieldIcons = '';
+                for (let i = 0; i < shieldCount; i++) {
+                    shieldIcons += '<i class="fas fa-shield-alt" style="color: #00d1b2; font-size: 10px;"></i> ';
+                }
+                if (shieldCount === 0) {
+                    shieldIcons = '<span class="text-red-400">NONE</span>';
+                }
+                
                 document.getElementById('ship-stats').innerHTML = `
                     <div>HP: <span class="text-white">${ship.hp}</span> • DMG: <span class="text-white">${ship.dmg}</span> • SPD: <span class="text-white">${ship.spd}</span></div>
+                    <div>SHIELDS: ${shieldIcons}</div>
                     <div>WEAPON: <span class="text-teal-400">${ship.weapon}</span></div>
                 `;
             }
