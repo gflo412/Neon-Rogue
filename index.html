@@ -556,9 +556,9 @@
                     <span class="inline-block skew-x-[10deg]">DEPLOY</span>
                 </button>
                 
-                <button id="boss-test-toggle" class="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-purple-400 text-sm font-bold py-2 rounded transition-all border border-gray-700">
+                <!-- <button id="boss-test-toggle" class="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-purple-400 text-sm font-bold py-2 rounded transition-all border border-gray-700">
                     <i class="fas fa-skull mr-2"></i>BOSS TEST: <span id="boss-test-status">OFF</span>
-                </button>
+                </button> -->
                 
                 <button id="view-stats-btn" class="bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-teal-400 text-sm font-bold py-2 rounded transition-all border border-gray-700">
                     <i class="fas fa-chart-bar mr-2"></i>VIEW STATS
@@ -688,8 +688,12 @@
                 <div class="g-desc">Permanent currency earned from runs. Each boss drops 1 core. Higher scores and longer survival yield more cores. Used to unlock new ships.</div>
             </div>
             <div class="glossary-item">
+                <div class="g-title"><i class="fas fa-atom text-[#ff00ff]"></i> QUANTUM SINGULARITIES</div>
+                <div class="g-desc">Ultra-rare drops from Nexus Prime, the final boss. These singularities contain condensed power from the core of the Nexus network.</div>
+            </div>
+            <div class="glossary-item">
                 <div class="g-title"><i class="fas fa-cog text-[#fbbf24]"></i> MODS</div>
-                <div class="g-desc">Powerful modifiers that drop from bosses. Choose one of three offered. Examples: Repulsor (pushback aura), Cascade (multistrike chains), Temporal Shift (slow-motion on hit).</div>
+                <div class="g-desc">Powerful passive buffs or abilities. Each Titan champion drops 1 mod crate, giving you a choice of 2 random mods. Examples: Repulsor (pushback aura), Cascade (multistrike chains), Temporal Shift (slow-motion on hit).</div>
             </div>
         </div>
         <button onclick="closeGlossary()" class="mt-6 text-gray-400 hover:text-white border border-gray-600 px-6 py-2 rounded">BACK</button>
@@ -12288,10 +12292,9 @@
                          desc: 'Unlock Multistrike: Active weapons gain a chance to fire twice.',
                          icon: 'fa-bolt',
                          offensive: true,
-                         rarity: 'rare' // Force rare (blue) rarity
+                         rarity: 'epic' // Force epic (purple) rarity
                      };
-                     // Add 3 times (30% as likely as normal options which appear 10 times)
-                     pool.push(multiUnlock);
+                     // Add 2 times (20% as likely as normal options which appear 10 times)
                      pool.push(multiUnlock);
                      pool.push(multiUnlock);
                  }
