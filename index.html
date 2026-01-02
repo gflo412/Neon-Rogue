@@ -1939,8 +1939,8 @@
                             let bestTarget;
                             let clusterEnemies;
                             
-                            // Check for boss shields FIRST (highest priority)
-                            const bossShields = visibleEnemies.filter(e => e.isBossShield && (!e.spawnInvuln || e.spawnInvuln <= 0));
+                            // Check for boss shields FIRST (highest priority) - exclude destroyed shields
+                            const bossShields = visibleEnemies.filter(e => e.isBossShield && e.active && e.hp > 0 && (!e.spawnInvuln || e.spawnInvuln <= 0));
                             const champions = visibleEnemies.filter(e => e.isChampion);
                             
                             if (bossShields.length > 0) {
@@ -4012,6 +4012,7 @@
                                 
                                 if (shield.hp <= 0) {
                                     shield.hp = 0;
+                                    shield.active = false; // Mark as inactive so it won't be targeted
                                     createExplosion(sx, sy, '#00d1b2', 30);
                                     // Bullet spread on destruction
                                     for (let i = 0; i < 12; i++) {
@@ -9874,6 +9875,11 @@
         function triggerNexusPrime() {
             console.log('NEXUS PRIME TRIGGERED - Level 50 Boss Fight!');
             
+            // Capture player position NOW before any delays
+            const spawnX = player.x;
+            const spawnY = player.y;
+            console.log('Captured spawn position:', spawnX, spawnY);
+            
             // Make enemies retreat
             entities.enemies.forEach(e => {
                 e.retreating = true;
@@ -9888,9 +9894,9 @@
                 entities.enemies = entities.enemies.filter(e => e.type === 'drone' && e.isPlayerDrone);
                 showBossWarning();
                 
-                // After warning (1 second), spawn boss
+                // After warning (1 second), spawn boss at captured position
                 setTimeout(() => {
-                    spawnNexusPrime();
+                    spawnNexusPrime(spawnX, spawnY);
                 }, 1000);
             }, 500);
         }
@@ -9912,16 +9918,22 @@
             }, 3000);
         }
         
-        function spawnNexusPrime() {
+        function spawnNexusPrime(spawnX, spawnY) {
             console.log('===== SPAWNING NEXUS PRIME =====');
-            console.log('Player position:', player.x, player.y);
+            
+            // Use provided spawn position, or default to current player position
+            const bossX = spawnX !== undefined ? spawnX : player.x;
+            const bossY = spawnY !== undefined ? spawnY : player.y + 200;
+            
+            console.log('Boss spawn position:', bossX, bossY);
+            console.log('Current player position:', player.x, player.y);
             
             // Gradually zoom out camera for boss fight
             state.targetZoom = 0.60; // Zoom out from 0.70 to 0.60
             
             const boss = {
-                x: player.x,
-                y: player.y + 200, // Closer to player (was 300, originally 150)
+                x: bossX,
+                y: bossY + 200, // Spawn 200 units below spawn position
                 vx: 0,
                 vy: 0,
                 type: 'nexus_prime',
@@ -9936,7 +9948,7 @@
                 coreVulnerable: false,
                 vulnerabilityTimer: 0,
                 attackTimer: 120,
-                turretSpawnTimer: 420, // Spawn turrets every 7 seconds in Phase 1
+                turretSpawnTimer: 360, // Spawn turrets every 6 seconds in Phase 1 (was 420/7s)
                 nextAttack: null,
                 // Dummy methods so boss doesn't crash in enemy filter
                 update() { /* Boss updates happen in special isNexusPrime block */ },
@@ -10086,8 +10098,8 @@
                     vy: 0,
                     type: 'boss_turret',
                     isBossTurret: true,
-                    maxHp: 200,
-                    hp: 200,
+                    maxHp: 300, // Increased from 200
+                    hp: 300,
                     radius: 15,
                     flash: 0,
                     fireTimer: 60,
@@ -10145,7 +10157,7 @@
                     active: true,
                     angle: playerAngle, // Start exactly on player
                     targetAngle: 0, // Will be updated each frame
-                    sweepSpeed: 0.007, // Slightly increased sweep speed (was 0.006)
+                    sweepSpeed: 0.009, // Increased from 0.007
                     warningTime: 90, // 1.5 second warning (was 60)
                     activeTime: 180, // 3 seconds active (with damage)
                     timer: 270, // Total 4.5 seconds (was 240)
@@ -10156,7 +10168,8 @@
                 const angleToPlayer = Math.atan2(player.y - boss.y, player.x - boss.x);
                 const totalBullets = 15; // Dense pattern
                 const gapSize = 2; // Always 2 bullet gap for consistency
-                const gapStart = Math.floor(seededRandom() * (totalBullets - gapSize + 1)); // Random gap position
+                // Gap positioned in middle area (positions 4-10), avoiding very ends
+                const gapStart = 4 + Math.floor(seededRandom() * 7); // Gap between indices 4-10
                 
                 for (let i = 0; i < totalBullets; i++) {
                     // Skip bullets in the gap
@@ -10206,25 +10219,26 @@
                         entities.enemyProjectiles.push({
                             x: boss.x + Math.cos(angle) * 50,
                             y: boss.y + Math.sin(angle) * 50,
-                            vx: Math.cos(angle) * 1.2, // Much slower (was 1.5, originally 2)
-                            vy: Math.sin(angle) * 1.2,
+                            vx: Math.cos(angle) * 1.4, // Increased from 1.2
+                            vy: Math.sin(angle) * 1.4,
                             life: 180, // Reduced from 240 - detonates after 3 seconds
                             maxLife: 180, // Track max life for detonation timer
                             dmg: 20,
                             radius: 6,
                             homing: true,
-                            homingStrength: 0.01, // Much looser steering (was 0.02)
+                            homingStrength: 0.004, // Much weaker turning (was 0.01) - allows dodging
                             detonateOnTimeout: true // Flag for explosion on timeout
                         });
                     }, i * 300);
                 }
             } else if (attack === 'danger_zones') {
-                // Red telegraphed circles
+                // Red telegraphed circles - spawn around PLAYER to create threat
                 for (let i = 0; i < 6; i++) {
                     const angle = Math.random() * Math.PI * 2;
-                    const dist = 150 + Math.random() * 200;
-                    const zoneX = boss.x + Math.cos(angle) * dist;
-                    const zoneY = boss.y + Math.sin(angle) * dist;
+                    // Spawn closer to player (50-200 units instead of boss 150-350)
+                    const dist = 50 + Math.random() * 150;
+                    const zoneX = player.x + Math.cos(angle) * dist;
+                    const zoneY = player.y + Math.sin(angle) * dist;
                     
                     // Create danger zone indicator
                     const zone = {
@@ -10272,23 +10286,27 @@
                     }, i * 150); // Stagger each shield
                 });
             } else if (attack === 'bullet_hell_wave') {
-                // Dense wall with gaps
-                const gapIndex = Math.floor(seededRandom() * 5);
-                for (let i = 0; i < 30; i++) {
-                    if (Math.floor(i / 6) === gapIndex) continue; // Create gap
-                    const angle = -Math.PI/2 + (i / 29) * Math.PI;
+                // Dense wall with gaps - rebalanced for fairness
+                const gapIndex1 = Math.floor(seededRandom() * 4); // First gap (0-3)
+                const gapIndex2 = (gapIndex1 + 2 + Math.floor(seededRandom() * 2)) % 4; // Second gap, not adjacent
+                
+                for (let i = 0; i < 20; i++) { // Reduced from 30 to 20 bullets
+                    const section = Math.floor(i / 5); // 4 sections of 5 bullets each
+                    if (section === gapIndex1 || section === gapIndex2) continue; // Create 2 gaps
+                    
+                    const angle = -Math.PI/2 + (i / 19) * Math.PI; // Spread across 180°
                     setTimeout(() => {
                         if (!state.finalBossActive) return;
                         entities.enemyProjectiles.push({
                             x: boss.x,
                             y: boss.y,
-                            vx: Math.cos(angle) * 6,
-                            vy: Math.sin(angle) * 6,
+                            vx: Math.cos(angle) * 4.5, // Slower (was 6)
+                            vy: Math.sin(angle) * 4.5,
                             life: 180,
                             dmg: 20,
                             radius: 5
                         });
-                    }, Math.floor(i / 6) * 200);
+                    }, section * 200); // Stagger by section
                 }
             } else if (attack === 'cross_laser') {
                 // X-shaped laser sweep (visual warning then damage)
@@ -10314,8 +10332,11 @@
                 for (let i = 0; i < 20; i++) {
                     setTimeout(() => {
                         if (!state.finalBossActive) return;
-                        const targetX = player.x + (Math.random() - 0.5) * 400;
-                        const targetY = player.y + (Math.random() - 0.5) * 400;
+                        // Much tighter spread around player (was 400, now 200)
+                        // Mix of direct targeting and spread for variety
+                        const spreadRange = i < 10 ? 150 : 200; // First half tighter
+                        const targetX = player.x + (Math.random() - 0.5) * spreadRange;
+                        const targetY = player.y + (Math.random() - 0.5) * spreadRange;
                         
                         // Add ground warning indicator
                         const warning = {
@@ -10775,12 +10796,25 @@
                 
                 // Special handling for NEXUS PRIME
                 if (e.isNexusPrime) {
-                    // Update phase
+                    // Update phase based on HP with transition tracking
                     const hpPercent = e.hp / e.maxHp;
+                    const oldPhase = e.phase;
                     if (hpPercent > 0.75) e.phase = 1;
                     else if (hpPercent > 0.50) e.phase = 2;
                     else if (hpPercent > 0.25) e.phase = 3;
                     else e.phase = 4;
+                    
+                    // Log phase transitions and clear any active attack intervals
+                    if (oldPhase !== e.phase) {
+                        console.log(`🔄 PHASE TRANSITION: ${oldPhase} → ${e.phase} (HP: ${(hpPercent * 100).toFixed(1)}%)`);
+                        console.log(`Active intervals/timeouts may cause lag - clearing laser warnings`);
+                        
+                        // Clear laser warnings on phase transition to prevent stacking
+                        if (e.laserWarning) {
+                            e.laserWarning.active = false;
+                            e.laserWarning = null;
+                        }
+                    }
                     
                     // Slow drift with directional variation based on player position
                     const dx = player.x - e.x;
@@ -11024,7 +11058,7 @@
                     if (e.turretSpawnTimer <= 0) {
                         console.log(`⏰ Turret spawn timer triggered! Phase ${e.phase}`);
                         e.needsToSpawnTurrets = true; // Flag for after filter
-                        const spawnRate = [420, 360, 300, 240][e.phase - 1]; // Increased from [300, 240, 180, 120]
+                        const spawnRate = [360, 300, 240, 180][e.phase - 1]; // Reduced from [420, 360, 300, 240] - faster spawns
                         e.turretSpawnTimer = spawnRate;
                         console.log(`Next turret spawn in ${spawnRate/60} seconds`);
                     }
@@ -11620,8 +11654,8 @@
                 // Homing missiles
                 if (ep.homing) {
                     const angle = Math.atan2(player.y - ep.y, player.x - ep.x);
-                    const targetVx = Math.cos(angle) * 4;
-                    const targetVy = Math.sin(angle) * 4;
+                    const targetVx = Math.cos(angle) * 3.5; // Increased from 3.0
+                    const targetVy = Math.sin(angle) * 3.5;
                     ep.vx += (targetVx - ep.vx) * ep.homingStrength;
                     ep.vy += (targetVy - ep.vy) * ep.homingStrength;
                 }
@@ -11840,6 +11874,60 @@
                     
                     ctx.globalAlpha = 1;
                     ctx.shadowBlur = 0;
+                }
+                // Special rendering for HOMING MISSILES - missile shape with fins
+                else if (ep.homing && ep.detonateOnTimeout) {
+                    const angle = Math.atan2(ep.vy, ep.vx);
+                    
+                    ctx.save();
+                    ctx.translate(ep.x, ep.y);
+                    ctx.rotate(angle);
+                    
+                    // Red glow/exhaust trail
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ff3860';
+                    ctx.fillStyle = '#ff3860';
+                    ctx.globalAlpha = 0.6;
+                    ctx.beginPath();
+                    ctx.arc(-ep.radius, 0, ep.radius * 0.8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.globalAlpha = 1;
+                    
+                    // Missile body (elongated)
+                    ctx.fillStyle = '#ffffff';
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ff3860';
+                    ctx.fillRect(-ep.radius, -ep.radius * 0.5, ep.radius * 2.5, ep.radius);
+                    
+                    // Nose cone (pointed front)
+                    ctx.fillStyle = '#ff3860';
+                    ctx.beginPath();
+                    ctx.moveTo(ep.radius * 2.5, -ep.radius * 0.5);
+                    ctx.lineTo(ep.radius * 3.5, 0);
+                    ctx.lineTo(ep.radius * 2.5, ep.radius * 0.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Fins (small triangular wings)
+                    ctx.fillStyle = '#ff6b9d';
+                    ctx.beginPath();
+                    // Top fin
+                    ctx.moveTo(ep.radius * 0.5, -ep.radius * 0.5);
+                    ctx.lineTo(ep.radius * 0.5, -ep.radius * 1.2);
+                    ctx.lineTo(ep.radius * 1.5, -ep.radius * 0.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Bottom fin
+                    ctx.beginPath();
+                    ctx.moveTo(ep.radius * 0.5, ep.radius * 0.5);
+                    ctx.lineTo(ep.radius * 0.5, ep.radius * 1.2);
+                    ctx.lineTo(ep.radius * 1.5, ep.radius * 0.5);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
+                    ctx.restore();
                 } else {
                     // Regular enemy projectiles - assign colors based on type
                     if (!ep.color) {
@@ -11963,6 +12051,9 @@
                     let hit = false;
                     // Optimize: only check enemies that could possibly collide
                     for(let e of entities.enemies) {
+                        // Skip inactive or dead enemies (including destroyed boss shields)
+                        if (e.hp <= 0 || (e.active === false)) continue;
+                        
                         const dx = p.x - e.x; const dy = p.y - e.y;
                         const roughDist = Math.abs(dx) + Math.abs(dy); // Manhattan distance (faster)
                         if (roughDist < 60) { // Quick early rejection
@@ -13310,7 +13401,7 @@
                         // Boost stats for survivability and damage
                         player.maxHp = 500;
                         player.hp = 500;
-                        player.damage = 50; // 3.3x base damage for slower testing (was 150)
+                        player.damage = 35; // Reduced from 50 for better balance testing
                         player.projectileSpeed = 12;
                         player.range = 500;
                         player.pierce = 3;
