@@ -1193,7 +1193,7 @@
                 // ULTIMATE SYSTEM
                 this.ultimate = null; // No ultimate at start - dropped by Titans
                 this.ultimateCharge = 0; // 0-100%
-                this.ultimateChargeRate = 2.0; // 2.0% per second (50 seconds to full charge, was 1.5%)
+                this.ultimateChargeRate = 2.25; // 2.25% per second (44 seconds to full charge)
                 this.ultimateDamageChargeRate = 0.0015; // 0.15% per 100 damage dealt (was 0.002%)
                 this.ultimateActive = false; // Is ultimate currently firing/active
                 this.ultimateData = {}; // Ultimate-specific state data
@@ -1951,7 +1951,7 @@
                                     // Damage decreases: 100% -> 80% -> 64%
                                     const newDamageMult = damageMult * 0.8;
                                     this.dealElementalDamage(target, dmg * newDamageMult, 'tesla', '#ffffff');
-                                    entities.lightnings.push(new LightningBolt(sourceX, sourceY, target.x, target.y));
+                                    entities.lightnings.push(new LightningBolt(sourceX, sourceY, target.x, target.y, '#ffeb3b'));
                                     
                                     // Recursively chain from this target
                                     setTimeout(() => {
@@ -1987,7 +1987,7 @@
                                     // Stagger bolt firing with 500ms delay between each
                                     setTimeout(() => {
                                         this.dealElementalDamage(initial, dmg, 'tesla', '#ffffff');
-                                        entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y));
+                                        entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
                                         
                                         // Start forking chains after 50ms
                                         setTimeout(() => {
@@ -3325,12 +3325,12 @@
                             const optimalDist = 150;
                             if (dist > optimalDist + 20) {
                                 // Too far, move closer aggressively
-                                drone.vx += (dx / dist) * 0.7;
-                                drone.vy += (dy / dist) * 0.7;
+                                drone.vx += (dx / dist) * 0.7 * (dt/16);
+                                drone.vy += (dy / dist) * 0.7 * (dt/16);
                             } else if (dist < optimalDist - 20) {
                                 // Too close, back off
-                                drone.vx -= (dx / dist) * 0.5;
-                                drone.vy -= (dy / dist) * 0.5;
+                                drone.vx -= (dx / dist) * 0.5 * (dt/16);
+                                drone.vy -= (dy / dist) * 0.5 * (dt/16);
                             }
                             
                             // Gentle pull toward player to keep them nearby
@@ -3338,7 +3338,7 @@
                             const toPlayerY = this.y - drone.y;
                             const playerDist = Math.sqrt(toPlayerX*toPlayerX + toPlayerY*toPlayerY);
                             if (playerDist > 200) { // If getting far from player
-                                const pullStrength = 0.15; // Gentle pull
+                                const pullStrength = 0.15 * (dt/16); // dt-scaled pull
                                 drone.vx += (toPlayerX / playerDist) * pullStrength;
                                 drone.vy += (toPlayerY / playerDist) * pullStrength;
                             }
@@ -3349,13 +3349,13 @@
                             const targetY = this.y + Math.sin(drone.orbitAngle) * 80;
                             const dx = targetX - drone.x;
                             const dy = targetY - drone.y;
-                            drone.vx += dx * 0.08; // More responsive - was 0.05
-                            drone.vy += dy * 0.08;
+                            drone.vx += dx * 0.08 * (dt/16); // dt-scaled - was 0.05
+                            drone.vy += dy * 0.08 * (dt/16);
                         }
                         
-                        // Apply velocity with less damping for snappier movement
-                        drone.vx *= 0.92; // Less damping - was 0.9
-                        drone.vy *= 0.92;
+                        // Apply velocity with damping (exponential decay)
+                        drone.vx *= Math.pow(0.92, dt/16); // Exponential damping
+                        drone.vy *= Math.pow(0.92, dt/16);
                         const speed = Math.sqrt(drone.vx**2 + drone.vy**2);
                         if (speed > droneSpeed) {
                             drone.vx = (drone.vx / speed) * droneSpeed;
@@ -4805,7 +4805,7 @@
                         neighbor = entities.enemies.find(n => n !== target && n.hp > 0 && Math.sqrt((n.x-target.x)**2 + (n.y-target.y)**2) < 150);
                     }
                     if (neighbor) {
-                        entities.lightnings.push(new LightningBolt(target.x, target.y, neighbor.x, neighbor.y));
+                        entities.lightnings.push(new LightningBolt(target.x, target.y, neighbor.x, neighbor.y, '#ffeb3b'));
                         this.chainVolt(neighbor, dmg * 0.7, depth + 1, level); // Moderate falloff (was 0.65, now 0.7)
                     }
                 }
@@ -9494,7 +9494,7 @@
                         this.y += this.vy * (dt/16);
                         
                         // Slow down as we approach target - gradual deceleration
-                        const slowdown = 0.97; // Gentler slowdown for longer glide
+                        const slowdown = Math.pow(0.97, dt/16); // Exponential decay
                         this.vx *= slowdown;
                         this.vy *= slowdown;
                         
@@ -9576,7 +9576,7 @@
                                 // Pull strength increases as detonation approaches
                                 const detProgress = 1 - (this.detonationTimer / 60);
                                 const distRatio = 1 - (dist / gravityRadius);
-                                const pullStrength = 0.8 * detProgress * distRatio; // Increased from 0.5 - much stronger pull
+                                const pullStrength = 0.8 * detProgress * distRatio * (dt/16); // dt-scaled pull
                                 
                                 e.pushX += (dx/dist) * pullStrength;
                                 e.pushY += (dy/dist) * pullStrength;
@@ -9658,7 +9658,7 @@
                         if (this.target) {
                             this.speed = Math.min(this.speed + 0.2 * (dt/16), 14); 
                             const angle = Math.atan2(this.target.y-this.y, this.target.x-this.x);
-                            const steerStrength = 0.08; 
+                            const steerStrength = 0.08 * (dt/16); // dt-scaled steering
                             const targetVx = Math.cos(angle) * this.speed;
                             const targetVy = Math.sin(angle) * this.speed;
                             this.vx = this.vx + (targetVx - this.vx) * steerStrength;
@@ -9740,7 +9740,7 @@
                     // Steer toward target (EXACTLY like seeker)
                     if (this.target && this.target.hp > 0) {
                         const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-                        const steerStrength = 0.15;
+                        const steerStrength = 0.15 * (dt/16); // dt-scaled steering
                         const targetVx = Math.cos(angle) * 12;
                         const targetVy = Math.sin(angle) * 12;
                         this.vx = this.vx + (targetVx - this.vx) * steerStrength;
@@ -9767,7 +9767,7 @@
                 if (this.type === 'drone_shot') {
                     if (this.target && this.target.hp > 0) {
                         const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-                        const steerStrength = 0.1;
+                        const steerStrength = 0.1 * (dt/16); // dt-scaled steering
                         const targetVx = Math.cos(angle) * 10;
                         const targetVy = Math.sin(angle) * 10;
                         this.vx = this.vx + (targetVx - this.vx) * steerStrength;
@@ -9779,7 +9779,7 @@
                 if (this.type === 'turret_shot') {
                     if (this.target && this.target.hp > 0) {
                         const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-                        const steerStrength = 0.08;
+                        const steerStrength = 0.08 * (dt/16); // dt-scaled steering
                         const targetVx = Math.cos(angle) * 10;
                         const targetVy = Math.sin(angle) * 10;
                         this.vx = this.vx + (targetVx - this.vx) * steerStrength;
