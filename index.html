@@ -16406,6 +16406,7 @@
                     highestScore: parseInt(localStorage.getItem('neonrogue_highestScore') || '0'),
                     totalPlaytime: parseInt(localStorage.getItem('neonrogue_totalPlaytime') || '0'),
                     nexusCores: parseInt(localStorage.getItem('neonrogue_nexusCores') || '0'),
+                    singularities: parseInt(localStorage.getItem('neonrogue_singularities') || '0'),
                     fourElementsAchieved: localStorage.getItem('neonrogue_4elementsAchieved') === 'true' // Catalyst unlock
                 }
             };
@@ -16426,6 +16427,7 @@
             localStorage.setItem('neonrogue_highestScore', meta.highestScore || 0);
             localStorage.setItem('neonrogue_totalPlaytime', meta.totalPlaytime || 0);
             localStorage.setItem('neonrogue_nexusCores', meta.nexusCores || 0);
+            localStorage.setItem('neonrogue_singularities', meta.singularities || 0);
             
             // Load elemental mastery achievement (Catalyst unlock)
             if (meta.fourElementsAchieved === true) {
@@ -16474,7 +16476,9 @@
                             `Total Runs: ${meta.totalRuns || 0}\n` +
                             `Total Kills: ${meta.totalKills || 0}\n` +
                             `Highest Level: ${meta.highestLevel || 0}\n` +
-                            `Highest Score: ${meta.highestScore || 0}\n`;
+                            `Highest Score: ${meta.highestScore || 0}\n` +
+                            `Nexus Cores: ${meta.nexusCores || 0}\n` +
+                            `Quantum Singularities: ${meta.singularities || 0}\n`;
                         
                         // Add Catalyst unlock status if present
                         if (meta.fourElementsAchieved === true) {
