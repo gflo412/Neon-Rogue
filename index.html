@@ -732,7 +732,7 @@
             </div>
             <div class="glossary-item">
                 <div class="g-title"><i class="fas fa-redo text-[#ff6b9d]"></i> MULTISTRIKE</div>
-                <div class="g-desc">7% base chance for attacks to trigger twice. The Cascade mod allows multistrikes to chain further with +25% chance and +25% damage per chain.</div>
+                <div class="g-desc">10% base chance for attacks to trigger twice. The Cascade mod allows multistrikes to chain further with +25% chance and +25% damage per chain.</div>
             </div>
             <div class="glossary-item">
                 <div class="g-title"><i class="fas fa-gem text-[#a855f7]"></i> NEXUS CORES</div>
@@ -1027,15 +1027,12 @@
 
         const statDefs = [
             { id: 'hp', type: 'stat', name: 'Hull Repair', desc: 'Max HP & Heal', icon: 'fa-heart', offensive: false },
-            // Multistrike is now a core stat, always available
             { id: 'multi', type: 'stat', name: 'Double Tap', desc: 'Multistrike Chance', icon: 'fa-microchip', offensive: true },
-            // Global damage and cooldown removed - weapon-specific only
             { id: 'spd', type: 'stat', name: 'Thrusters', desc: 'Speed', icon: 'fa-wind', offensive: false },
             { id: 'armor', type: 'stat', name: 'Plating', desc: 'Armor', icon: 'fa-shield-alt', offensive: false },
             { id: 'pickup', type: 'stat', name: 'Magnet Range', desc: 'Pickup Radius', icon: 'fa-magnet', offensive: false },
             { id: 'regen', type: 'stat', name: 'Nano-Bots', desc: 'Health Regen', icon: 'fa-plus-square', offensive: false },
             { id: 'luck', type: 'stat', name: 'Fortune Algo', desc: 'Luck & Drop Rate', icon: 'fa-clover', offensive: false },
-            { id: 'multi', type: 'stat', name: 'Double Tap', desc: 'Multistrike Chance', icon: 'fa-microchip', offensive: true },
             { id: 'crit', type: 'stat', name: 'Precision Lens', desc: 'Crit Chance', icon: 'fa-bullseye', offensive: true },
             { id: 'elem', type: 'stat', name: 'Flux Emitter', desc: 'Elemental Chance', icon: 'fa-wifi', offensive: false }
         ];
@@ -2799,9 +2796,9 @@
                         const fireRicochet = (damageBonus = 1.0) => {
                             // Disc count: 1/1/2/2/3 by level
                             const discCount = this.weapons.ricochet <= 2 ? 1 : this.weapons.ricochet <= 4 ? 2 : 3;
-                            const maxBounces = Math.min(12, 5 + this.weapons.ricochet * 2); // Much higher: 7-12 bounces
-                            // Damage per disc nerfed when multiple discs: 2.25 → 1.8 → 1.5
-                            const dmgPerDisc = discCount === 1 ? 2.25 : discCount === 2 ? 1.8 : 1.5;
+                            const maxBounces = Math.min(9, 5 + this.weapons.ricochet); // Increased by 2: 6-9 bounces (was 4-7)
+                            // Reduced damage to compensate for more bounces: 2.5 → 2.0 → 1.65
+                            const dmgPerDisc = discCount === 1 ? 2.5 : discCount === 2 ? 2.0 : 1.65;
                             const baseDmg = this.damage * dmgPerDisc * this.weaponStats.ricochet.dmg * damageBonus;
                             const bounceRange = (600 + this.weapons.ricochet * 150) * this.weaponStats.ricochet.area; // MASSIVE: 750-1350 range!
                             
@@ -4527,14 +4524,17 @@
                             enemy.pyroState.timer = duration;
                             enemy.pyroState.level = 1;
                             enemy.pyroState.baseDmg = this.damage * 0.4;
+                            enemy.pyroState.sourceWeapon = sourceId; // Track which weapon caused this DOT
                         } else if (enemy.pyroState.level < 3) {
                             // Stack up to level 3
                             enemy.pyroState.level++;
                             enemy.pyroState.timer = duration; // Refresh duration
                             enemy.pyroState.baseDmg = this.damage * 0.4; // Update base damage
+                            enemy.pyroState.sourceWeapon = sourceId; // Update source
                         } else {
                             // Already at max stacks, just refresh duration
                             enemy.pyroState.timer = duration;
+                            enemy.pyroState.sourceWeapon = sourceId; // Update source
                         }
                         
                         // Track for CATALYST achievement
@@ -4586,14 +4586,17 @@
                             enemy.bioState.level = 1;
                             enemy.bioState.jumpCount = 0;
                             enemy.bioState.maxDmg = this.damage * 0.5 * 4;
+                            enemy.bioState.sourceWeapon = sourceId;
                         } else if (enemy.bioState.level < 3) {
                             // Stack up to level 3
                             enemy.bioState.level++;
                             enemy.bioState.timer = 300; // Refresh duration
                             enemy.bioState.maxDmg = this.damage * 0.5 * 4; // Update damage
+                            enemy.bioState.sourceWeapon = sourceId;
                         } else {
                             // Already at max stacks, just refresh duration
                             enemy.bioState.timer = 300;
+                            enemy.bioState.sourceWeapon = sourceId;
                         }
                         // Track for CATALYST achievement
                         state.elementsProcced.add('bio');
@@ -4601,7 +4604,7 @@
                 }
                 if (isDirect && augElement === 'volt') {
                     if (seededRandom() < chance) {
-                        this.chainVolt(enemy, finalDmg * 0.7, 0, 1); // Reduced from 0.75 to 0.7 (moderate nerf with chance decay)
+                        this.chainVolt(enemy, finalDmg * 0.7, 0, 1, sourceId); // Pass sourceId for tracking
                         // Track for CATALYST achievement
                         state.elementsProcced.add('volt');
                         
@@ -4678,7 +4681,7 @@
 
 
 
-            chainVolt(target, dmg, depth, level) {
+            chainVolt(target, dmg, depth, level, sourceWeapon = null) {
                 // Performance safeguard: Limit chain calls per frame
                 if (!this.voltChainsThisFrame) this.voltChainsThisFrame = 0;
                 if (this.voltChainsThisFrame > 30) return; // Cap at 30 chains per frame to prevent hitching
@@ -4695,7 +4698,7 @@
                 }
                 
                 if(depth > 0) {
-                    target.takeDamage(chainDmg, '#ffeb3b', false, 'normal', null, 'volt');
+                    target.takeDamage(chainDmg, '#ffeb3b', false, 'normal', sourceWeapon, 'volt');
                     
                     // Bioshock: Volt chains double bio tick rate for 2s
                     if (player.synergies.volt_bio && target.bioState.active) {
@@ -4749,7 +4752,7 @@
                     }
                     if (neighbor) {
                         entities.lightnings.push(new LightningBolt(target.x, target.y, neighbor.x, neighbor.y, '#ffeb3b'));
-                        this.chainVolt(neighbor, dmg * 0.7, depth + 1, level); // Moderate falloff (was 0.65, now 0.7)
+                        this.chainVolt(neighbor, dmg * 0.7, depth + 1, level, sourceWeapon); // Pass sourceWeapon through chain
                     }
                 }
             }
@@ -6621,14 +6624,14 @@
                 this.frozen = 0; this.burn = 0; this.disease = 0; this.lastShot = 0;
 
 
-                this.pyroState = { active: false, timer: 0, level: 0, baseDmg: 0 };
+                this.pyroState = { active: false, timer: 0, level: 0, baseDmg: 0, sourceWeapon: null };
                 this.cryoState = { 
                     slowed: false,        // Is enemy currently slowed?
                     slowDuration: 0,      // How long they've been slowed (counts up to 120 frames = 2s)
                     frozen: false,        // Are they frozen solid?
                     frozenTimer: 0        // Freeze duration countdown
                 };
-                this.bioState = { active: false, timer: 0, level: 0, maxDmg: 0, jumpCount: 0 };
+                this.bioState = { active: false, timer: 0, level: 0, maxDmg: 0, jumpCount: 0, sourceWeapon: null };
                 this.hackState = { active: false, timer: 0 };
                 this.empState = { active: false, timer: 0 }; // EMP disables enemy
                 this.ionState = { active: false, timer: 0 }; // Ion debuff: +30% damage taken
@@ -7277,7 +7280,7 @@
                             dmg = player.damage * 0.6; // Fallback to flat damage
                         }
                         
-                        this.takeDamage(dmg, '#ff5722', false, 'dot', null, 'fire');
+                        this.takeDamage(dmg, '#ff5722', false, 'dot', this.pyroState.sourceWeapon, 'fire');
                         if(seededRandom()<0.3) entities.particles.push(new Particle(this.x, this.y, '#ff5722', 0.5));
                     }
                     }
@@ -7444,7 +7447,7 @@
                             dmg = player.damage * 0.5; // Fallback to flat damage
                         }
                         
-                        this.takeDamage(dmg, '#00cc44', false, 'dot', null, 'bio');
+                        this.takeDamage(dmg, '#00cc44', false, 'dot', this.bioState.sourceWeapon, 'bio');
                         if(seededRandom()<0.3) entities.particles.push(new Particle(this.x, this.y, '#00cc44', 0.3));
                         
                         // Bioshock: Every 3rd bio tick triggers volt chain
@@ -9590,8 +9593,16 @@
                 }
 
 
-                this.trail.push({x: this.x, y: this.y});
-                if(this.trail.length > (this.type==='seeker'?15: this.type==='ricochet'?30:6)) this.trail.shift();
+                // Add trail point with timestamp for framerate-independent length
+                this.trail.push({x: this.x, y: this.y, time: Date.now()});
+                
+                // Remove old trail points based on time (not count)
+                // Seeker: 0.25s trail, Ricochet: 0.4s trail (subtle glowing line with fade), Others: 0.1s trail
+                const maxAge = this.type === 'seeker' ? 250 : this.type === 'ricochet' ? 400 : 100;
+                const now = Date.now();
+                while (this.trail.length > 0 && (now - this.trail[0].time) > maxAge) {
+                    this.trail.shift();
+                }
 
 
                 if (this.type === 'seeker') {
@@ -10022,87 +10033,6 @@
                     ctx.fillStyle = '#ff5500'; ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(-25, -3); ctx.lineTo(-25, 3); ctx.fill();
                     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-5, -4); ctx.lineTo(-5, 4); ctx.fill();
                     ctx.restore();
-                } else if (this.type === 'ricochet') {
-                    // Spinning orange/yellow blade with trail
-                    const spinAngle = (Date.now() / 30) % (Math.PI * 2); // Fast spin
-                    ctx.save();
-                    ctx.translate(this.x, this.y);
-                    ctx.rotate(spinAngle);
-                    
-                    // Outer glow
-                    ctx.shadowBlur = 25;
-                    ctx.shadowColor = '#ff8800';
-                    
-                    // Blade outer ring - orange
-                    ctx.fillStyle = '#ff8800';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 10, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Inner core - bright yellow
-                    ctx.fillStyle = '#ffcc00';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 6, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Center dot - white hot
-                    ctx.fillStyle = '#ffffff';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 3, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    // Blade edges - 4 sharp points
-                    ctx.strokeStyle = '#ffaa00';
-                    ctx.lineWidth = 3;
-                    ctx.shadowBlur = 15;
-                    for (let i = 0; i < 4; i++) {
-                        const angle = (Math.PI / 2) * i;
-                        ctx.beginPath();
-                        ctx.moveTo(0, 0);
-                        ctx.lineTo(Math.cos(angle) * 12, Math.sin(angle) * 12);
-                        ctx.stroke();
-                    }
-                    
-                    ctx.shadowBlur = 0;
-                    ctx.restore();
-                    
-                    // Trail particles (every ~2 frames at 60fps)
-                    if (!this.trailParticleTimer) this.trailParticleTimer = 0;
-                    const currentFrame = Math.floor(state.frameCount);
-                    if (currentFrame !== this.lastTrailFrame) {
-                        this.trailParticleTimer++;
-                        this.lastTrailFrame = currentFrame;
-                    }
-                    if (this.trailParticleTimer >= 2) {
-                        this.trailParticleTimer = 0;
-                        entities.particles.push({
-                            x: this.x,
-                            y: this.y,
-                            vx: -this.vx * 0.3,
-                            vy: -this.vy * 0.3,
-                            color: '#ff8800',
-                            life: 8,
-                            size: 4,
-                            update: function(dt) {
-                                this.x += this.vx * (dt/16);
-                                this.y += this.vy * (dt/16);
-                                this.life -= dt/16;
-                                this.size *= 0.94;
-                                return this.life > 0;
-                            },
-                            draw: function(ctx) {
-                                ctx.fillStyle = this.color;
-                                ctx.shadowBlur = 6;
-                                ctx.shadowColor = this.color;
-                                ctx.globalAlpha = this.life / 8;
-                                ctx.beginPath();
-                                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                                ctx.fill();
-                                ctx.globalAlpha = 1;
-                                ctx.shadowBlur = 0;
-                            }
-                        });
-                    }
                 } else if (this.type === 'drone_shot') {
                     // Small cyan energy bolt
                     ctx.save();
@@ -10114,7 +10044,49 @@
                     ctx.fill();
                     ctx.restore();
                 } else if (this.type === 'ricochet') {
-                    // Bright orange spinning disc
+                    // Draw solid glowing trail with fade based on age (draw FIRST, before disc)
+                    if (this.trail.length > 1) {
+                        const now = Date.now();
+                        const maxAge = 400; // 0.4 seconds (reduced from 1 second)
+                        
+                        ctx.save();
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        
+                        // Draw trail segments with fading opacity
+                        for (let i = 1; i < this.trail.length; i++) {
+                            const p1 = this.trail[i - 1];
+                            const p2 = this.trail[i];
+                            const age = now - p2.time;
+                            const fadeRatio = 1 - (age / maxAge); // Newer = 1.0, older = 0.0
+                            
+                            if (fadeRatio > 0) {
+                                // Outer glow - subtle
+                                ctx.strokeStyle = `rgba(255, 136, 0, ${fadeRatio * 0.25})`; // Reduced from 0.8
+                                ctx.lineWidth = 5; // Reduced from 10
+                                ctx.shadowBlur = 8; // Reduced from 15
+                                ctx.shadowColor = '#ff8800';
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x, p1.y);
+                                ctx.lineTo(p2.x, p2.y);
+                                ctx.stroke();
+                                
+                                // Inner bright line
+                                ctx.strokeStyle = `rgba(255, 170, 0, ${fadeRatio * 0.5})`; // Reduced from white/1.0
+                                ctx.lineWidth = 2; // Reduced from 4
+                                ctx.shadowBlur = 4; // Reduced from 8
+                                ctx.shadowColor = '#ffaa00';
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x, p1.y);
+                                ctx.lineTo(p2.x, p2.y);
+                                ctx.stroke();
+                            }
+                        }
+                        
+                        ctx.restore();
+                    }
+                    
+                    // NOW draw the bright orange spinning disc (in its own transform)
                     ctx.save();
                     ctx.translate(this.x, this.y);
                     
@@ -11088,8 +11060,8 @@
             }
         }
 
-        function triggerResonanceBurst(element, x, y) {
-            console.log(`🌟 RESONANCE BURST: ${element.toUpperCase()}`);
+        function triggerResonanceBurst(element, x, y, areaMultiplier = 1.0) {
+            console.log(`🌟 RESONANCE BURST: ${element.toUpperCase()} (area: ${areaMultiplier.toFixed(2)}x)`);
             
             const elementColors = {
                 fire: '#ff5722',
@@ -11102,6 +11074,9 @@
             
             if (element === 'fire') {
                 // FIRE: FIERY EXPLOSION (streamlined)
+                // Base radius: 120, scales with area
+                const baseRadius = 120 * areaMultiplier;
+                
                 // Multiple explosions
                 createExplosion(x, y, color, 40); // Reduced from 60
                 setTimeout(() => createExplosion(x, y, color, 30), 50); // Reduced from 50
@@ -11110,7 +11085,7 @@
                 // Radiating flame shockwaves
                 for (let i = 0; i < 3; i++) {
                     setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, 200, color));
+                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
                     }, i * 100);
                 }
                 
@@ -11133,11 +11108,11 @@
                     entities.particles.push(new Particle(x, y, color, 5));
                 }
                 
-                // Damage enemies - increased for every 5 hits
+                // Damage enemies - scaled with area
                 entities.enemies.forEach(e => {
                     if (e.hp <= 0) return;
                     const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
-                    if (dist < 100) {
+                    if (dist < baseRadius) {
                         player.dealElementalDamage(e, player.damage * 0.8, 'surge', color, true, 'normal', 'fire');
                         for (let i = 0; i < 6; i++) { // Reduced from 10
                             entities.particles.push(new Particle(e.x, e.y, color, 3));
@@ -11147,6 +11122,9 @@
                 
             } else if (element === 'ice') {
                 // ICE: CRYSTALLINE FREEZE NOVA (streamlined)
+                // Base radius: 110, scales with area
+                const baseRadius = 110 * areaMultiplier;
+                
                 // Explosions with ice color
                 createExplosion(x, y, color, 30); // Reduced from 50
                 setTimeout(() => createExplosion(x, y, color, 20), 50); // Reduced from 40
@@ -11154,7 +11132,7 @@
                 // Expanding frost waves (reduced from 5)
                 for (let i = 0; i < 3; i++) {
                     setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, 180, color));
+                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
                     }, i * 80);
                 }
                 
@@ -11169,11 +11147,11 @@
                     entities.particles.push(new Particle(x, y, color, 4));
                 }
                 
-                // Freeze enemies - increased duration for every 5 hits
+                // Freeze enemies - scaled with area
                 entities.enemies.forEach(e => {
                     if (e.hp <= 0) return;
                     const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
-                    if (dist < 140) {
+                    if (dist < baseRadius) {
                         e.cryoState.frozen = true;
                         e.cryoState.frozenTimer = 90; // 1.5 seconds
                         for (let i = 0; i < 5; i++) { // Reduced from 8
@@ -11184,11 +11162,18 @@
                 
             } else if (element === 'volt') {
                 // VOLT: MASSIVE LIGHTNING STORM
+                // Base radius: 100, scales with area (for targeting range)
+                const baseRadius = 100 * areaMultiplier;
+                
                 // Central explosion
                 createExplosion(x, y, color, 50);
                 
                 const nearbyEnemies = entities.enemies
-                    .filter(e => e.hp > 0)
+                    .filter(e => {
+                        if (e.hp <= 0) return false;
+                        const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
+                        return dist < baseRadius; // Only target enemies in range
+                    })
                     .sort((a, b) => {
                         const distA = Math.sqrt((a.x - x)**2 + (a.y - y)**2);
                         const distB = Math.sqrt((b.x - x)**2 + (b.y - y)**2);
@@ -11214,24 +11199,27 @@
                     }, idx * 60);
                 });
                 
-                // Electric shockwaves
+                // Electric shockwaves scaled with area
                 for (let i = 0; i < 3; i++) {
                     setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, 150, color));
+                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
                     }, i * 100);
                 }
                 
             } else if (element === 'bio') {
                 // BIO: MASSIVE TOXIC PLAGUE
+                // Base radius: 120, scales with area
+                const baseRadius = 120 * areaMultiplier;
+                
                 // Multiple toxic explosions
                 createExplosion(x, y, color, 70);
                 setTimeout(() => createExplosion(x, y, color, 60), 60);
                 setTimeout(() => createExplosion(x, y, color, 50), 120);
                 
-                // HUGE pulsing toxic waves
+                // HUGE pulsing toxic waves scaled with area
                 for (let i = 0; i < 5; i++) {
                     setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, 200, color));
+                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
                     }, i * 100);
                 }
                 
@@ -11247,15 +11235,16 @@
                     ));
                 }
                 
-                // Apply poison - increased damage for every 5 hits
+                // Apply poison - scaled with area
                 entities.enemies.forEach(e => {
                     if (e.hp <= 0) return;
                     const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
-                    if (dist < 170) {
+                    if (dist < baseRadius) {
                         e.bioState.active = true;
                         e.bioState.timer = 240; // 4 seconds
                         e.bioState.level = 1;
                         e.bioState.maxDmg = player.damage * 1.5;
+                        e.bioState.sourceWeapon = 'surge'; // Track source
                         
                         // Toxic bubble burst on each enemy
                         for (let i = 0; i < 10; i++) {
@@ -14828,7 +14817,7 @@
                                 // Trigger burst every 5th hit
                                 if (player.surgeHitCount >= 5) {
                                     // Use the current orb's element for the burst
-                                    triggerResonanceBurst(p.element, p.x, p.y);
+                                    triggerResonanceBurst(p.element, p.x, p.y, player.weaponStats.surge.area);
                                     player.surgeHitCount = 0;
                                 }
                             }
@@ -15009,7 +14998,8 @@
                 
                 // Create card with exact structure from createCard
                 const card = document.createElement('div');
-                card.className = 'card ultimate'; // Use ultimate class for magenta styling
+                // Style Keep Current differently (like skip button)
+                card.className = isKeepCurrent ? 'card skip-style' : 'card ultimate';
                 
                 card.innerHTML = `
                     <div class="card-header">
@@ -15021,16 +15011,18 @@
                     </div>
                 `;
                 
-                // Add magenta particles
-                for (let i = 0; i < 12; i++) {
+                // Add particles (skip for Keep Current, magenta for new ultimates)
+                const particleCount = isKeepCurrent ? 8 : 12;
+                const particleColor = isKeepCurrent ? '#888888' : '#ff00ff';
+                for (let i = 0; i < particleCount; i++) {
                     const particle = document.createElement('div');
                     particle.className = 'legendary-particle';
                     particle.style.setProperty('--start-x', `${seededRandom() * 100}%`);
                     particle.style.setProperty('--drift-x', `${(seededRandom() - 0.5) * 60}px`);
                     particle.style.setProperty('--delay', `${seededRandom() * 2}s`);
-                    // Override particle color to magenta
-                    particle.style.background = '#ff00ff';
-                    particle.style.boxShadow = '0 0 6px #ff00ff';
+                    // Use color based on card type
+                    particle.style.background = particleColor;
+                    particle.style.boxShadow = `0 0 6px ${particleColor}`;
                     card.appendChild(particle);
                 }
                 
@@ -15229,22 +15221,20 @@
                  
                  // MULTISTRIKE SYSTEM: Filter based on unlock status
                  if (!player.multistrikeUnlocked) {
-                     // Not unlocked - remove multistrike stat upgrades
+                     // Not unlocked - remove multistrike stat upgrades from pool
                      pool = pool.filter(o => o.id !== 'multi');
                      
-                     // Add unlock card to pool (lower weight than normal)
+                     // Add unlock card at same rate as masteries/synergies (10% weight)
                      const multiUnlock = {
                          id: 'multi_unlock',
                          type: 'unlock',
                          name: 'Double Tap',
                          desc: 'Unlock Multistrike: Active weapons gain a chance to fire twice.',
                          icon: 'fa-bolt',
-                         offensive: true,
-                         rarity: 'rare' // Rare (blue) rarity
+                         offensive: true
+                         // rarity set to 'epic' in assignRarityToChoice
                      };
-                     // Add 2 times (20% as likely as normal options which appear 10 times)
-                     pool.push(multiUnlock);
-                     pool.push(multiUnlock);
+                     pool.push(multiUnlock); // Added once = 10% weight (same as masteries/synergies)
                  }
                  
                  if (locked) {
@@ -15302,8 +15292,10 @@
                  let rarity;
                  if (choice.type === 'mastery' || choice.type === 'synergy') {
                      rarity = 'elemental';
+                 } else if (choice.id === 'multi_unlock') {
+                     rarity = 'epic'; // Double TAP unlock is always epic
                  } else if (choice.type === 'unlock' && choice.rarity) {
-                     rarity = choice.rarity; // Preserve preset rarity (e.g. 'rare' for Double Tap)
+                     rarity = choice.rarity; // Preserve preset rarity for other unlocks
                  } else {
                      rarity = getRarity(player.luck);
                  }
@@ -15578,7 +15570,7 @@
                             // Handle unlock cards (multistrike, etc)
                             if (opt.id === 'multi_unlock') {
                                 player.multistrikeUnlocked = true;
-                                player.multicast = 0.07; // Grant 7% base multistrike
+                                player.multicast = 0.10; // Grant 10% base multistrike (increased from 7%)
                             }
                             resumeGame();
                         } else {
@@ -16394,7 +16386,7 @@
         
         // Save data structure for meta progression
         function getSaveData() {
-            return {
+            const saveData = {
                 version: 1, // For future compatibility
                 timestamp: Date.now(),
                 // Add your meta progression data here when you implement it
@@ -16410,6 +16402,8 @@
                     fourElementsAchieved: localStorage.getItem('neonrogue_4elementsAchieved') === 'true' // Catalyst unlock
                 }
             };
+            console.log('📦 Exporting save data:', saveData);
+            return saveData;
         }
         
         // Load save data from object
@@ -16419,6 +16413,8 @@
                 return false;
             }
             
+            console.log('📥 Importing save data:', data);
+            
             // Load meta progression data
             const meta = data.metaProgress;
             localStorage.setItem('neonrogue_totalRuns', meta.totalRuns || 0);
@@ -16427,11 +16423,19 @@
             localStorage.setItem('neonrogue_highestScore', meta.highestScore || 0);
             localStorage.setItem('neonrogue_totalPlaytime', meta.totalPlaytime || 0);
             localStorage.setItem('neonrogue_nexusCores', meta.nexusCores || 0);
-            localStorage.setItem('neonrogue_singularities', meta.singularities || 0);
+            
+            // Handle singularities - check if property exists (backwards compatibility)
+            if (meta.singularities !== undefined) {
+                localStorage.setItem('neonrogue_singularities', meta.singularities || 0);
+                console.log('✅ Loaded singularities:', meta.singularities);
+            } else {
+                console.log('⚠️ No singularities in save file (old save format)');
+            }
             
             // Load elemental mastery achievement (Catalyst unlock)
             if (meta.fourElementsAchieved === true) {
                 localStorage.setItem('neonrogue_4elementsAchieved', 'true');
+                console.log('✅ Loaded Catalyst unlock');
             }
             
             return true;
