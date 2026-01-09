@@ -1605,6 +1605,12 @@
                 
                 if (this.invulnTimer > 0) this.invulnTimer -= dt/16;
                 
+                // Whip visual timer
+                if (this.whipVisualTimer > 0) {
+                    this.whipVisualTimer -= dt/16;
+                    if (this.whipVisualTimer < 0) this.whipVisualTimer = 0;
+                }
+                
                 // CATALYST: Update surge aura
                 if (this.selectedShip === 'CATALYST') {
                     // Update surge aura timer and apply aura effects
@@ -2228,46 +2234,6 @@
                             // Restore original crit stats
                             this.critChance = originalCrit;
                             this.critMult = originalCritMult;
-                            
-                            // VISUAL: Energy whip arc - create bright visible slash
-                            const numParticles = 30; // More particles
-                            for (let i = 0; i <= numParticles; i++) {
-                                const angle = startAngle + (arcAngle * i / numParticles);
-                                
-                                // Create particles at multiple distances for thickness
-                                for (let d = 0.5; d <= 1.0; d += 0.25) {
-                                    const dist = range * d;
-                                    const px = this.x + Math.cos(angle) * dist;
-                                    const py = this.y + Math.sin(angle) * dist;
-                                    
-                                    entities.particles.push({
-                                        x: px, y: py,
-                                        vx: Math.cos(angle) * 4,
-                                        vy: Math.sin(angle) * 4,
-                                        color: '#ff00ff', 
-                                        life: 20, 
-                                        size: 8,
-                                        update: function(dt) {
-                                            this.x += this.vx * (dt/16);
-                                            this.y += this.vy * (dt/16);
-                                            this.life -= dt/16;
-                                            this.vx *= 0.90;
-                                            this.vy *= 0.90;
-                                            this.size *= 0.97;
-                                            return this.life > 0;
-                                        },
-                                        draw: function(ctx) {
-                                            ctx.fillStyle = this.color;
-                                            ctx.shadowBlur = 15;
-                                            ctx.shadowColor = this.color;
-                                            ctx.beginPath();
-                                            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                                            ctx.fill();
-                                            ctx.shadowBlur = 0;
-                                        }
-                                    });
-                                }
-                            }
                         };
                         
                         const fireWhipWithMulti = (dmgMult = 1.0, depth = 0) => {
@@ -2843,29 +2809,20 @@
                             const targetedEnemies = new Set();
                             
                             for (let discIdx = 0; discIdx < discCount; discIdx++) {
-                                // Find different target for each disc
+                                // Find different target for each disc - SIMPLIFIED
                                 let bestTarget = null;
-                                let bestScore = -Infinity;
+                                let bestDist = Infinity;
                                 const searchRange = 500;
                                 
+                                // Simple nearest-enemy selection (no expensive cluster calculation)
                                 entities.enemies.forEach(e => {
                                     if (e.hp > 0 && !targetedEnemies.has(e)) {
-                                        const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                        if (dist < searchRange) {
-                                            // Score based on: distance (closer is better) + cluster density
-                                            let nearbyCount = 0;
-                                            entities.enemies.forEach(e2 => {
-                                                if (e2.hp > 0 && e2 !== e) {
-                                                    const d = Math.sqrt((e2.x - e.x)**2 + (e2.y - e.y)**2);
-                                                    if (d < 200) nearbyCount++;
-                                                }
-                                            });
-                                            
-                                            const score = nearbyCount * 10 - (dist / 10); // Prioritize clusters, then proximity
-                                            if (score > bestScore) {
-                                                bestScore = score;
-                                                bestTarget = e;
-                                            }
+                                        const dx = e.x - this.x;
+                                        const dy = e.y - this.y;
+                                        const dist = Math.sqrt(dx*dx + dy*dy);
+                                        if (dist < searchRange && dist < bestDist) {
+                                            bestDist = dist;
+                                            bestTarget = e;
                                         }
                                     }
                                 });
@@ -2919,7 +2876,8 @@
                             const orbSpeed = 5.0; // Increased from 3.5 for better feel
                             const baseDmg = 35 + (this.weapons.surge * 12); // Buffed from 20 + 8
                             const dmg = baseDmg * this.weaponStats.surge.dmg * damageBonus;
-                            const orbRadius = (8 + this.weapons.surge * 1.5) * this.weaponStats.surge.area; // Smaller base
+                            const orbRadius = 8; // Fixed size, doesn't scale with level or area
+                            const aoeRadius = 50 * this.weaponStats.surge.area; // AOE scales with area upgrades
                             
                             // Check if this is a burst orb (every 5th hit)
                             const isBurstOrb = (this.surgeHitCount === 4); // Next hit triggers burst
@@ -2972,6 +2930,7 @@
                                 damage: dmg,
                                 life: 180,
                                 radius: orbRadius,
+                                aoeRadius: aoeRadius, // Scales with area upgrades
                                 type: 'surge',
                                 element: currentElement,
                                 color: elementColors[currentElement],
@@ -3002,26 +2961,21 @@
                                     ctx.stroke();
                                     ctx.setLineDash([]);
                                     
-                                    // ELEMENT-SPECIFIC EFFECTS (STRENGTHENED)
+                                    // ELEMENT-SPECIFIC EFFECTS (STREAMLINED)
                                     if (this.element === 'fire') {
-                                        // Fire: Intense flickering flames
-                                        const numFlames = this.isBurstOrb ? 8 : 6;
+                                        // Fire: Flickering flames (reduced count)
+                                        const numFlames = this.isBurstOrb ? 6 : 4; // Reduced from 8/6
                                         for (let i = 0; i < numFlames; i++) {
                                             const angle = (i / numFlames) * Math.PI * 2 + time * 4;
                                             const flicker = 0.6 + Math.sin(time * 12 + i * 2) * 0.4;
                                             const dist = this.radius * (1.8 + (this.isBurstOrb ? 0.5 : 0));
                                             const x = Math.cos(angle) * dist * flicker;
                                             const y = Math.sin(angle) * dist * flicker;
-                                            const size = (4 + flicker * 3) * burstIntensity;
+                                            const size = (3 + flicker * 2) * burstIntensity; // Slightly smaller
                                             
-                                            // Flame gradient
-                                            const gradient = ctx.createRadialGradient(x, y, 0, x, y, size);
-                                            gradient.addColorStop(0, this.isBurstOrb ? '#ffff00' : '#ff8844');
-                                            gradient.addColorStop(1, this.color);
-                                            
-                                            ctx.fillStyle = gradient;
-                                            ctx.globalAlpha = (0.7 + flicker * 0.3) * burstIntensity;
-                                            ctx.shadowBlur = 15 * burstIntensity;
+                                            ctx.fillStyle = this.isBurstOrb ? '#ffff00' : this.color;
+                                            ctx.globalAlpha = (0.6 + flicker * 0.3) * burstIntensity;
+                                            ctx.shadowBlur = 10 * burstIntensity; // Reduced blur
                                             ctx.shadowColor = this.color;
                                             ctx.beginPath();
                                             ctx.arc(x, y, size, 0, Math.PI * 2);
@@ -3031,9 +2985,9 @@
                                         // Burst version: Spinning fire ring
                                         if (this.isBurstOrb) {
                                             ctx.strokeStyle = '#ffaa00';
-                                            ctx.globalAlpha = 0.8;
-                                            ctx.lineWidth = 3;
-                                            ctx.shadowBlur = 25;
+                                            ctx.globalAlpha = 0.7;
+                                            ctx.lineWidth = 2;
+                                            ctx.shadowBlur = 15; // Reduced
                                             ctx.shadowColor = this.color;
                                             ctx.beginPath();
                                             ctx.arc(0, 0, this.radius * 2.5, 0, Math.PI * 2);
@@ -3041,19 +2995,19 @@
                                         }
                                         
                                     } else if (this.element === 'ice') {
-                                        // Ice: Sharp crystalline geometry
-                                        const numShards = this.isBurstOrb ? 12 : 8;
+                                        // Ice: Crystalline shards (reduced count)
+                                        const numShards = this.isBurstOrb ? 8 : 6; // Reduced from 12/8
                                         for (let i = 0; i < numShards; i++) {
                                             const angle = (i / numShards) * Math.PI * 2 + time * 2.5;
                                             const dist = this.radius * (1.8 + (this.isBurstOrb ? 0.6 : 0));
                                             const x = Math.cos(angle) * dist;
                                             const y = Math.sin(angle) * dist;
-                                            const shardLength = 6 * burstIntensity;
+                                            const shardLength = 5 * burstIntensity; // Slightly smaller
                                             
                                             ctx.strokeStyle = this.isBurstOrb ? '#ffffff' : this.color;
-                                            ctx.globalAlpha = 0.9 * burstIntensity;
+                                            ctx.globalAlpha = 0.8 * burstIntensity;
                                             ctx.lineWidth = 2 * burstIntensity;
-                                            ctx.shadowBlur = 12 * burstIntensity;
+                                            ctx.shadowBlur = 8 * burstIntensity; // Reduced
                                             ctx.shadowColor = this.color;
                                             ctx.beginPath();
                                             // Draw X-shaped shard
@@ -3067,9 +3021,9 @@
                                         // Burst version: Frost hexagon
                                         if (this.isBurstOrb) {
                                             ctx.strokeStyle = '#aaffff';
-                                            ctx.globalAlpha = 0.7;
+                                            ctx.globalAlpha = 0.6;
                                             ctx.lineWidth = 2;
-                                            ctx.shadowBlur = 20;
+                                            ctx.shadowBlur = 12; // Reduced
                                             ctx.shadowColor = this.color;
                                             ctx.beginPath();
                                             for (let i = 0; i < 6; i++) {
@@ -3084,31 +3038,31 @@
                                         }
                                         
                                     } else if (this.element === 'volt') {
-                                        // Volt: Violent electric arcs
-                                        const numArcs = this.isBurstOrb ? 6 : 4;
+                                        // Volt: Electric arcs (streamlined)
+                                        const numArcs = this.isBurstOrb ? 4 : 3; // Reduced from 6/4
                                         ctx.strokeStyle = this.isBurstOrb ? '#ffffff' : this.color;
-                                        ctx.globalAlpha = 0.8 * burstIntensity;
-                                        ctx.lineWidth = (2 + Math.sin(time * 10) * 0.5) * burstIntensity;
-                                        ctx.shadowBlur = 15 * burstIntensity;
+                                        ctx.globalAlpha = 0.7 * burstIntensity;
+                                        ctx.lineWidth = 2 * burstIntensity;
+                                        ctx.shadowBlur = 10 * burstIntensity; // Reduced
                                         ctx.shadowColor = this.color;
                                         
                                         for (let i = 0; i < numArcs; i++) {
                                             const arcTime = time * 10 + i * 2;
                                             const angle1 = (i / numArcs) * Math.PI * 2 + Math.sin(arcTime) * 0.5;
                                             const angle2 = angle1 + Math.PI * 0.4;
-                                            const dist1 = this.radius * (0.8 + Math.sin(arcTime * 2) * 0.2);
-                                            const dist2 = this.radius * (1.8 + Math.sin(arcTime * 3) * 0.4) * burstIntensity;
+                                            const dist1 = this.radius * 0.8;
+                                            const dist2 = this.radius * 1.8 * burstIntensity;
                                             
                                             ctx.beginPath();
                                             ctx.moveTo(Math.cos(angle1) * dist1, Math.sin(angle1) * dist1);
                                             
-                                            // Jagged lightning path
-                                            const steps = 3;
+                                            // Simplified lightning path (fewer steps)
+                                            const steps = 2; // Reduced from 3
                                             for (let j = 0; j <= steps; j++) {
                                                 const t = j / steps;
                                                 const midAngle = angle1 + (angle2 - angle1) * t;
                                                 const midDist = dist1 + (dist2 - dist1) * t;
-                                                const jitter = (Math.random() - 0.5) * 5 * burstIntensity;
+                                                const jitter = (Math.random() - 0.5) * 4 * burstIntensity;
                                                 ctx.lineTo(
                                                     Math.cos(midAngle) * midDist + jitter,
                                                     Math.sin(midAngle) * midDist + jitter
@@ -3117,63 +3071,52 @@
                                             ctx.stroke();
                                         }
                                         
-                                        // Burst version: Electric ring
+                                        // Burst version: Single electric ring
                                         if (this.isBurstOrb) {
-                                            for (let ring = 0; ring < 2; ring++) {
-                                                ctx.strokeStyle = '#ffff88';
-                                                ctx.globalAlpha = 0.6 - ring * 0.2;
-                                                ctx.lineWidth = 2;
-                                                ctx.shadowBlur = 25;
-                                                ctx.beginPath();
-                                                ctx.arc(0, 0, this.radius * (2.2 + ring * 0.4), 0, Math.PI * 2);
-                                                ctx.stroke();
-                                            }
+                                            ctx.strokeStyle = '#ffff88';
+                                            ctx.globalAlpha = 0.5;
+                                            ctx.lineWidth = 2;
+                                            ctx.shadowBlur = 15; // Reduced
+                                            ctx.beginPath();
+                                            ctx.arc(0, 0, this.radius * 2.2, 0, Math.PI * 2);
+                                            ctx.stroke();
                                         }
                                         
                                     } else if (this.element === 'bio') {
-                                        // Bio: Aggressive toxic bubbles
-                                        const numBubbles = this.isBurstOrb ? 10 : 7;
+                                        // Bio: Toxic bubbles (streamlined)
+                                        const numBubbles = this.isBurstOrb ? 7 : 5; // Reduced from 10/7
                                         for (let i = 0; i < numBubbles; i++) {
                                             const bubblePulse = Math.sin(time * 5 + i * 0.8) * 0.5 + 0.5;
                                             const angle = (i / numBubbles) * Math.PI * 2 + time * 1.5;
-                                            const dist = this.radius * (1.4 + bubblePulse * 0.6) * burstIntensity;
+                                            const dist = this.radius * (1.4 + bubblePulse * 0.5) * burstIntensity;
                                             const x = Math.cos(angle) * dist;
                                             const y = Math.sin(angle) * dist;
-                                            const size = (3 + bubblePulse * 4) * burstIntensity;
+                                            const size = (2.5 + bubblePulse * 3) * burstIntensity; // Slightly smaller
                                             
-                                            // Toxic bubble gradient
-                                            const gradient = ctx.createRadialGradient(x, y, 0, x, y, size);
-                                            gradient.addColorStop(0, this.isBurstOrb ? '#88ff44' : this.color);
-                                            gradient.addColorStop(0.7, this.color);
-                                            gradient.addColorStop(1, 'rgba(57, 255, 20, 0)');
-                                            
-                                            ctx.fillStyle = gradient;
-                                            ctx.globalAlpha = (0.5 + bubblePulse * 0.4) * burstIntensity;
-                                            ctx.shadowBlur = 12 * burstIntensity;
+                                            ctx.fillStyle = this.isBurstOrb ? '#88ff44' : this.color;
+                                            ctx.globalAlpha = (0.5 + bubblePulse * 0.3) * burstIntensity;
+                                            ctx.shadowBlur = 8 * burstIntensity; // Reduced
                                             ctx.shadowColor = this.color;
                                             ctx.beginPath();
                                             ctx.arc(x, y, size, 0, Math.PI * 2);
                                             ctx.fill();
                                         }
                                         
-                                        // Burst version: Toxic cloud
+                                        // Burst version: Lighter toxic cloud
                                         if (this.isBurstOrb) {
-                                            const cloudGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius * 3);
-                                            cloudGradient.addColorStop(0, 'rgba(57, 255, 20, 0.3)');
-                                            cloudGradient.addColorStop(1, 'rgba(57, 255, 20, 0)');
-                                            ctx.fillStyle = cloudGradient;
-                                            ctx.globalAlpha = 0.5;
+                                            ctx.fillStyle = this.color;
+                                            ctx.globalAlpha = 0.15; // More subtle
                                             ctx.beginPath();
-                                            ctx.arc(0, 0, this.radius * 3, 0, Math.PI * 2);
+                                            ctx.arc(0, 0, this.radius * 2.5, 0, Math.PI * 2);
                                             ctx.fill();
                                         }
                                     }
                                     
-                                    // Outer glow (brighter for burst orbs)
-                                    ctx.shadowBlur = 20 * burstIntensity;
+                                    // Outer glow (reduced for burst orbs)
+                                    ctx.shadowBlur = 15 * burstIntensity; // Reduced from 20
                                     ctx.shadowColor = this.color;
                                     ctx.fillStyle = this.color;
-                                    ctx.globalAlpha = 0.4 * burstIntensity;
+                                    ctx.globalAlpha = 0.35 * burstIntensity;
                                     ctx.beginPath();
                                     ctx.arc(0, 0, this.radius * 1.4, 0, Math.PI * 2);
                                     ctx.fill();
@@ -4153,7 +4096,7 @@
 
             getActiveWeaponCount() {
                 let c = 0; 
-                const keys = ['ion', 'turret', 'emp', 'barrier', 'orbital', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones'];
+                const keys = ['ion', 'turret', 'emp', 'barrier', 'orbital', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones', 'surge'];
                 keys.forEach(k => { if(this.weapons[k] > 0) c++; });
                 return c;
             }
@@ -4814,7 +4757,7 @@
 
             draw(ctx) {
                 // WHIP VISUAL - Dramatic curved sweep with extreme momentum (SLOWED DOWN)
-                if (this.whipVisualTimer > 0) {
+                if (this.weapons.whip > 0 && this.whipVisualTimer > 0) {
                     const range = (100 + (this.weapons.whip * 5)) * this.weaponStats.whip.area;
                     const arcAngle = Math.PI * 2; // Full 360 degrees
                     const centerAngle = this.whipVisualAngle;
@@ -4869,8 +4812,6 @@
                     
                     ctx.shadowBlur = 0;
                     ctx.restore();
-                    
-                    this.whipVisualTimer -= dt/16; // Framerate-independent timer
                 }
                 
                 // PYLON RENDERING
@@ -5217,8 +5158,11 @@
                 }
 
 
-                if (this.invulnTimer > 0 && Math.floor(Date.now() / 66) % 2 === 0) return; // Flicker every ~66ms
                 ctx.save(); ctx.translate(this.x, this.y);
+                if (this.invulnTimer > 0 && Math.floor(Date.now() / 66) % 2 === 0) {
+                    ctx.restore(); // Clean up before returning
+                    return; // Flicker every ~66ms
+                }
                 
                 // BERSERKER MODULE VISUAL - Red aura that intensifies as HP drops
                 if (this.hasBerserker) {
@@ -9674,88 +9618,101 @@
                     if (this.maxBounces === undefined) this.maxBounces = 8;
                     if (this.hitEnemies === undefined) this.hitEnemies = new Set();
                     
-                    // Check for collision with enemies
-                    for (let i = 0; i < entities.enemies.length; i++) {
-                        const e = entities.enemies[i];
-                        if (e.hp > 0 && !this.hitEnemies.has(e)) { // Only hit if not already hit
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            if (dist < e.radius + 15) {
-                                // HIT!
-                                this.hitEnemies.add(e); // Mark as hit
-                                player.dealElementalDamage(e, this.damage * Math.pow(0.95, this.bounces), 'ricochet', '#ff8800');
-                                createExplosion(this.x, this.y, '#ff8800', 15);
-                                this.bounces++;
-                                console.log(`HIT enemy ${this.bounces}/${this.maxBounces}, hit ${this.hitEnemies.size} unique enemies so far`);
+                    // PERFORMANCE: Only check collision when near target (not every frame for all enemies)
+                    if (this.target && this.target.hp > 0 && !this.hitEnemies.has(this.target)) {
+                        const dx = this.target.x - this.x;
+                        const dy = this.target.y - this.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        
+                        if (dist < this.target.radius + 15) {
+                            // HIT!
+                            this.hitEnemies.add(this.target);
+                            player.dealElementalDamage(this.target, this.damage * Math.pow(0.95, this.bounces), 'ricochet', '#ff8800');
+                            createExplosion(this.x, this.y, '#ff8800', 15);
+                            this.bounces++;
+                            
+                            // Max bounces?
+                            if (this.bounces >= this.maxBounces) {
+                                return false;
+                            }
+                            
+                            // Find new target in ONE combined loop
+                            this.target = null;
+                            let nearestDist = Infinity;
+                            let foundUnhit = false;
+                            
+                            for (let j = 0; j < entities.enemies.length; j++) {
+                                const candidate = entities.enemies[j];
+                                if (candidate === this.target || candidate.hp <= 0) continue;
                                 
-                                // Max bounces?
-                                if (this.bounces >= this.maxBounces) {
-                                    console.log(`DISC DIED: Max bounces ${this.bounces}/${this.maxBounces}`);
-                                    return false;
+                                const cdx = candidate.x - this.x;
+                                const cdy = candidate.y - this.y;
+                                const d = Math.sqrt(cdx*cdx + cdy*cdy);
+                                
+                                // Check unhit enemies first
+                                if (!this.hitEnemies.has(candidate)) {
+                                    foundUnhit = true;
+                                    if (d < nearestDist) {
+                                        nearestDist = d;
+                                        this.target = candidate;
+                                    }
                                 }
-                                
-                                // Find new target (nearest unhit enemy)
-                                this.target = null;
-                                let nearestDist = Infinity;
+                            }
+                            
+                            // No unhit enemies? Clear list and find nearest ANY enemy
+                            if (!foundUnhit) {
+                                this.hitEnemies.clear();
+                                nearestDist = Infinity;
                                 for (let j = 0; j < entities.enemies.length; j++) {
                                     const candidate = entities.enemies[j];
-                                    if (candidate !== e && candidate.hp > 0 && !this.hitEnemies.has(candidate)) {
-                                        const d = Math.sqrt((candidate.x - this.x)**2 + (candidate.y - this.y)**2);
-                                        if (d < nearestDist) {
-                                            nearestDist = d;
-                                            this.target = candidate;
-                                        }
-                                    }
-                                }
-                                
-                                // No unhit enemies found - clear the hit list and allow re-hits
-                                if (!this.target) {
-                                    console.log(`All ${this.hitEnemies.size} enemies hit once, clearing hit list`);
-                                    this.hitEnemies.clear();
+                                    if (candidate.hp <= 0) continue;
                                     
-                                    // Find nearest enemy (allowing re-hits now)
-                                    for (let j = 0; j < entities.enemies.length; j++) {
-                                        const candidate = entities.enemies[j];
-                                        if (candidate !== e && candidate.hp > 0) {
-                                            const d = Math.sqrt((candidate.x - this.x)**2 + (candidate.y - this.y)**2);
-                                            if (d < nearestDist) {
-                                                nearestDist = d;
-                                                this.target = candidate;
-                                            }
-                                        }
+                                    const cdx = candidate.x - this.x;
+                                    const cdy = candidate.y - this.y;
+                                    const d = Math.sqrt(cdx*cdx + cdy*cdy);
+                                    if (d < nearestDist) {
+                                        nearestDist = d;
+                                        this.target = candidate;
                                     }
                                 }
-                                
-                                // If STILL no target (only 1 enemy left), die
-                                if (!this.target) {
-                                    // Only 1 enemy left, disc dies
-                                    return false;
-                                }
-                                
-                                console.log(`Next target at ${nearestDist.toFixed(0)}px`);
-                                break; // Only hit once per frame
+                            }
+                            
+                            // SHARP BOUNCE: Snap velocity to new target
+                            if (this.target) {
+                                const bounceAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                                this.vx = Math.cos(bounceAngle) * 12;
+                                this.vy = Math.sin(bounceAngle) * 12;
+                            } else {
+                                // No target at all - only 1 enemy left, disc dies
+                                return false;
                             }
                         }
                     }
                     
-                    // Steer toward target (EXACTLY like seeker)
+                    // Steer toward target (subtle correction only) - always runs
                     if (this.target && this.target.hp > 0) {
                         const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-                        const steerStrength = 0.15 * (dt/16); // dt-scaled steering
+                        const steerStrength = 0.05 * (dt/16); // Reduced from 0.15 - less curving
                         const targetVx = Math.cos(angle) * 12;
                         const targetVy = Math.sin(angle) * 12;
                         this.vx = this.vx + (targetVx - this.vx) * steerStrength;
                         this.vy = this.vy + (targetVy - this.vy) * steerStrength;
                     } else {
-                        // No target - find nearest
+                        // No target - find nearest (optimized)
                         let nearest = null;
                         let nearestDist = Infinity;
                         for (let i = 0; i < entities.enemies.length; i++) {
                             const e = entities.enemies[i];
                             if (e.hp > 0) {
-                                const d = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                if (d < nearestDist) {
-                                    nearestDist = d;
-                                    nearest = e;
+                                const dx = e.x - this.x;
+                                const dy = e.y - this.y;
+                                const roughDist = Math.abs(dx) + Math.abs(dy);
+                                if (roughDist < nearestDist * 1.5) { // Quick rejection
+                                    const d = Math.sqrt(dx*dx + dy*dy);
+                                    if (d < nearestDist) {
+                                        nearestDist = d;
+                                        nearest = e;
+                                    }
                                 }
                             }
                         }
@@ -9845,9 +9802,6 @@
                 
                 this.x += this.vx * (dt/16); this.y += this.vy * (dt/16);
                 this.life -= (dt/16); 
-                if (this.type === 'ricochet' && this.life <= 0) {
-                    console.log(`DISC DIED: Life expired (was alive for ~${600 - this.life} frames)`);
-                }
                 return this.life > 0;
             }
             draw(ctx) {
@@ -10112,11 +10066,15 @@
                     ctx.shadowBlur = 0;
                     ctx.restore();
                     
-                    // Trail particles (2 frames = ~0.033s at 60fps)
+                    // Trail particles (every ~2 frames at 60fps)
                     if (!this.trailParticleTimer) this.trailParticleTimer = 0;
-                    this.trailParticleTimer += dt/16;
+                    const currentFrame = Math.floor(state.frameCount);
+                    if (currentFrame !== this.lastTrailFrame) {
+                        this.trailParticleTimer++;
+                        this.lastTrailFrame = currentFrame;
+                    }
                     if (this.trailParticleTimer >= 2) {
-                        this.trailParticleTimer -= 2;
+                        this.trailParticleTimer = 0;
                         entities.particles.push({
                             x: this.x,
                             y: this.y,
@@ -10867,7 +10825,12 @@
             update(dt = 16) { this.life -= (dt/16); return this.life>0; }
             draw(ctx) {
                 ctx.shadowBlur = 15; ctx.shadowColor = this.color;
-                ctx.lineWidth = 4; ctx.strokeStyle = `${this.color.slice(0,-1)}a(${this.life/8}))`; // Use color with alpha
+                // Convert hex to rgba properly
+                const r = parseInt(this.color.substr(1,2), 16);
+                const g = parseInt(this.color.substr(3,2), 16);
+                const b = parseInt(this.color.substr(5,2), 16);
+                ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${this.life/8})`;
+                ctx.lineWidth = 4;
                 ctx.beginPath(); ctx.moveTo(this.x1,this.y1);
                 const dist = Math.sqrt((this.x2-this.x1)**2 + (this.y2-this.y1)**2);
                 const steps = Math.max(3, Math.floor(dist / 30));
@@ -10985,6 +10948,18 @@
                 ctx.fill();
                 
                 ctx.restore();
+            }
+        }
+        
+        // PERFORMANCE-AWARE PARTICLE CREATION
+        function createParticles(x, y, color, count, speed = 3) {
+            // Reduce particle count based on performance mode
+            let actualCount = count;
+            if (state.performanceMode === 'reduced') actualCount = Math.floor(count * 0.5);
+            if (state.performanceMode === 'minimal') actualCount = Math.floor(count * 0.25);
+            
+            for (let i = 0; i < actualCount; i++) {
+                entities.particles.push(new Particle(x, y, color, speed));
             }
         }
         
@@ -11126,22 +11101,22 @@
             const color = elementColors[element];
             
             if (element === 'fire') {
-                // FIRE: MASSIVE FIERY EXPLOSION
-                // Multiple huge explosions
-                createExplosion(x, y, color, 60);
-                setTimeout(() => createExplosion(x, y, color, 50), 50);
-                setTimeout(() => createExplosion(x, y, color, 40), 100);
+                // FIRE: FIERY EXPLOSION (streamlined)
+                // Multiple explosions
+                createExplosion(x, y, color, 40); // Reduced from 60
+                setTimeout(() => createExplosion(x, y, color, 30), 50); // Reduced from 50
+                setTimeout(() => createExplosion(x, y, color, 20), 100); // Reduced from 40
                 
-                // MASSIVE radiating flame shockwaves
+                // Radiating flame shockwaves
                 for (let i = 0; i < 3; i++) {
                     setTimeout(() => {
                         entities.particles.push(new Shockwave(x, y, 200, color));
                     }, i * 100);
                 }
                 
-                // 12 flame bursts radiating outward in all directions
-                for (let i = 0; i < 12; i++) {
-                    const angle = (i / 12) * Math.PI * 2;
+                // 8 flame bursts radiating outward (reduced from 12)
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2;
                     const distance = 80;
                     setTimeout(() => {
                         entities.particles.push(new Shockwave(
@@ -11150,11 +11125,11 @@
                             100,
                             color
                         ));
-                    }, i * 20);
+                    }, i * 25);
                 }
                 
-                // Tons of flame particles
-                for (let i = 0; i < 40; i++) {
+                // Flame particles (reduced from 40)
+                for (let i = 0; i < 25; i++) {
                     entities.particles.push(new Particle(x, y, color, 5));
                 }
                 
@@ -11164,33 +11139,33 @@
                     const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
                     if (dist < 100) {
                         player.dealElementalDamage(e, player.damage * 0.8, 'surge', color, true, 'normal', 'fire');
-                        for (let i = 0; i < 10; i++) {
+                        for (let i = 0; i < 6; i++) { // Reduced from 10
                             entities.particles.push(new Particle(e.x, e.y, color, 3));
                         }
                     }
                 });
                 
             } else if (element === 'ice') {
-                // ICE: MASSIVE CRYSTALLINE FREEZE NOVA
-                // Multiple explosions with ice color
-                createExplosion(x, y, color, 50);
-                setTimeout(() => createExplosion(x, y, color, 40), 50);
+                // ICE: CRYSTALLINE FREEZE NOVA (streamlined)
+                // Explosions with ice color
+                createExplosion(x, y, color, 30); // Reduced from 50
+                setTimeout(() => createExplosion(x, y, color, 20), 50); // Reduced from 40
                 
-                // HUGE expanding frost waves
-                for (let i = 0; i < 5; i++) {
+                // Expanding frost waves (reduced from 5)
+                for (let i = 0; i < 3; i++) {
                     setTimeout(() => {
                         entities.particles.push(new Shockwave(x, y, 180, color));
                     }, i * 80);
                 }
                 
-                // 20 ice shards shooting outward
-                for (let i = 0; i < 20; i++) {
-                    const angle = (i / 20) * Math.PI * 2;
+                // 12 ice shards shooting outward (reduced from 20)
+                for (let i = 0; i < 12; i++) {
+                    const angle = (i / 12) * Math.PI * 2;
                     entities.particles.push(new ShrapnelSpark(x, y, angle, 10));
                 }
                 
-                // Ice crystal explosions
-                for (let i = 0; i < 30; i++) {
+                // Ice crystal particles (reduced from 30)
+                for (let i = 0; i < 18; i++) {
                     entities.particles.push(new Particle(x, y, color, 4));
                 }
                 
@@ -11201,7 +11176,7 @@
                     if (dist < 140) {
                         e.cryoState.frozen = true;
                         e.cryoState.frozenTimer = 90; // 1.5 seconds
-                        for (let i = 0; i < 8; i++) {
+                        for (let i = 0; i < 5; i++) { // Reduced from 8
                             entities.particles.push(new Particle(e.x, e.y, color, 3));
                         }
                     }
@@ -12457,6 +12432,20 @@
             const now = Date.now(); 
             let dt = now - state.lastTime;
             state.lastTime = now;
+            
+            // PERFORMANCE MONITORING - Track entity counts
+            if (!state.performanceMode) state.performanceMode = 'normal'; // normal, reduced, minimal
+            const entityCount = entities.enemies.length + entities.projectiles.length + entities.particles.length;
+            
+            // Auto-adjust performance based on entity count
+            if (entityCount > 500) {
+                state.performanceMode = 'minimal';
+            } else if (entityCount > 300) {
+                state.performanceMode = 'reduced';
+            } else {
+                state.performanceMode = 'normal';
+            }
+            
             // CRITICAL: Clamp dt to prevent catch-up behavior after lag/freezes
             // If game freezes for 1 second, we don't want to fire 60 frames of projectiles at once
             if (dt > 32) dt = 16; // Anything over 2 frames gets clamped to 1 frame
@@ -13669,7 +13658,7 @@
             }
             
             entities.gasClouds = entities.gasClouds.filter(c => { const a=c.update(scaledDt); if(a) c.draw(ctx); return a; });
-            entities.lightnings = entities.lightnings.filter(l => { const a=l.update(); if(a) l.draw(ctx); return a; });
+            entities.lightnings = entities.lightnings.filter(l => { const a=l.update(scaledDt); if(a) l.draw(ctx); return a; });
             entities.texts = entities.texts.filter(t => { const a=t.update(scaledDt); if(a) t.draw(ctx); return a; });
 
             // SKYFALL BEAM RENDERING - Ultra-powerful divine annihilation beam
@@ -14991,6 +14980,11 @@
             const shuffled = ultimateIds.sort(() => seededRandom() - 0.5);
             const choices = [shuffled[0], shuffled[1]];
             
+            // If player already has an ultimate, add "Keep Current" option
+            if (player.ultimate) {
+                choices.push('keep_current');
+            }
+            
             console.log('Ultimate choices:', choices);
             
             // Create ultimate choice cards using EXACT card structure
@@ -14998,7 +14992,20 @@
             container.innerHTML = ''; // Clear existing cards
             
             choices.forEach(ultId => {
-                const ultData = ULTIMATES[ultId];
+                let ultData;
+                let isKeepCurrent = false;
+                
+                if (ultId === 'keep_current') {
+                    // Special "Keep Current" card
+                    isKeepCurrent = true;
+                    ultData = {
+                        name: `Keep ${ULTIMATES[player.ultimate].name}`,
+                        desc: `Continue using your current ultimate ability`,
+                        icon: ULTIMATES[player.ultimate].icon
+                    };
+                } else {
+                    ultData = ULTIMATES[ultId];
+                }
                 
                 // Create card with exact structure from createCard
                 const card = document.createElement('div');
@@ -15031,13 +15038,18 @@
                     if (card.classList.contains('disabled')) return;
                     card.classList.add('disabled');
                     
-                    // Properly reset ultimate state
-                    player.ultimate = ultId;
-                    player.ultimateCharge = 0; // Start fresh
-                    player.ultimateActive = false; // Clear active state
-                    player.ultimateData = {}; // Clear any lingering ultimate data
+                    if (isKeepCurrent) {
+                        // Keep current ultimate - don't reset charge or state
+                        console.log(`✅ Keeping current ultimate: ${ULTIMATES[player.ultimate].name}`);
+                    } else {
+                        // New ultimate - reset everything
+                        player.ultimate = ultId;
+                        player.ultimateCharge = 0; // Start fresh
+                        player.ultimateActive = false; // Clear active state
+                        player.ultimateData = {}; // Clear any lingering ultimate data
+                        console.log(`✅ Ultimate equipped: ${ultData.name}`);
+                    }
                     
-                    console.log(`✅ Ultimate equipped: ${ultData.name}`);
                     document.getElementById('levelup-screen').classList.remove('active');
                     state.screen = 'game';
                     player.invulnTimer = 120; // Brief invulnerability
@@ -15238,7 +15250,14 @@
                  if (locked) {
                      pool = pool.filter(o => o.type !== 'weapon' || player.weapons[o.id] > 0);
                  } else if (forceType === 'new_weapon') {
-                     pool = offensivePool.filter(o => o.type === 'weapon' && player.weapons[o.id] === 0);
+                     // Count current weapons (excluding multi/nuke, but INCLUDING surge)
+                     const weaponCount = Object.keys(player.weapons).filter(k => player.weapons[k] > 0 && k !== 'multi' && k !== 'nuke').length;
+                     if (weaponCount >= 4) {
+                         // At limit - offer upgrades instead
+                         pool = offensivePool.filter(o => o.type === 'weapon' && player.weapons[o.id] > 0);
+                     } else {
+                         pool = offensivePool.filter(o => o.type === 'weapon' && player.weapons[o.id] === 0);
+                     }
                  } else if (forceType === 'upgrade_weapon') {
                      pool = offensivePool.filter(o => o.type === 'weapon' && player.weapons[o.id] > 0);
                  } else if (forceType === 'upgrade_attribute') {
@@ -16386,7 +16405,8 @@
                     highestLevel: parseInt(localStorage.getItem('neonrogue_highestLevel') || '0'),
                     highestScore: parseInt(localStorage.getItem('neonrogue_highestScore') || '0'),
                     totalPlaytime: parseInt(localStorage.getItem('neonrogue_totalPlaytime') || '0'),
-                    nexusCores: parseInt(localStorage.getItem('neonrogue_nexusCores') || '0')
+                    nexusCores: parseInt(localStorage.getItem('neonrogue_nexusCores') || '0'),
+                    fourElementsAchieved: localStorage.getItem('neonrogue_4elementsAchieved') === 'true' // Catalyst unlock
                 }
             };
         }
@@ -16406,6 +16426,11 @@
             localStorage.setItem('neonrogue_highestScore', meta.highestScore || 0);
             localStorage.setItem('neonrogue_totalPlaytime', meta.totalPlaytime || 0);
             localStorage.setItem('neonrogue_nexusCores', meta.nexusCores || 0);
+            
+            // Load elemental mastery achievement (Catalyst unlock)
+            if (meta.fourElementsAchieved === true) {
+                localStorage.setItem('neonrogue_4elementsAchieved', 'true');
+            }
             
             return true;
         }
@@ -16445,12 +16470,18 @@
                     if (loadSaveData(data)) {
                         // Show detailed feedback
                         const meta = data.metaProgress;
-                        const msg = `Save imported successfully!\n\n` +
+                        let msg = `Save imported successfully!\n\n` +
                             `Total Runs: ${meta.totalRuns || 0}\n` +
                             `Total Kills: ${meta.totalKills || 0}\n` +
                             `Highest Level: ${meta.highestLevel || 0}\n` +
-                            `Highest Score: ${meta.highestScore || 0}\n\n` +
-                            `Page will reload to apply changes.`;
+                            `Highest Score: ${meta.highestScore || 0}\n`;
+                        
+                        // Add Catalyst unlock status if present
+                        if (meta.fourElementsAchieved === true) {
+                            msg += `\n✨ CATALYST ship unlocked!\n`;
+                        }
+                        
+                        msg += `\nPage will reload to apply changes.`;
                         alert(msg);
                         // Refresh the page to apply changes
                         location.reload();
