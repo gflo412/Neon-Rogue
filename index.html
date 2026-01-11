@@ -1218,7 +1218,7 @@
                 
                 this.teslaTimer = 0; this.maxTeslaTimer = 150; // Increased from 110
                 this.seekerTimer = 0; this.maxSeekerTimer = 110; // Increased from 90 (slower base cooldown - nerf) 
-                this.beamActive = false; this.beamTimer = 0; this.beamCooldown = 0; this.beamTarget = null;
+                this.beamActive = false; this.beamTimer = 0; this.beamCooldown = 0; this.beamTarget = null; this.beamIgnitionDelay = 0;
                 this.beamTargets = [];
                 this.beamRampMap = new Map(); // Track damage ramp per enemy
                 this.beamTickCounter = 0; // Time dilation compliant tick counter
@@ -1608,36 +1608,170 @@
                     if (this.whipVisualTimer < 0) this.whipVisualTimer = 0;
                 }
                 
-                // CATALYST: Update surge aura
+                // CATALYST: Update surge aura (PERFORMANCE OPTIMIZED)
                 if (this.selectedShip === 'CATALYST') {
                     // Update surge aura timer and apply aura effects
                     if (this.surgeAuraTimer > 0) {
                         this.surgeAuraTimer -= dt/16;
                         
-                        // Apply aura effects based on element
-                        const auraRadius = 120;
-                        entities.enemies.forEach(e => {
-                            if (e.hp <= 0) return;
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            if (dist < auraRadius) {
-                                if (this.surgeAuraElement === 'fire') {
-                                    // Fire aura: Burn damage (buffed)
-                                    e.takeDamage(this.damage * 0.1 * (dt/16), '#ff5722');
-                                } else if (this.surgeAuraElement === 'ice') {
-                                    // Ice aura: 30% slow
-                                    e.cryoState.slowed = true;
-                                } else if (this.surgeAuraElement === 'volt') {
-                                    // Volt aura: Chain damage (buffed)
-                                    if (seededRandom() < 0.05 * (dt/16)) {
-                                        this.chainVolt(e, this.damage * 0.5, 0, 1, 2); // Buffed from 0.3
+                        // Initialize aura pulse timer if needed
+                        if (!this.surgeAuraPulse) this.surgeAuraPulse = 0;
+                        this.surgeAuraPulse += dt/16;
+                        
+                        // OPTIMIZATION: Reduce aura update frequency based on performance mode
+                        if (!this.surgeAuraUpdateCounter) this.surgeAuraUpdateCounter = 0;
+                        this.surgeAuraUpdateCounter += dt/16;
+                        
+                        // Performance mode detection
+                        const perfMode = typeof state !== 'undefined' && state.performanceMode ? state.performanceMode : 'normal';
+                        const updateInterval = perfMode === 'minimal' ? 3 : perfMode === 'reduced' ? 2 : 1; // Update every N frames
+                        const particleReduction = perfMode === 'minimal' ? 0.3 : perfMode === 'reduced' ? 0.6 : 1.0;
+                        
+                        // Only update aura effects every N frames
+                        if (this.surgeAuraUpdateCounter >= updateInterval) {
+                            this.surgeAuraUpdateCounter = 0;
+                            
+                            // Apply aura effects based on element
+                            const auraRadius = 120;
+                            
+                            // Safety check: entities.enemies might not exist yet at game start
+                            if (entities && entities.enemies) {
+                                // OPTIMIZATION: Filter enemies in range first to reduce loop iterations
+                                const enemiesInRange = entities.enemies.filter(e => {
+                                    if (e.hp <= 0) return false;
+                                    
+                                    // VIEWPORT CULLING: Skip off-screen enemies for better performance
+                                    const hasHelpers = typeof inViewport !== 'undefined';
+                                    if (hasHelpers && !inViewport(e.x, e.y)) return false;
+                                    
+                                    const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                                    return dist < auraRadius;
+                                });
+                                
+                                enemiesInRange.forEach(e => {
+                                    if (this.surgeAuraElement === 'fire') {
+                                        // FIRE AURA: Stacking burn - gets STRONGER over time in aura
+                                        if (!e.fireAuraStacks) e.fireAuraStacks = 0;
+                                        
+                                        // Pulse every 10 frames (0.167s) - fast ticking
+                                        if (this.surgeAuraPulse >= 10 && this.surgeAuraPulse < 10.5) {
+                                            e.fireAuraStacks = Math.min(e.fireAuraStacks + 1, 5); // Stack up to 5
+                                            const dmg = this.damage * 0.5 * e.fireAuraStacks; // Ramps: 0.5x, 1x, 1.5x, 2x, 2.5x
+                                            e.takeDamage(dmg, '#ff5722', false, 'normal', 'surge', 'fire');
+                                            
+                                            // PARTICLE REDUCTION: Fewer particles in performance mode
+                                            const particleCount = Math.floor(e.fireAuraStacks * particleReduction);
+                                            for (let i = 0; i < particleCount; i++) {
+                                                entities.particles.push(new Particle(e.x, e.y, '#ff5722', 2 + i));
+                                            }
+                                        }
+                                    } else if (this.surgeAuraElement === 'ice') {
+                                        // Ice aura: 30% slow
+                                        e.cryoState.slowed = true;
+                                    } else if (this.surgeAuraElement === 'volt') {
+                                        // Volt aura: More frequent chains (buffed)
+                                        if (seededRandom() < 0.08 * (dt/16)) {
+                                            this.chainVolt(e, this.damage * 0.6, 0, 1, 'surge');
+                                            // Visual feedback (skip in minimal mode)
+                                            if (perfMode !== 'minimal') {
+                                                entities.particles.push(new Particle(e.x, e.y, '#ffeb3b', 3));
+                                            }
+                                        }
+                                    } else if (this.surgeAuraElement === 'bio') {
+                                        // BIO AURA: Spreading contagion - jumps between enemies
+                                        // Pulse every 20 frames (0.333s) - slower, heavier hits
+                                        if (this.surgeAuraPulse >= 20 && this.surgeAuraPulse < 20.5) {
+                                            // Damage this enemy
+                                            e.takeDamage(this.damage * 1.2, '#39ff14', false, 'normal', 'surge', 'bio');
+                                            
+                                            // OPTIMIZATION: Limit spread targets based on performance mode
+                                            const maxSpreadTargets = perfMode === 'minimal' ? 1 : 2;
+                                            
+                                            // SPREAD to nearby enemies within 80px
+                                            // OPTIMIZATION: Only check enemies already in aura range (not all enemies)
+                                            const nearbyTargets = enemiesInRange
+                                                .filter(target => {
+                                                    if (target === e || target.hp <= 0) return false;
+                                                    const spreadDist = Math.sqrt((target.x - e.x)**2 + (target.y - e.y)**2);
+                                                    return spreadDist < 80;
+                                                })
+                                                .slice(0, maxSpreadTargets);
+                                            
+                                            nearbyTargets.forEach(target => {
+                                                target.takeDamage(this.damage * 0.6, '#39ff14', false, 'normal', 'surge', 'bio');
+                                                
+                                                // PARTICLE REDUCTION: Fewer spread particles in performance mode
+                                                const spreadParticles = Math.floor(3 * particleReduction);
+                                                for (let i = 0; i < spreadParticles; i++) {
+                                                    const angle = Math.random() * Math.PI * 2;
+                                                    const speed = 2 + Math.random() * 2;
+                                                    entities.particles.push({
+                                                        x: e.x,
+                                                        y: e.y,
+                                                        vx: Math.cos(angle) * speed,
+                                                        vy: Math.sin(angle) * speed,
+                                                        targetX: target.x,
+                                                        targetY: target.y,
+                                                        color: '#39ff14',
+                                                        life: 15,
+                                                        size: 3,
+                                                        update: function(dt) {
+                                                            // Move toward target
+                                                            const dx = this.targetX - this.x;
+                                                            const dy = this.targetY - this.y;
+                                                            const dist = Math.sqrt(dx*dx + dy*dy);
+                                                            if (dist > 5) {
+                                                                this.x += (dx/dist) * 4 * (dt/16);
+                                                                this.y += (dy/dist) * 4 * (dt/16);
+                                                            }
+                                                            this.life -= dt/16;
+                                                            return this.life > 0;
+                                                        },
+                                                        draw: function(ctx) {
+                                                            ctx.fillStyle = this.color;
+                                                            ctx.globalAlpha = this.life / 15;
+                                                            ctx.beginPath();
+                                                            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                                            ctx.fill();
+                                                            ctx.globalAlpha = 1;
+                                                        }
+                                                    });
+                                                }
+                                            });
+                                            
+                                            // PARTICLE REDUCTION: Fewer bio cloud particles
+                                            const bioCloudParticles = Math.floor(8 * particleReduction);
+                                            for (let i = 0; i < bioCloudParticles; i++) {
+                                                entities.particles.push(new Particle(e.x, e.y, '#39ff14', 3));
+                                            }
+                                        }
                                     }
-                                } else if (this.surgeAuraElement === 'bio') {
-                                    // Bio aura: Poison damage (buffed)
-                                    e.takeDamage(this.damage * 0.06 * (dt/16), '#39ff14');
-                                }
-                                // Hack aura would be too powerful, skip it
-                            }
-                        });
+                                    // Hack aura would be too powerful, skip it
+                                });
+                                
+                                // Reset fire stacks for enemies outside range
+                                entities.enemies.forEach(e => {
+                                    const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                                    if (dist >= auraRadius && e.fireAuraStacks) {
+                                        e.fireAuraStacks = 0;
+                                    }
+                                });
+                            } // End safety check for entities.enemies
+                        }
+                        
+                        // Reset pulse timer after one cycle
+                        if (this.surgeAuraPulse >= 20) {
+                            this.surgeAuraPulse = 0;
+                        }
+                    } else {
+                        // Reset pulse timer and clear fire stacks when aura expires
+                        this.surgeAuraPulse = 0;
+                        this.surgeAuraUpdateCounter = 0;
+                        if (entities && entities.enemies) {
+                            entities.enemies.forEach(e => {
+                                if (e.fireAuraStacks) e.fireAuraStacks = 0;
+                            });
+                        }
                     }
                 }
                 
@@ -1954,7 +2088,17 @@
                                     // Damage decreases: 100% -> 80% -> 64%
                                     const newDamageMult = damageMult * 0.8;
                                     this.dealElementalDamage(target, dmg * newDamageMult, 'tesla', '#ffffff');
+                                    
+                                    // MORE INTENSE: Double lightning bolt + particles
                                     entities.lightnings.push(new LightningBolt(sourceX, sourceY, target.x, target.y, '#ffeb3b'));
+                                    setTimeout(() => {
+                                        entities.lightnings.push(new LightningBolt(sourceX, sourceY, target.x, target.y, '#ffeb3b'));
+                                    }, 20);
+                                    
+                                    // Add electric particles for more intensity
+                                    for (let p = 0; p < 8; p++) {
+                                        entities.particles.push(new Particle(target.x, target.y, '#ffeb3b', 3));
+                                    }
                                     
                                     // Recursively chain from this target
                                     setTimeout(() => {
@@ -1990,7 +2134,23 @@
                                     // Stagger bolt firing with 500ms delay between each
                                     setTimeout(() => {
                                         this.dealElementalDamage(initial, dmg, 'tesla', '#ffffff');
+                                        
+                                        // MORE INTENSE: Triple lightning bolt for initial hit
                                         entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
+                                        setTimeout(() => {
+                                            entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
+                                        }, 15);
+                                        setTimeout(() => {
+                                            entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
+                                        }, 30);
+                                        
+                                        // Add explosion effect for more intensity
+                                        createExplosion(initial.x, initial.y, '#ffeb3b', 20);
+                                        
+                                        // Add electric particles
+                                        for (let p = 0; p < 12; p++) {
+                                            entities.particles.push(new Particle(initial.x, initial.y, '#ffeb3b', 4));
+                                        }
                                         
                                         // Start forking chains after 50ms
                                         setTimeout(() => {
@@ -2438,10 +2598,10 @@
                         const fireFlak = (dmgMult = 1.0, depth = 0) => {
                             // Fire 3 pellets in a spread pattern
                             const pelletCount = 3;
-                            const spreadAngle = Math.PI / 12; // 15 degrees spread
+                            const spreadAngle = Math.PI / 15; // 12 degrees spread (was 15)
                             
                             for (let i = 0; i < pelletCount; i++) {
-                                const angleOffset = (i - 1) * spreadAngle; // -15°, 0°, +15°
+                                const angleOffset = (i - 1) * spreadAngle; // -12°, 0°, +12°
                                 const angle = baseAngle + angleOffset;
                                 const vx = Math.cos(angle) * 10;
                                 const vy = Math.sin(angle) * 10;
@@ -2467,12 +2627,18 @@
                 // PLASMA BEAM
                 if (this.weapons.beam > 0) {
                     if (this.beamActive) {
+                        // Track beam active time for ignition flash
+                        if (!this.beamActiveTime) this.beamActiveTime = 0;
+                        this.beamActiveTime += dt/16;
+                        
                         this.beamTimer -= dt;
                         if (this.beamTimer <= 0) { 
                             this.beamActive = false; 
+                            this.beamActiveTime = 0;
                             this.beamCooldown = 3000 / this.weaponStats.beam.rate; 
                             this.beamTargets = [];
                             this.beamRampMap.clear(); // Reset ramp when beam ends
+                            this.beamTerminationFlash = 15; // Trigger termination flash (15 frames)
                         } 
                         else {
                             // Tick counter that respects time dilation
@@ -2540,7 +2706,12 @@
                         }
                     } else {
                         this.beamCooldown -= dt;
-                        if (this.beamCooldown <= 0) { this.beamActive = true; this.beamTimer = 3000; this.beamTickCounter = 0; }
+                        if (this.beamCooldown <= 0) { 
+                            this.beamActive = true; 
+                            this.beamTimer = 3000; 
+                            this.beamTickCounter = 0;
+                            this.beamIgnitionFlash = 15; // Trigger flash when beam activates
+                        }
                     }
                 }
 
@@ -2569,15 +2740,18 @@
                     if (this.pylonTickCounter >= 10 && this.pylons.length >= 2) {
                         this.pylonTickCounter -= 10;
                         
-                        for (let i = 0; i < this.pylons.length - 1; i++) {
-                            const p1 = this.pylons[i];
-                            const p2 = this.pylons[i + 1];
-                            
-                            for (let e of entities.enemies) {
-                                // Check if enemy is near the line segment
-                                const dist = this.distanceToLineSegment(e.x, e.y, p1.x, p1.y, p2.x, p2.y);
-                                if (dist < 18 * this.weaponStats.pylons.area) { // Base 18, balanced between old and new
-                                    this.dealElementalDamage(e, this.damage * 0.5 * this.weaponStats.pylons.dmg, 'pylons', '#ff64ff', false);
+                        // MESH NETWORK: Connect ALL pylons to ALL other pylons
+                        for (let i = 0; i < this.pylons.length; i++) {
+                            for (let j = i + 1; j < this.pylons.length; j++) {
+                                const p1 = this.pylons[i];
+                                const p2 = this.pylons[j];
+                                
+                                for (let e of entities.enemies) {
+                                    // Check if enemy is near the line segment
+                                    const dist = this.distanceToLineSegment(e.x, e.y, p1.x, p1.y, p2.x, p2.y);
+                                    if (dist < 18 * this.weaponStats.pylons.area) { // Base 18, balanced between old and new
+                                        this.dealElementalDamage(e, this.damage * 0.5 * this.weaponStats.pylons.dmg, 'pylons', '#ff64ff', false);
+                                    }
                                 }
                             }
                         }
@@ -2870,7 +3044,7 @@
                             const currentElement = this.surgeElements[this.surgeElementIndex];
                             
                             // Orb properties
-                            const orbSpeed = 5.0; // Increased from 3.5 for better feel
+                            const orbSpeed = 6.0; // Increased from 5.0 for faster travel
                             const baseDmg = 35 + (this.weapons.surge * 12); // Buffed from 20 + 8
                             const dmg = baseDmg * this.weaponStats.surge.dmg * damageBonus;
                             const orbRadius = 8; // Fixed size, doesn't scale with level or area
@@ -4894,33 +5068,150 @@
                         ctx.restore();
                     });
                     
-                    // Draw energy beams between pylons - PURPLE/MAGENTA lightning (changed from golden/orange)
+                    // Draw energy beams between ALL pylons - FULL MESH NETWORK (OPTIMIZED)
                     if (this.pylons.length >= 2) {
-                        for (let i = 0; i < this.pylons.length - 1; i++) {
-                            const p1 = this.pylons[i];
-                            const p2 = this.pylons[i + 1];
-                            const pulse = 0.4 + Math.sin(state.frameCount * 0.12 + i) * 0.3;
-                            
-                            // Outer beam - magenta glow
-                            ctx.strokeStyle = `rgba(200, 50, 200, ${pulse * 0.5})`;
-                            ctx.lineWidth = 10 * this.weaponStats.pylons.area;
+                        const frameTime = state.frameCount;
+                        const waveVelocity = 6; // Pixels per frame at 60fps (360 pixels/second)
+                        
+                        // Pre-calculate common values
+                        const areaScale = this.weaponStats.pylons.area;
+                        
+                        // Check if optimization helpers are available (they're defined in game loop)
+                        const hasHelpers = typeof inViewport !== 'undefined' && typeof applyShadow !== 'undefined';
+                        
+                        // Shadow setup (respects performance mode if available)
+                        if (hasHelpers) {
+                            applyShadow(20, '#cc00cc');
+                        } else {
                             ctx.shadowBlur = 20;
                             ctx.shadowColor = '#cc00cc';
-                            ctx.beginPath();
-                            ctx.moveTo(p1.x, p1.y);
-                            ctx.lineTo(p2.x, p2.y);
-                            ctx.stroke();
-                            
-                            // Inner beam - bright purple
-                            ctx.strokeStyle = `rgba(255, 100, 255, ${pulse})`;
-                            ctx.lineWidth = 5 * this.weaponStats.pylons.area;
+                        }
+                        ctx.lineCap = 'round';
+                        
+                        // Draw all outer beams first (batched)
+                        for (let i = 0; i < this.pylons.length; i++) {
+                            for (let j = i + 1; j < this.pylons.length; j++) {
+                                const p1 = this.pylons[i];
+                                const p2 = this.pylons[j];
+                                
+                                // VIEWPORT CULLING: Skip beams entirely off-screen (if helper available)
+                                if (hasHelpers && !inViewport(p1.x, p1.y) && !inViewport(p2.x, p2.y)) continue;
+                                
+                                const pulse = 0.4 + Math.sin(frameTime * 0.12 + i + j) * 0.3;
+                                
+                                ctx.strokeStyle = `rgba(200, 50, 200, ${pulse * 0.5})`;
+                                ctx.lineWidth = 10 * areaScale;
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x, p1.y);
+                                ctx.lineTo(p2.x, p2.y);
+                                ctx.stroke();
+                            }
+                        }
+                        
+                        // Draw all inner beams (batched)
+                        if (hasHelpers) {
+                            applyShadow(12, '#ff66ff');
+                        } else {
                             ctx.shadowBlur = 12;
                             ctx.shadowColor = '#ff66ff';
-                            ctx.beginPath();
-                            ctx.moveTo(p1.x, p1.y);
-                            ctx.lineTo(p2.x, p2.y);
-                            ctx.stroke();
-                            
+                        }
+                        for (let i = 0; i < this.pylons.length; i++) {
+                            for (let j = i + 1; j < this.pylons.length; j++) {
+                                const p1 = this.pylons[i];
+                                const p2 = this.pylons[j];
+                                
+                                // VIEWPORT CULLING: Skip beams entirely off-screen (if helper available)
+                                if (hasHelpers && !inViewport(p1.x, p1.y) && !inViewport(p2.x, p2.y)) continue;
+                                
+                                const pulse = 0.4 + Math.sin(frameTime * 0.12 + i + j) * 0.3;
+                                
+                                ctx.strokeStyle = `rgba(255, 100, 255, ${pulse})`;
+                                ctx.lineWidth = 5 * areaScale;
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x, p1.y);
+                                ctx.lineTo(p2.x, p2.y);
+                                ctx.stroke();
+                            }
+                        }
+                        
+                        // Draw waves (skip in minimal mode for performance)
+                        const perfMode = typeof state.performanceMode !== 'undefined' ? state.performanceMode : 'normal';
+                        if (perfMode !== 'minimal') {
+                            for (let i = 0; i < this.pylons.length; i++) {
+                                for (let j = i + 1; j < this.pylons.length; j++) {
+                                    const p1 = this.pylons[i];
+                                    const p2 = this.pylons[j];
+                                    
+                                    // VIEWPORT CULLING: Skip waves for off-screen beams (if helper available)
+                                    if (hasHelpers && !inViewport(p1.x, p1.y) && !inViewport(p2.x, p2.y)) continue;
+                                    
+                                    // Calculate beam length for constant velocity
+                                    const dx = p2.x - p1.x;
+                                    const dy = p2.y - p1.y;
+                                    const beamLength = Math.sqrt(dx * dx + dy * dy);
+                                    
+                                    // Distance traveled based on frame time and velocity
+                                    const distanceTraveled = (frameTime * waveVelocity + (i + j) * 100) % beamLength;
+                                    const waveProgress = distanceTraveled / beamLength; // 0 to 1
+                                    
+                                    const waveX = p1.x + dx * waveProgress;
+                                    const waveY = p1.y + dy * waveProgress;
+                                    const waveFade = 1 - Math.abs(waveProgress - 0.5) * 2;
+                                    const waveAlpha = waveFade * 0.8;
+                                    
+                                    // Large outer glow
+                                    ctx.fillStyle = `rgba(255, 150, 255, ${waveAlpha * 0.4})`;
+                                    if (hasHelpers) {
+                                        applyShadow(25, '#ff66ff');
+                                    } else {
+                                        ctx.shadowBlur = 25;
+                                        ctx.shadowColor = '#ff66ff';
+                                    }
+                                    ctx.beginPath();
+                                    ctx.arc(waveX, waveY, 12 * areaScale, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    
+                                    // Bright core
+                                    ctx.fillStyle = `rgba(255, 255, 255, ${waveAlpha})`;
+                                    if (hasHelpers) {
+                                        applyShadow(15, '#ffffff');
+                                    } else {
+                                        ctx.shadowBlur = 15;
+                                        ctx.shadowColor = '#ffffff';
+                                    }
+                                    ctx.beginPath();
+                                    ctx.arc(waveX, waveY, 5 * areaScale, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    
+                                    // Trail particles (always 1 for performance)
+                                    const trailCount = 1; // Reduced from 2 to always 1
+                                    for (let k = 1; k <= trailCount; k++) {
+                                        const trailDistance = distanceTraveled - (k * 15); // 15 pixels behind
+                                        if (trailDistance >= 0) {
+                                            const trailProgress = trailDistance / beamLength;
+                                            const trailX = p1.x + dx * trailProgress;
+                                            const trailY = p1.y + dy * trailProgress;
+                                            const trailAlpha = waveAlpha * (1 - k * 0.3);
+                                            
+                                            ctx.fillStyle = `rgba(200, 100, 255, ${trailAlpha * 0.6})`;
+                                            if (hasHelpers) {
+                                                applyShadow(8, '#ff66ff');
+                                            } else {
+                                                ctx.shadowBlur = 8;
+                                                ctx.shadowColor = '#ff66ff';
+                                            }
+                                            ctx.beginPath();
+                                            ctx.arc(trailX, trailY, (5 - k) * areaScale, 0, Math.PI * 2);
+                                            ctx.fill();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (hasHelpers) {
+                            clearShadow();
+                        } else {
                             ctx.shadowBlur = 0;
                         }
                     }
@@ -5428,7 +5719,7 @@
                     });
                 }
                 
-                // DRAW SURGE AURA (if CATALYST and aura is active)
+                // DRAW SURGE AURA (if CATALYST and aura is active) - PERFORMANCE OPTIMIZED
                 if (this.selectedShip === 'CATALYST' && this.surgeAuraTimer > 0 && this.surgeAuraElement) {
                     const elementColors = {
                         fire: '#ff5722',
@@ -5437,13 +5728,17 @@
                         bio: '#39ff14'
                     };
                     
+                    // Performance mode detection
+                    const perfMode = typeof state !== 'undefined' && state.performanceMode ? state.performanceMode : 'normal';
+                    const useShadows = perfMode === 'normal';
+                    
                     const auraColor = elementColors[this.surgeAuraElement];
                     const alpha = this.surgeAuraTimer / 60; // Fade out over 1 second
                     const time = Date.now() * 0.001;
                     const auraRadius = 120;
                     
-                    // Rotating energy streams (6 streams spiraling outward)
-                    const numStreams = 6;
+                    // OPTIMIZATION: Reduce stream count based on performance mode
+                    const numStreams = perfMode === 'minimal' ? 3 : perfMode === 'reduced' ? 4 : 6;
                     for (let i = 0; i < numStreams; i++) {
                         const baseAngle = (i / numStreams) * Math.PI * 2;
                         const rotation = -time * 2; // Negative for opposite direction
@@ -5453,11 +5748,15 @@
                         ctx.strokeStyle = auraColor;
                         ctx.globalAlpha = alpha * 0.3;
                         ctx.lineWidth = 2;
-                        ctx.shadowBlur = 15;
-                        ctx.shadowColor = auraColor;
+                        if (useShadows) {
+                            ctx.shadowBlur = 15;
+                            ctx.shadowColor = auraColor;
+                        }
                         
                         ctx.beginPath();
-                        for (let r = 20; r < auraRadius; r += 5) {
+                        // OPTIMIZATION: Reduce spiral detail based on performance
+                        const spiralStep = perfMode === 'minimal' ? 10 : perfMode === 'reduced' ? 7 : 5;
+                        for (let r = 20; r < auraRadius; r += spiralStep) {
                             const spiralAngle = angle + (r / auraRadius) * Math.PI * 0.5;
                             const x = Math.cos(spiralAngle) * r;
                             const y = Math.sin(spiralAngle) * r;
@@ -5470,8 +5769,8 @@
                         ctx.stroke();
                     }
                     
-                    // Pulsing energy particles at radius
-                    const numParticles = 8;
+                    // OPTIMIZATION: Reduce particle count based on performance mode
+                    const numParticles = perfMode === 'minimal' ? 4 : perfMode === 'reduced' ? 6 : 8;
                     for (let i = 0; i < numParticles; i++) {
                         const particleAngle = (i / numParticles) * Math.PI * 2 + time * 1.5;
                         const x = Math.cos(particleAngle) * auraRadius;
@@ -5479,8 +5778,10 @@
                         
                         ctx.fillStyle = auraColor;
                         ctx.globalAlpha = alpha * 0.6;
-                        ctx.shadowBlur = 10;
-                        ctx.shadowColor = auraColor;
+                        if (useShadows) {
+                            ctx.shadowBlur = 10;
+                            ctx.shadowColor = auraColor;
+                        }
                         ctx.beginPath();
                         ctx.arc(x, y, 3, 0, Math.PI * 2);
                         ctx.fill();
@@ -5498,7 +5799,7 @@
                     ctx.fill();
                     
                     ctx.globalAlpha = 1.0;
-                    ctx.shadowBlur = 0;
+                    if (useShadows) ctx.shadowBlur = 0;
                 }
                 
                 // SHIELD GLOW INDICATOR - Visible soft glow when at least one shield is up
@@ -7651,9 +7952,17 @@
                                         if (e !== this && e.hp > 0 && !e.hackState.active) {
                                             const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
                                             if (dist < this.radius + e.radius + 10) {
-                                                // Deal massive collision damage based on target's max HP
+                                                // Deal collision damage based on target's max HP
                                                 const targetMaxHp = e.maxHp || e.hp || 100;
-                                                const collisionDmg = targetMaxHp * 0.20; // 20% max HP per collision
+                                                let collisionDmg = targetMaxHp * 0.20; // 20% max HP base
+                                                
+                                                // MITIGATION: Reduce damage against titans/bosses
+                                                if (e.isNexusPrime) {
+                                                    collisionDmg *= 0.15; // Only 3% max HP against final boss (was 20%)
+                                                } else if (e.isChampion || e.tier === 'titan') {
+                                                    collisionDmg *= 0.30; // Only 6% max HP against champions/titans (was 20%)
+                                                }
+                                                
                                                 e.takeDamage(collisionDmg, '#00ffff', false, 'normal', null, 'hack');
                                                 createExplosion(e.x, e.y, '#00ffff', 10);
                                                 entities.particles.push(new Shockwave(e.x, e.y, 80, '#00ffff'));
@@ -9817,7 +10126,99 @@
             }
             draw(ctx) {
                 if (this.type === 'flak_shell') {
-                    ctx.fillStyle = '#ffff00'; ctx.beginPath(); ctx.arc(this.x,this.y,6,0,Math.PI*2); ctx.fill();
+                    // Draw explosive flak shell with rotating segments and glowing trail
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    
+                    // Rotation based on travel
+                    const angle = Math.atan2(this.vy, this.vx);
+                    const spin = (Date.now() * 0.01) % (Math.PI * 2);
+                    ctx.rotate(angle + spin);
+                    
+                    // Outer explosive glow (pulsing)
+                    const pulse = 0.7 + Math.sin(Date.now() * 0.008) * 0.3;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ffaa00';
+                    ctx.fillStyle = `rgba(255, 170, 0, ${pulse * 0.4})`;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Main shell body (hexagonal for shrapnel look)
+                    ctx.shadowBlur = 8;
+                    ctx.fillStyle = '#ffff00';
+                    ctx.beginPath();
+                    for (let i = 0; i < 6; i++) {
+                        const a = (i / 6) * Math.PI * 2;
+                        const x = Math.cos(a) * 6;
+                        const y = Math.sin(a) * 6;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Dark shrapnel segments
+                    ctx.fillStyle = '#cc8800';
+                    ctx.shadowBlur = 0;
+                    for (let i = 0; i < 6; i++) {
+                        const a = (i / 6) * Math.PI * 2;
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.lineTo(Math.cos(a) * 6, Math.sin(a) * 6);
+                        ctx.lineTo(Math.cos(a + Math.PI/6) * 6, Math.sin(a + Math.PI/6) * 6);
+                        ctx.closePath();
+                        if (i % 2 === 0) ctx.fill();
+                    }
+                    
+                    // Bright core
+                    ctx.fillStyle = '#ffffff';
+                    ctx.shadowBlur = 6;
+                    ctx.shadowColor = '#ffff00';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                    
+                    // Trailing particles (smoke trail) - PERFORMANCE OPTIMIZED
+                    if (!this.trailTimer) this.trailTimer = 0;
+                    this.trailTimer += 1;
+                    
+                    // Performance-based smoke interval
+                    const perfMode = typeof state !== 'undefined' && state.performanceMode ? state.performanceMode : 'normal';
+                    const smokeInterval = perfMode === 'minimal' ? 0 : perfMode === 'reduced' ? 6 : 4; // Every 4 frames (reduced from 3)
+                    
+                    if (smokeInterval > 0 && this.trailTimer >= smokeInterval) {
+                        this.trailTimer = 0;
+                        entities.particles.push({
+                            x: this.x,
+                            y: this.y,
+                            vx: -this.vx * 0.2,
+                            vy: -this.vy * 0.2,
+                            color: '#ffaa00',
+                            life: 20,
+                            size: 4,
+                            update: function(dt) {
+                                this.x += this.vx * (dt/16);
+                                this.y += this.vy * (dt/16);
+                                this.life -= dt/16;
+                                this.size *= 0.96;
+                                return this.life > 0;
+                            },
+                            draw: function(ctx) {
+                                ctx.fillStyle = this.color;
+                                ctx.shadowBlur = 4;
+                                ctx.shadowColor = this.color;
+                                ctx.globalAlpha = this.life / 20;
+                                ctx.beginPath();
+                                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.globalAlpha = 1;
+                                ctx.shadowBlur = 0;
+                            }
+                        });
+                    }
                     return;
                 }
                 if (this.type === 'bio_spore') {
@@ -9860,11 +10261,23 @@
                     return;
                 }
                 if (this.type === 'railgun') {
-                    ctx.save();
-                    const len = (375 + (this.railLevel * 25)) * this.animProgress; // Increased base from 250 (50% longer range)
-                    const baseAlpha = this.life / 45;
+                    // Calculate end position first for viewport culling
+                    const len = (375 + (this.railLevel * 25)) * this.animProgress;
                     const endX = this.origX + this.vx*len;
                     const endY = this.origY + this.vy*len;
+                    
+                    // VIEWPORT CULLING: Skip if entirely off-screen
+                    const hasHelpers = typeof inViewport !== 'undefined';
+                    if (hasHelpers && !inViewport(this.origX, this.origY) && !inViewport(endX, endY)) {
+                        return; // Skip entire railgun rendering
+                    }
+                    
+                    // Performance mode detection
+                    const perfMode = typeof state !== 'undefined' && state.performanceMode ? state.performanceMode : 'normal';
+                    const useShadows = perfMode === 'normal';
+                    
+                    ctx.save();
+                    const baseAlpha = this.life / 45;
                     
                     // Draw multiple layers for a more dramatic pulse effect
                     
@@ -9912,22 +10325,25 @@
                     ctx.stroke();
                     
                     // Layer 4: Muzzle flash at origin
-                    if (this.life > 40) { // Changed from 15 to 40
-                        const flashAlpha = (this.life - 40) / 5; // Fades in first 5 frames
+                    if (this.life > 40) {
+                        const flashAlpha = (this.life - 40) / 5;
                         ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.8})`;
-                        ctx.shadowBlur = 20;
-                        ctx.shadowColor = '#3c8cff';
+                        if (useShadows) {
+                            ctx.shadowBlur = 20;
+                            ctx.shadowColor = '#3c8cff';
+                        }
                         ctx.beginPath();
                         ctx.arc(this.origX, this.origY, 8 + (this.railLevel), 0, Math.PI*2);
                         ctx.fill();
-                        ctx.shadowBlur = 0;
+                        if (useShadows) ctx.shadowBlur = 0;
                     }
                     
-                    // Layer 5: Energy particles along the beam for texture
-                    if (this.life > 30 && this.animProgress > 0.5) { // Only show after beam is halfway extended
-                        const fullLen = 375 + (this.railLevel * 25); // Increased base from 250
-                        for (let i = 0; i < 5; i++) {
-                            const t = (i / 5) * this.animProgress + (Math.sin(state.frameCount * 0.1 + i) * 0.05);
+                    // Layer 5: Energy particles along the beam for texture (PERFORMANCE OPTIMIZED)
+                    if (this.life > 30 && this.animProgress > 0.5 && perfMode !== 'minimal') {
+                        const fullLen = 375 + (this.railLevel * 25);
+                        const particleCount = perfMode === 'reduced' ? 2 : 3; // Reduced from 5
+                        for (let i = 0; i < particleCount; i++) {
+                            const t = (i / particleCount) * this.animProgress + (Math.sin(state.frameCount * 0.1 + i) * 0.05);
                             const px = this.origX + this.vx * fullLen * t;
                             const py = this.origY + this.vy * fullLen * t;
                             const particleAlpha = baseAlpha * (1 - t) * 0.6;
@@ -9937,6 +10353,185 @@
                             ctx.arc(px, py, 2 + this.railLevel * 0.3, 0, Math.PI*2);
                             ctx.fill();
                         }
+                    }
+                    
+                    // Layer 6: MASSIVE swirling energy double-helix (PERFORMANCE OPTIMIZED)
+                    if (this.life > 25 && this.animProgress > 0.2 && perfMode !== 'minimal') {
+                        const fullLen = 375 + (this.railLevel * 25);
+                        
+                        // PARTICLE REDUCTION - Reduced base count for better performance
+                        const baseSwirls = 11 + (this.railLevel * 2); // Reduced from 16+3 to 11+2
+                        const numSwirls = Math.floor(baseSwirls * (perfMode === 'reduced' ? 0.6 : 1.0));
+                        
+                        // Calculate perpendicular directions for dual helix
+                        const perpX = -this.vy;
+                        const perpY = this.vx;
+                        
+                        // Draw TWO counter-rotating helixes
+                        for (let helixNum = 0; helixNum < 2; helixNum++) {
+                            const helixDir = helixNum === 0 ? 1 : -1; // Opposite rotation
+                            
+                            for (let i = 0; i < numSwirls; i++) {
+                                const progress = (i / numSwirls) * this.animProgress;
+                                const spiralOffset = (state.frameCount * 0.2 * helixDir + i * 1.2) % (Math.PI * 2);
+                                
+                                // Position along beam
+                                const beamX = this.origX + this.vx * fullLen * progress;
+                                const beamY = this.origY + this.vy * fullLen * progress;
+                                
+                                // Spiral radius - MUCH TIGHTER, stays close to core
+                                const spiralRadius = (3 + progress * 5) * (1 + this.railLevel * 0.2);
+                                
+                                // Spiral position
+                                const offsetDist = Math.sin(spiralOffset) * spiralRadius;
+                                const px = beamX + perpX * offsetDist;
+                                const py = beamY + perpY * offsetDist;
+                                
+                                // Fade MORE with distance - exponential falloff
+                                const distanceFade = Math.pow(1 - progress, 1.5);
+                                const fadeByLife = baseAlpha;
+                                const particleAlpha = distanceFade * fadeByLife * 0.9;
+                                
+                                // Electric blue to cyan gradient
+                                const intensity = Math.abs(Math.sin(spiralOffset));
+                                const r = 80 + intensity * 175;
+                                const g = 160 + intensity * 95;
+                                const b = 255;
+                                
+                                // Particle size also shrinks with distance
+                                const sizeScale = 1 - progress * 0.4;
+                                
+                                // Large outer glow with conditional shadow
+                                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${particleAlpha * 0.4})`;
+                                if (useShadows) {
+                                    ctx.shadowBlur = 15 * sizeScale;
+                                    ctx.shadowColor = `rgba(${r}, ${g}, ${b}, ${particleAlpha * 0.8})`;
+                                }
+                                ctx.beginPath();
+                                ctx.arc(px, py, (4 + this.railLevel * 0.6) * sizeScale, 0, Math.PI*2);
+                                ctx.fill();
+                                
+                                // Bright white core
+                                ctx.fillStyle = `rgba(255, 255, 255, ${particleAlpha})`;
+                                if (useShadows) {
+                                    ctx.shadowBlur = 6 * sizeScale;
+                                    ctx.shadowColor = '#ffffff';
+                                }
+                                ctx.beginPath();
+                                ctx.arc(px, py, 2 * sizeScale, 0, Math.PI*2);
+                                ctx.fill();
+                            }
+                        }
+                        if (useShadows) ctx.shadowBlur = 0;
+                    }
+                    
+                    // Layer 7: Energy distortion waves (PERFORMANCE OPTIMIZED)
+                    if (this.life > 35 && this.animProgress > 0.3 && perfMode !== 'minimal') {
+                        const fullLen = 375 + (this.railLevel * 25);
+                        const perpX = -this.vy;
+                        const perpY = this.vx;
+                        
+                        // Reduce wave count across all modes
+                        const waveCount = perfMode === 'reduced' ? 1 : 2; // Reduced from 3
+                        
+                        // 3 expanding energy rings along the beam
+                        for (let i = 0; i < waveCount; i++) {
+                            const waveProgress = (state.frameCount * 0.1 + i * 1.5) % 3;
+                            const wavePos = (waveProgress / 3) * this.animProgress;
+                            const distanceFade = 1 - wavePos; // Fade with distance
+                            const waveSize = (8 + waveProgress * 6) * (1 - wavePos * 0.3); // Shrink with distance
+                            const waveAlpha = baseAlpha * (1 - waveProgress / 3) * 0.5 * distanceFade;
+                            
+                            if (wavePos < this.animProgress) {
+                                const wx = this.origX + this.vx * fullLen * wavePos;
+                                const wy = this.origY + this.vy * fullLen * wavePos;
+                                
+                                ctx.strokeStyle = `rgba(100, 180, 255, ${waveAlpha})`;
+                                ctx.lineWidth = 2 * (1 - wavePos * 0.4);
+                                if (useShadows) {
+                                    ctx.shadowBlur = 10 * distanceFade;
+                                    ctx.shadowColor = `rgba(100, 180, 255, ${waveAlpha})`;
+                                }
+                                
+                                // Draw ring perpendicular to beam
+                                ctx.beginPath();
+                                ctx.ellipse(wx, wy, waveSize, waveSize * 0.3, Math.atan2(this.vy, this.vx), 0, Math.PI * 2);
+                                ctx.stroke();
+                            }
+                        }
+                        if (useShadows) ctx.shadowBlur = 0;
+                    }
+                    
+                    // Layer 8: Charge-up effect at origin (NEW!)
+                    if (this.life > 42) { // First 3 frames
+                        const chargeProgress = (45 - this.life) / 3;
+                        const chargeSize = 15 * chargeProgress * (1 + this.railLevel * 0.2);
+                        const chargeAlpha = chargeProgress * 0.8;
+                        
+                        // Imploding energy ring
+                        ctx.strokeStyle = `rgba(100, 200, 255, ${chargeAlpha})`;
+                        ctx.lineWidth = 3;
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = '#3c8cff';
+                        ctx.beginPath();
+                        ctx.arc(this.origX, this.origY, 30 - chargeSize, 0, Math.PI * 2);
+                        ctx.stroke();
+                        
+                        // Inner particles converging
+                        for (let i = 0; i < 8; i++) {
+                            const angle = (i / 8) * Math.PI * 2;
+                            const dist = (30 - chargeSize) * 0.8;
+                            const px = this.origX + Math.cos(angle) * dist;
+                            const py = this.origY + Math.sin(angle) * dist;
+                            
+                            ctx.fillStyle = `rgba(150, 220, 255, ${chargeAlpha})`;
+                            ctx.shadowBlur = 8;
+                            ctx.beginPath();
+                            ctx.arc(px, py, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.shadowBlur = 0;
+                    }
+                    
+                    // Layer 9: Impact explosion at beam end (NEW!)
+                    if (this.life > 38 && this.animProgress > 0.9) {
+                        const len = (375 + (this.railLevel * 25)) * this.animProgress;
+                        const endX = this.origX + this.vx * len;
+                        const endY = this.origY + this.vy * len;
+                        const impactProgress = (45 - this.life) / 7;
+                        const impactSize = 10 + impactProgress * 25 * (1 + this.railLevel * 0.3);
+                        const impactAlpha = baseAlpha * (1 - impactProgress) * 0.7;
+                        
+                        // Expanding shockwave
+                        ctx.strokeStyle = `rgba(150, 220, 255, ${impactAlpha})`;
+                        ctx.lineWidth = 3;
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = '#3c8cff';
+                        ctx.beginPath();
+                        ctx.arc(endX, endY, impactSize, 0, Math.PI * 2);
+                        ctx.stroke();
+                        
+                        // Bright flash
+                        ctx.fillStyle = `rgba(255, 255, 255, ${impactAlpha * 0.8})`;
+                        ctx.shadowBlur = 25;
+                        ctx.shadowColor = '#ffffff';
+                        ctx.beginPath();
+                        ctx.arc(endX, endY, impactSize * 0.3, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Radiating sparks
+                        for (let i = 0; i < 12; i++) {
+                            const angle = (i / 12) * Math.PI * 2 + impactProgress;
+                            const sparkDist = impactSize * 0.7;
+                            const sx = endX + Math.cos(angle) * sparkDist;
+                            const sy = endY + Math.sin(angle) * sparkDist;
+                            
+                            ctx.fillStyle = `rgba(180, 230, 255, ${impactAlpha})`;
+                            ctx.beginPath();
+                            ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.shadowBlur = 0;
                     }
                     
                     ctx.restore();
@@ -11161,7 +11756,7 @@
                 });
                 
             } else if (element === 'volt') {
-                // VOLT: MASSIVE LIGHTNING STORM
+                // VOLT: LIGHTNING STORM (toned down)
                 // Base radius: 100, scales with area (for targeting range)
                 const baseRadius = 100 * areaMultiplier;
                 
@@ -11179,21 +11774,20 @@
                         const distB = Math.sqrt((b.x - x)**2 + (b.y - y)**2);
                         return distA - distB;
                     })
-                    .slice(0, 6); // 6 enemies for every 5 hits
+                    .slice(0, 5); // Reduced from 6 to 5 enemies
                 
-                // HUGE lightning bolts with multiple forks
+                // Lightning bolts - reduced from 3 to 2 per target
                 nearbyEnemies.forEach((e, idx) => {
                     setTimeout(() => {
-                        // 3 lightning bolts per target!
+                        // 2 lightning bolts per target (was 3)
                         entities.lightnings.push(new LightningBolt(x, y, e.x, e.y, color));
-                        setTimeout(() => entities.lightnings.push(new LightningBolt(x, y, e.x, e.y, color)), 30);
-                        setTimeout(() => entities.lightnings.push(new LightningBolt(x, y, e.x, e.y, color)), 60);
+                        setTimeout(() => entities.lightnings.push(new LightningBolt(x, y, e.x, e.y, color)), 40);
                         
                         player.dealElementalDamage(e, player.damage * 1.2, 'surge', color, true, 'normal', 'volt');
-                        createExplosion(e.x, e.y, color, 25);
+                        createExplosion(e.x, e.y, color, 20); // Reduced from 25
                         
-                        // Tons of electric particles
-                        for (let i = 0; i < 15; i++) {
+                        // Reduced electric particles from 15 to 10
+                        for (let i = 0; i < 10; i++) {
                             entities.particles.push(new Particle(e.x, e.y, color, 4));
                         }
                     }, idx * 60);
@@ -12426,14 +13020,34 @@
             if (!state.performanceMode) state.performanceMode = 'normal'; // normal, reduced, minimal
             const entityCount = entities.enemies.length + entities.projectiles.length + entities.particles.length;
             
-            // Auto-adjust performance based on entity count
-            if (entityCount > 500) {
+            // Auto-adjust performance based on entity count (REALISTIC THRESHOLDS)
+            // Typical ranges: Early game 50-150, Mid game 150-250, Late game 250-350
+            if (entityCount > 300) {  // Boss fights and extreme scenarios
                 state.performanceMode = 'minimal';
-            } else if (entityCount > 300) {
+            } else if (entityCount > 200) {  // Late game, heavy combat
                 state.performanceMode = 'reduced';
-            } else {
+            } else {  // Early-mid game, normal play
                 state.performanceMode = 'normal';
             }
+            
+            // PERFORMANCE HELPERS (non-viewport related)
+            const useShadows = state.performanceMode === 'normal';
+            const particleFactor = {
+                normal: 1.0,
+                reduced: 0.6,   // 40% fewer particles
+                minimal: 0.3    // 70% fewer particles
+            }[state.performanceMode];
+            
+            // Helper: Apply shadow (respects performance mode with reduced blur in normal)
+            const applyShadow = (blur, color) => {
+                if (useShadows) {
+                    ctx.shadowBlur = blur * 0.7; // Reduce blur by 30% for better performance
+                    ctx.shadowColor = color;
+                }
+            };
+            const clearShadow = () => {
+                if (useShadows) ctx.shadowBlur = 0;
+            };
             
             // CRITICAL: Clamp dt to prevent catch-up behavior after lag/freezes
             // If game freezes for 1 second, we don't want to fire 60 frames of projectiles at once
@@ -12475,6 +13089,21 @@
 
 
             const tx = width/2 - player.x * state.zoom; const ty = height/2 - player.y * state.zoom;
+            
+            // VIEWPORT CULLING - Calculate visible area (with buffer for smooth entry/exit)
+            const viewBuffer = 200; // Extra buffer beyond screen edges
+            const camX = -tx / state.zoom;
+            const camY = -ty / state.zoom;
+            const viewWidth = width / state.zoom;
+            const viewHeight = height / state.zoom;
+            const viewLeft = camX - viewBuffer;
+            const viewRight = camX + viewWidth + viewBuffer;
+            const viewTop = camY - viewBuffer;
+            const viewBottom = camY + viewHeight + viewBuffer;
+            
+            // Helper: Check if point is in viewport
+            const inViewport = (x, y) => x >= viewLeft && x <= viewRight && y >= viewTop && y <= viewBottom;
+            
             // Framerate-independent camera lerp (targets ~60fps behavior)
             const lerpFactor = 1 - Math.pow(0.85, dt/16); // Smooth follow that works at any framerate
             
@@ -13641,7 +14270,7 @@
             });
             
             // Hard cap on particle count to prevent performance degradation
-            const MAX_PARTICLES = 250;
+            const MAX_PARTICLES = 200; // Reduced from 250 for better performance
             if(entities.particles.length > MAX_PARTICLES) {
                 entities.particles = entities.particles.slice(-MAX_PARTICLES);
             }
@@ -14299,12 +14928,256 @@
                 }
             }
 
-            if (player.beamActive && player.beamTargets.length > 0) {
-               player.beamTargets.forEach(t => {
-                   ctx.shadowBlur = 10; ctx.shadowColor = '#ff00ff';
-                   ctx.strokeStyle = '#ff00ff'; ctx.lineWidth = 4 + Math.sin(state.frameCount*0.5)*2;
-                   ctx.beginPath(); ctx.moveTo(player.x, player.y); ctx.lineTo(t.x, t.y); ctx.stroke(); ctx.shadowBlur = 0;
+            if (player.beamActive && player.beamActiveTime >= 5) {
+                // Get targets for drawing (use existing targets or find closest for initial frames)
+                let drawTargets = player.beamTargets && player.beamTargets.length > 0 
+                    ? player.beamTargets 
+                    : entities.enemies
+                        .filter(e => e.hp > 0)
+                        .sort((a,b) => {
+                            const da = Math.sqrt((a.x-player.x)**2 + (a.y-player.y)**2);
+                            const db = Math.sqrt((b.x-player.x)**2 + (b.y-player.y)**2);
+                            return da - db;
+                        })
+                        .slice(0, Math.min(3, player.weapons.beam));
+                
+                drawTargets.forEach((t, idx) => {
+                   // VIEWPORT CULLING: Skip if target off-screen
+                   if (!inViewport(t.x, t.y)) return;
+                   
+                   // Get ramp progress for this target
+                   const rampFrames = player.beamRampMap.get(t) || 0;
+                   const rampProgress = Math.min(rampFrames / 180, 1.0);
+                   const intensity = 0.75 + (rampProgress * 0.25); // 0.75 to 1.0
+                   
+                   // Calculate beam angle for perpendicular effects
+                   const dx = t.x - player.x;
+                   const dy = t.y - player.y;
+                   const beamAngle = Math.atan2(dy, dx);
+                   const beamLength = Math.sqrt(dx*dx + dy*dy);
+                   
+                   // LAYERED BEAM EFFECT
+                   ctx.save();
+                   
+                   // Layer 1: Outer glow (wide, diffuse)
+                   const outerPulse = Math.sin(state.frameCount * 0.3 + idx) * 0.3;
+                   ctx.strokeStyle = `rgba(255, 0, 255, ${(0.2 + outerPulse) * intensity})`;
+                   ctx.lineWidth = 12 + rampProgress * 4;
+                   applyShadow(25, '#ff00ff');
+                   ctx.lineCap = 'round';
+                   ctx.beginPath();
+                   ctx.moveTo(player.x, player.y);
+                   ctx.lineTo(t.x, t.y);
+                   ctx.stroke();
+                   
+                   // Layer 2: Mid beam (bright magenta)
+                   ctx.strokeStyle = `rgba(255, 50, 255, ${(0.6 + outerPulse * 0.5) * intensity})`;
+                   ctx.lineWidth = 6 + rampProgress * 2;
+                   applyShadow(15, '#ff66ff');
+                   ctx.beginPath();
+                   ctx.moveTo(player.x, player.y);
+                   ctx.lineTo(t.x, t.y);
+                   ctx.stroke();
+                   
+                   // Layer 3: Core beam (white-hot center)
+                   const corePulse = Math.sin(state.frameCount * 0.5 + idx) * 0.2;
+                   ctx.strokeStyle = `rgba(255, 255, 255, ${(0.8 + corePulse) * intensity})`;
+                   ctx.lineWidth = 2 + rampProgress;
+                   applyShadow(10, '#ffffff');
+                   ctx.beginPath();
+                   ctx.moveTo(player.x, player.y);
+                   ctx.lineTo(t.x, t.y);
+                   ctx.stroke();
+                   
+                   clearShadow();
+                   ctx.restore();
+                   
+                   // WELDING SPARKS AT IMPACT POINT
+                   ctx.save();
+                   ctx.translate(t.x, t.y);
+                   
+                   // Bright impact flash (scales with ramp)
+                   const flashSize = 10 + rampProgress * 8;
+                   const flashPulse = 0.6 + Math.sin(state.frameCount * 0.8) * 0.4;
+                   
+                   // Outer impact glow
+                   ctx.fillStyle = `rgba(255, 150, 0, ${flashPulse * 0.4 * intensity})`;
+                   applyShadow(30, '#ffaa00');
+                   ctx.beginPath();
+                   ctx.arc(0, 0, flashSize * 1.5, 0, Math.PI * 2);
+                   ctx.fill();
+                   
+                   // Inner white-hot core
+                   ctx.fillStyle = `rgba(255, 255, 255, ${flashPulse * 0.9 * intensity})`;
+                   applyShadow(20, '#ffffff');
+                   ctx.beginPath();
+                   ctx.arc(0, 0, flashSize * 0.6, 0, Math.PI * 2);
+                   ctx.fill();
+                   
+                   // ARCING SPARK PARTICLES (wide spread with gentle arc)
+                   // PARTICLE REDUCTION: Reduced base count for better performance
+                   const baseSparkCount = Math.floor(7 + rampProgress * 5); // Reduced from 10-18 to 7-12
+                   const numSparks = Math.floor(baseSparkCount * particleFactor);
+                   
+                   for (let i = 0; i < numSparks; i++) {
+                       // Initial ejection angle (perpendicular to beam, wide spread)
+                       const perpAngle = beamAngle + Math.PI; // Opposite beam direction
+                       const spreadAngle = (Math.random() - 0.5) * Math.PI * 1.4; // 252° wide spread
+                       const initialAngle = perpAngle + spreadAngle;
+                       
+                       // Strong ejection velocity for distance
+                       const ejectSpeed = 20 + Math.random() * 25; // 20-45 pixels initial velocity
+                       
+                       // Simulate gentle arc trajectory (less gravity for wider spread)
+                       const timeStep = Math.random() * 0.6 + 0.2; // 0.2-0.8 time progression
+                       const gravity = 8; // Gentle downward acceleration (was 15)
+                       
+                       // Position after time (projectile motion)
+                       const vx0 = Math.cos(initialAngle) * ejectSpeed;
+                       const vy0 = Math.sin(initialAngle) * ejectSpeed;
+                       const sparkX = vx0 * timeStep;
+                       const sparkY = vy0 * timeStep + 0.5 * gravity * timeStep * timeStep;
+                       
+                       // Velocity at this time (for trail direction)
+                       const vx = vx0;
+                       const vy = vy0 + gravity * timeStep;
+                       
+                       // Spark trail (points in velocity direction)
+                       const sparkLength = 6 + Math.random() * 6;
+                       const trailAngle = Math.atan2(vy, vx);
+                       const sparkEndX = sparkX - Math.cos(trailAngle) * sparkLength;
+                       const sparkEndY = sparkY - Math.sin(trailAngle) * sparkLength;
+                       
+                       // WELDING COLOR: Blue-tinted at source → yellow → white hot
+                       const heat = 1 - timeStep * 0.4; // Hotter near source
+                       let sparkHue, shadowColor;
+                       if (heat > 0.7) {
+                           // Very hot: White with blue tint
+                           sparkHue = `rgba(220, 230, 255`; // Blue-white
+                           shadowColor = '#aaccff';
+                       } else if (heat > 0.5) {
+                           // Hot: Bright yellow-white
+                           sparkHue = `rgba(255, 255, 200`; // Yellow-white
+                           shadowColor = '#ffffaa';
+                       } else if (heat > 0.3) {
+                           // Cooling: Golden yellow
+                           sparkHue = `rgba(255, 230, 120`; // Golden
+                           shadowColor = '#ffdd66';
+                       } else {
+                           // Cool: Deep yellow-orange
+                           sparkHue = `rgba(255, 200, 80`; // Yellow-orange
+                           shadowColor = '#ffaa44';
+                       }
+                       
+                       const sparkAlpha = (0.5 + Math.random() * 0.5) * (1 - timeStep * 0.2) * intensity;
+                       
+                       ctx.strokeStyle = `${sparkHue}, ${sparkAlpha})`;
+                       ctx.lineWidth = 1.5 + heat * 0.5;
+                       applyShadow(5 + heat * 3, shadowColor);
+                       ctx.lineCap = 'round';
+                       ctx.beginPath();
+                       ctx.moveTo(sparkEndX, sparkEndY);
+                       ctx.lineTo(sparkX, sparkY);
+                       ctx.stroke();
+                   }
+                   
+                   // Circular impact ring (expanding shockwave)
+                   const ringPhase = (state.frameCount * 0.2 + idx * 2) % (Math.PI * 2);
+                   const ringSize = flashSize * (1 + Math.sin(ringPhase) * 0.4);
+                   const ringAlpha = (1 - Math.sin(ringPhase)) * 0.3 * intensity;
+                   
+                   ctx.strokeStyle = `rgba(255, 150, 50, ${ringAlpha})`;
+                   ctx.lineWidth = 2;
+                   applyShadow(10, '#ff6600');
+                   ctx.beginPath();
+                   ctx.arc(0, 0, ringSize, 0, Math.PI * 2);
+                   ctx.stroke();
+                   
+                   clearShadow();
+                   ctx.restore();
                });
+            }
+            
+            // BEAM IGNITION FLASH (arc strike) - shows during first frames of beam
+            if (player.beamIgnitionFlash > 0 && player.beamActive && player.beamActiveTime <= 15) {
+                player.beamIgnitionFlash -= scaledDt/16;
+                
+                const flashProgress = player.beamIgnitionFlash / 15;
+                const flashSize = 20 * (1 - flashProgress); // Expands outward
+                const flashAlpha = flashProgress * 0.9; // Fades as it expands
+                
+                ctx.save();
+                ctx.translate(player.x, player.y);
+                
+                // Bright blue-white flash (arc strike)
+                ctx.fillStyle = `rgba(200, 220, 255, ${flashAlpha * 0.6})`;
+                applyShadow(40, '#aaccff');
+                ctx.beginPath();
+                ctx.arc(0, 0, flashSize * 2, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Intense white core
+                ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha})`;
+                applyShadow(30, '#ffffff');
+                ctx.beginPath();
+                ctx.arc(0, 0, flashSize, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Electric ring burst
+                ctx.strokeStyle = `rgba(150, 200, 255, ${flashAlpha * 0.8})`;
+                ctx.lineWidth = 3;
+                applyShadow(20, '#96c8ff');
+                ctx.beginPath();
+                ctx.arc(0, 0, flashSize * 1.5, 0, Math.PI * 2);
+                ctx.stroke();
+                
+                clearShadow();
+                ctx.restore();
+            }
+            
+            // BEAM TERMINATION FLASH (arc break)
+            if (player.beamTerminationFlash > 0) {
+                player.beamTerminationFlash -= scaledDt/16;
+                
+                const flashProgress = player.beamTerminationFlash / 15;
+                const flashSize = 8 + (1 - flashProgress) * 4; // Smaller: 8-12px
+                const flashAlpha = Math.pow(flashProgress, 1.5) * 0.9; // Faster fade with power curve
+                
+                ctx.save();
+                ctx.translate(player.x, player.y);
+                
+                // Orange-yellow flash (arc break) - smaller outer glow
+                ctx.fillStyle = `rgba(255, 200, 100, ${flashAlpha * 0.5})`;
+                applyShadow(25, '#ffcc66');
+                ctx.beginPath();
+                ctx.arc(0, 0, flashSize * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // White-hot center
+                ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.8})`;
+                applyShadow(20, '#ffffff');
+                ctx.beginPath();
+                ctx.arc(0, 0, flashSize, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Fewer, smaller spark bursts (skip in performance mode)
+                if (state.performanceMode === 'normal') {
+                    for (let i = 0; i < 4; i++) {
+                        const angle = (i / 4) * Math.PI * 2;
+                        const dist = flashSize * 1.1;
+                        const sparkX = Math.cos(angle) * dist;
+                        const sparkY = Math.sin(angle) * dist;
+                        
+                        ctx.fillStyle = `rgba(255, 220, 150, ${flashAlpha * 0.6})`;
+                        applyShadow(8, '#ffdc96');
+                        ctx.beginPath();
+                        ctx.arc(sparkX, sparkY, 2, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                }
+                
+                clearShadow();
+                ctx.restore();
             }
 
 
