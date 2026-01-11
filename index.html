@@ -2264,19 +2264,37 @@
                             }
                             
                             const targets = clusterEnemies.slice(0, count + 2);
-                            const dmg = this.damage * 3.0 * this.weaponStats.seeker.dmg * dmgMult; // Nerfed from 3.5x
+                            const dmg = this.damage * 2.8 * this.weaponStats.seeker.dmg * dmgMult; // Adjusted from 3.0x for 4 missiles
                             
-                            for(let i=0; i<count; i++) {
+                            // Create randomized firing order
+                            const firingOrder = [];
+                            for(let i = 0; i < count; i++) {
+                                firingOrder.push(i);
+                            }
+                            // Shuffle the array (Fisher-Yates)
+                            for(let i = firingOrder.length - 1; i > 0; i--) {
+                                const j = Math.floor(seededRandom() * (i + 1));
+                                [firingOrder[i], firingOrder[j]] = [firingOrder[j], firingOrder[i]];
+                            }
+                            
+                            for(let idx = 0; idx < count; idx++) {
+                                const i = firingOrder[idx]; // Use randomized index
                                 const target = targets[i % targets.length] || null;
                                 const spread = (Math.PI/6) * (i - (count-1)/2) * 0.5; 
                                 const fireAngle = this.angle + spread;
                                 const vx = Math.cos(fireAngle) * 8; 
                                 const vy = Math.sin(fireAngle) * 8;
-                                entities.projectiles.push(new Projectile(
-                                    this.x + Math.cos(this.angle)*20, 
-                                    this.y + Math.sin(this.angle)*20, 
-                                    vx, vy, dmg, 0, 'seeker', target, 'seeker'
-                                ));
+                                
+                                // Stagger missile launches with small delays (2-3 frames between each)
+                                const launchDelay = idx * (2 + seededRandom() * 1);
+                                
+                                setTimeout(() => {
+                                    entities.projectiles.push(new Projectile(
+                                        this.x + Math.cos(this.angle)*20, 
+                                        this.y + Math.sin(this.angle)*20, 
+                                        vx, vy, dmg, 0, 'seeker', target, 'seeker'
+                                    ));
+                                }, launchDelay * (1000/60)); // Convert frames to milliseconds
                             }
                             
                             // Check for multistrike with decay
@@ -2402,7 +2420,7 @@
                         this.whipTimer = Math.max(40, 120 / this.weaponStats.whip.rate);
                         
                 // Set visual timer for drawing
-                        this.whipVisualTimer = 30; // Show for 30 frames (0.5 seconds) - was 15
+                        this.whipVisualTimer = 20; // Faster, snappier animation (was 30)
                         this.whipVisualAngle = this.angle;
                     }
                 }
@@ -2636,9 +2654,25 @@
                             this.beamActive = false; 
                             this.beamActiveTime = 0;
                             this.beamCooldown = 3000 / this.weaponStats.beam.rate; 
+                            
+                            // Store termination data before clearing targets
+                            if (this.beamTargets.length > 0) {
+                                // Store target positions for fade-out rendering
+                                this.beamTerminationTargets = this.beamTargets.map(t => ({x: t.x, y: t.y}));
+                                
+                                // Randomize termination order
+                                this.beamTerminationOrder = [];
+                                const indices = this.beamTargets.map((_, i) => i);
+                                for (let i = indices.length - 1; i > 0; i--) {
+                                    const j = Math.floor(seededRandom() * (i + 1));
+                                    [indices[i], indices[j]] = [indices[j], indices[i]];
+                                }
+                                this.beamTerminationOrder = indices;
+                            }
+                            
                             this.beamTargets = [];
                             this.beamRampMap.clear(); // Reset ramp when beam ends
-                            this.beamTerminationFlash = 15; // Trigger termination flash (15 frames)
+                            this.beamTerminationTimer = 25; // Total termination animation time (25 frames)
                         } 
                         else {
                             // Tick counter that respects time dilation
@@ -2672,6 +2706,19 @@
                                 }
                                 
                                 this.beamTargets = newTargets;
+                                
+                                // Set up staggered ignition order (only once when targets first acquired)
+                                if (!this.beamIgnitionOrder && this.beamTargets.length > 0) {
+                                    this.beamIgnitionOrder = [];
+                                    const indices = this.beamTargets.map((_, i) => i);
+                                    // Randomize ignition order
+                                    for (let i = indices.length - 1; i > 0; i--) {
+                                        const j = Math.floor(seededRandom() * (i + 1));
+                                        [indices[i], indices[j]] = [indices[j], indices[i]];
+                                    }
+                                    this.beamIgnitionOrder = indices;
+                                }
+                                
                                 const baseDmg = this.damage * 1.0 * this.weaponStats.beam.dmg; // Buffed from 0.5x to 1.0x
 
                                 // Check if targeting a boss - if so, count number of beams hitting it
@@ -2710,6 +2757,7 @@
                             this.beamActive = true; 
                             this.beamTimer = 3000; 
                             this.beamTickCounter = 0;
+                            this.beamIgnitionOrder = null; // Reset for next activation
                             this.beamIgnitionFlash = 15; // Trigger flash when beam activates
                         }
                     }
@@ -3379,10 +3427,13 @@
                                 // Boss shields are HIGHEST priority (only when active)
                                 if (enemy.isBossShield && enemy.hp > 0) return 10;
                                 
-                                // Boss core is SECOND HIGHEST priority (after shields down)
+                                // Final boss (Nexus Prime) is SECOND HIGHEST priority (after shields down)
                                 if (enemy.isNexusPrime) return 9;
                                 
-                                // Boss turrets are lower priority than boss core
+                                // TITAN BOSS - Very high priority (right after final boss)
+                                if (enemy.isTitan) return 8.5;
+                                
+                                // Boss turrets are lower priority than bosses
                                 if (enemy.isBossTurret) return 5;
                                 
                                 // Skip invulnerable voidwalkers
@@ -4940,49 +4991,75 @@
                     const centerAngle = this.whipVisualAngle;
                     const startAngle = centerAngle - arcAngle / 2;
                     
-                    // Calculate current sweep position (0 to 1) - now over 30 frames
-                    const sweepProgress = 1 - (this.whipVisualTimer / 30);
+                    // Faster, snappier animation - complete in 20 frames instead of 30
+                    const sweepProgress = 1 - (this.whipVisualTimer / 20);
                     
-                    const alpha = Math.min(1, this.whipVisualTimer / 20); // Fade at end
+                    const alpha = Math.min(1, this.whipVisualTimer / 15); // Faster fade
                     
                     ctx.save();
                     ctx.translate(this.x, this.y);
                     
-                    // Draw segments with BOTH angle lag AND distance variation for arc
-                    const segments = 12; // More segments for smoother arc
+                    // Brightness ramps up during animation - starts dimmer, gets brighter
+                    const brightnessRamp = 0.4 + (sweepProgress * 0.6); // 40% to 100%
+                    
+                    const segments = 16;
+                    
+                    // Pre-calculate all segment data
+                    const segmentData = [];
                     for (let seg = 0; seg < segments; seg++) {
                         const segmentRatio = (seg + 1) / segments;
-                        
-                        // Distance varies - creates arc by having inner segments shorter
-                        // Start at 60% range, build to 100% at tip
                         const segmentRange = range * (0.6 + segmentRatio * 0.4);
-                        
-                        // Angle lag - outer segments lag behind
-                        const lagAmount = Math.pow(segmentRatio, 2.5) * 0.4;
+                        const lagAmount = Math.pow(segmentRatio, 3) * 0.5;
                         const segmentProgress = Math.max(0, Math.min(1, sweepProgress - lagAmount));
                         const currentAngle = startAngle + (arcAngle * segmentProgress);
+                        const segmentAlpha = alpha * (0.3 + segmentRatio * 0.5) * brightnessRamp;
                         
-                        // Uniform blade width
-                        const bladeWidth = 0.25;
-                        const segmentAlpha = alpha * (0.3 + segmentRatio * 0.7);
-                        
-                        // Draw glowing arc segment
-                        ctx.fillStyle = `rgba(255, 0, 255, ${segmentAlpha * 0.6})`;
-                        ctx.shadowBlur = 35 + (segmentRatio * 25);
-                        ctx.shadowColor = '#ff00ff';
+                        segmentData.push({
+                            angle: currentAngle,
+                            range: segmentRange,
+                            alpha: segmentAlpha,
+                            ratio: segmentRatio,
+                            seg: seg
+                        });
+                    }
+                    
+                    const bladeWidth = 0.35;
+                    
+                    // BATCH 1: Draw all outer glows in one pass
+                    ctx.shadowBlur = 40;
+                    ctx.shadowColor = '#ff00ff';
+                    for (let data of segmentData) {
+                        ctx.fillStyle = `rgba(255, 0, 255, ${data.alpha * 0.6})`;
                         ctx.beginPath();
                         ctx.moveTo(0, 0);
-                        ctx.arc(0, 0, segmentRange, currentAngle - bladeWidth, currentAngle + bladeWidth);
+                        ctx.arc(0, 0, data.range, data.angle - bladeWidth, data.angle + bladeWidth);
                         ctx.closePath();
                         ctx.fill();
-                        
-                        // Draw the edge lines for structure
-                        if (seg % 3 === 0) {
-                            ctx.strokeStyle = `rgba(255, 180, 255, ${segmentAlpha * 0.9})`;
-                            ctx.lineWidth = 4;
+                    }
+                    
+                    // BATCH 2: Draw all inner cores in one pass
+                    ctx.shadowBlur = 25;
+                    ctx.shadowColor = '#ff88ff';
+                    for (let data of segmentData) {
+                        ctx.fillStyle = `rgba(255, 180, 255, ${data.alpha * 0.8})`;
+                        ctx.beginPath();
+                        ctx.moveTo(0, 0);
+                        ctx.arc(0, 0, data.range * 0.95, data.angle - bladeWidth * 0.5, data.angle + bladeWidth * 0.5);
+                        ctx.closePath();
+                        ctx.fill();
+                    }
+                    
+                    // BATCH 3: Draw edge lines (every other segment)
+                    ctx.shadowBlur = 10;
+                    ctx.shadowColor = '#ff88ff';
+                    ctx.lineWidth = 2;
+                    ctx.lineCap = 'round';
+                    for (let data of segmentData) {
+                        if (data.seg % 2 === 0) {
+                            ctx.strokeStyle = `rgba(255, 220, 255, ${data.alpha * 0.7})`;
                             ctx.beginPath();
-                            ctx.moveTo(Math.cos(currentAngle) * segmentRange * 0.4, Math.sin(currentAngle) * segmentRange * 0.4);
-                            ctx.lineTo(Math.cos(currentAngle) * segmentRange, Math.sin(currentAngle) * segmentRange);
+                            ctx.moveTo(Math.cos(data.angle) * data.range * 0.5, Math.sin(data.angle) * data.range * 0.5);
+                            ctx.lineTo(Math.cos(data.angle) * data.range, Math.sin(data.angle) * data.range);
                             ctx.stroke();
                         }
                     }
@@ -5566,45 +5643,52 @@
                         }
                         ctx.rotate(droneAngle);
                         
-                        // Glow
-                        ctx.shadowBlur = 12;
+                        // Pulsing glow intensity
+                        const glowPulse = 0.7 + Math.sin(state.frameCount * 0.15 + idx * 2) * 0.3;
+                        
+                        ctx.shadowBlur = 15 * glowPulse;
                         ctx.shadowColor = '#00aaff';
                         
-                        // Drone body (small triangle)
+                        // Drone body (simple clean triangle)
                         ctx.fillStyle = '#003366';
                         ctx.strokeStyle = '#00aaff';
-                        ctx.lineWidth = 1.5;
+                        ctx.lineWidth = 2;
                         ctx.beginPath();
-                        ctx.moveTo(8, 0);  // Front (larger)
-                        ctx.lineTo(-5, -5); // Back left
-                        ctx.lineTo(-4, 0);  // Back center
-                        ctx.lineTo(-5, 5);  // Back right
+                        ctx.moveTo(10, 0);   // Front point (larger for visibility)
+                        ctx.lineTo(-6, -6);  // Back left
+                        ctx.lineTo(-4, 0);   // Back center indent
+                        ctx.lineTo(-6, 6);   // Back right
                         ctx.closePath();
                         ctx.fill();
                         ctx.stroke();
                         
-                        // Core light
-                        ctx.fillStyle = '#00ddff';
-                        ctx.shadowBlur = 6;
+                        // Bright core light (pulsing)
+                        ctx.fillStyle = `rgba(0, 221, 255, ${glowPulse})`;
+                        ctx.shadowBlur = 12 * glowPulse;
+                        ctx.shadowColor = '#00ddff';
                         ctx.beginPath();
-                        ctx.arc(0, 0, 2.5, 0, Math.PI * 2);
+                        ctx.arc(0, 0, 3, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Engine glow (if moving)
-                        if (Math.abs(drone.vx) > 0.5 || Math.abs(drone.vy) > 0.5) {
-                            ctx.fillStyle = 'rgba(0, 170, 255, 0.4)';
+                        // Enhanced engine glow when moving
+                        const isMoving = Math.abs(drone.vx) > 0.5 || Math.abs(drone.vy) > 0.5;
+                        if (isMoving) {
+                            const enginePulse = 0.6 + Math.sin(state.frameCount * 0.4 + idx) * 0.4;
+                            ctx.fillStyle = `rgba(0, 170, 255, ${enginePulse * 0.6})`;
+                            ctx.shadowBlur = 15;
+                            ctx.shadowColor = '#00aaff';
                             ctx.beginPath();
-                            ctx.arc(-4, 0, 3, 0, Math.PI * 2);
+                            ctx.arc(-5, 0, 5, 0, Math.PI * 2);
                             ctx.fill();
                         }
                         
-                        // Spotting ring - make drones easy to see
-                        ctx.strokeStyle = 'rgba(0, 170, 255, 0.6)';
+                        // Spotting ring - subtle pulsing
+                        const ringPulse = 0.5 + Math.sin(state.frameCount * 0.1 + idx) * 0.2;
+                        ctx.strokeStyle = `rgba(0, 170, 255, ${ringPulse})`;
                         ctx.lineWidth = 2;
-                        ctx.shadowBlur = 8;
-                        ctx.shadowColor = '#00aaff';
+                        ctx.shadowBlur = 10;
                         ctx.beginPath();
-                        ctx.arc(0, 0, 12, 0, Math.PI * 2);
+                        ctx.arc(0, 0, 14, 0, Math.PI * 2);
                         ctx.stroke();
                         
                         ctx.shadowBlur = 0;
@@ -5694,24 +5778,106 @@
                         
                         const alpha = field.life / 150;
                         const pulse = 0.7 + Math.sin(state.frameCount * 0.1) * 0.3;
+                        const time = state.frameCount * 0.05;
                         
-                        // Outer field ring
-                        ctx.strokeStyle = `rgba(168, 85, 247, ${alpha * 0.5})`;
+                        // Multiple expanding rings for depth
+                        for (let i = 0; i < 3; i++) {
+                            const ringPhase = (time + i * 0.3) % 1;
+                            const ringRadius = field.radius * (0.4 + ringPhase * 0.6);
+                            const ringAlpha = alpha * (1 - ringPhase) * 0.4;
+                            
+                            ctx.strokeStyle = `rgba(168, 85, 247, ${ringAlpha})`;
+                            ctx.lineWidth = 2;
+                            ctx.shadowBlur = 10;
+                            ctx.shadowColor = '#a855f7';
+                            ctx.beginPath();
+                            ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                        
+                        // Main outer field ring - brighter and more defined
+                        ctx.strokeStyle = `rgba(192, 132, 252, ${alpha * 0.8})`;
                         ctx.lineWidth = 3;
-                        ctx.shadowBlur = 15;
+                        ctx.shadowBlur = 20;
                         ctx.shadowColor = '#a855f7';
                         ctx.beginPath();
                         ctx.arc(0, 0, field.radius, 0, Math.PI * 2);
                         ctx.stroke();
                         
-                        // Inner glow
+                        // Rotating energy arcs (6 arcs, performance-friendly)
+                        const arcCount = 6;
+                        for (let i = 0; i < arcCount; i++) {
+                            const arcAngle = (time * 0.5 + i * (Math.PI * 2 / arcCount)) % (Math.PI * 2);
+                            const arcRadius = field.radius * 0.85;
+                            const arcLength = Math.PI / 3; // 60 degrees
+                            
+                            // Animated arc intensity
+                            const arcPulse = 0.5 + Math.sin(time * 2 + i) * 0.5;
+                            const arcAlpha = alpha * arcPulse * 0.5;
+                            
+                            ctx.strokeStyle = `rgba(168, 85, 247, ${arcAlpha})`;
+                            ctx.lineWidth = 2;
+                            ctx.shadowBlur = 15;
+                            ctx.shadowColor = '#a855f7';
+                            ctx.beginPath();
+                            ctx.arc(0, 0, arcRadius, arcAngle, arcAngle + arcLength);
+                            ctx.stroke();
+                        }
+                        
+                        // Electric sparks on the perimeter (optimized - only 8 sparks per field)
+                        if (Math.random() < 0.15 && entities.particles.length < 180) {
+                            const angle = Math.random() * Math.PI * 2;
+                            const sparkX = Math.cos(angle) * field.radius;
+                            const sparkY = Math.sin(angle) * field.radius;
+                            
+                            entities.particles.push({
+                                x: field.x + sparkX,
+                                y: field.y + sparkY,
+                                vx: Math.cos(angle) * 2,
+                                vy: Math.sin(angle) * 2,
+                                color: '#c084fc',
+                                life: 10,
+                                size: 2,
+                                update: function(dt) {
+                                    this.x += this.vx * (dt/16);
+                                    this.y += this.vy * (dt/16);
+                                    this.vx *= 0.9;
+                                    this.vy *= 0.9;
+                                    this.life -= dt/16;
+                                    this.size *= 0.95;
+                                    return this.life > 0;
+                                },
+                                draw: function(ctx) {
+                                    ctx.globalAlpha = this.life / 10;
+                                    ctx.fillStyle = this.color;
+                                    ctx.shadowBlur = 8;
+                                    ctx.shadowColor = this.color;
+                                    ctx.beginPath();
+                                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                    ctx.fill();
+                                    ctx.shadowBlur = 0;
+                                    ctx.globalAlpha = 1;
+                                }
+                            });
+                        }
+                        
+                        // Inner radial gradient glow with more intensity variation
                         const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, field.radius);
-                        gradient.addColorStop(0, `rgba(168, 85, 247, ${alpha * 0.3 * pulse})`);
+                        gradient.addColorStop(0, `rgba(192, 132, 252, ${alpha * 0.4 * pulse})`);
+                        gradient.addColorStop(0.3, `rgba(168, 85, 247, ${alpha * 0.25 * pulse})`);
                         gradient.addColorStop(0.6, `rgba(168, 85, 247, ${alpha * 0.1})`);
                         gradient.addColorStop(1, 'rgba(168, 85, 247, 0)');
                         ctx.fillStyle = gradient;
                         ctx.beginPath();
                         ctx.arc(0, 0, field.radius, 0, Math.PI * 2);
+                        ctx.fill();
+                        
+                        // Central core pulse
+                        ctx.fillStyle = `rgba(192, 132, 252, ${alpha * pulse * 0.6})`;
+                        ctx.shadowBlur = 25;
+                        ctx.shadowColor = '#a855f7';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 8 * pulse, 0, Math.PI * 2);
                         ctx.fill();
                         
                         ctx.shadowBlur = 0;
@@ -10623,20 +10789,116 @@
 
                 if (this.type === 'seeker') {
                     const angle = Math.atan2(this.vy, this.vx);
-                    ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(angle);
-                    ctx.shadowBlur = 15; ctx.shadowColor = '#ff5500';
-                    ctx.fillStyle = '#ff5500'; ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(-25, -3); ctx.lineTo(-25, 3); ctx.fill();
-                    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(5, 0); ctx.lineTo(-5, -4); ctx.lineTo(-5, 4); ctx.fill();
+                    ctx.save(); 
+                    ctx.translate(this.x, this.y); 
+                    ctx.rotate(angle);
+                    
+                    // Animated exhaust flame - flickering length and intensity
+                    const flicker1 = Math.sin(state.frameCount * 0.4) * 0.15;
+                    const flicker2 = Math.sin(state.frameCount * 0.6 + 1.5) * 0.1;
+                    const flamePulse = 0.75 + flicker1 + flicker2; // 0.5 to 1.0
+                    const flameLength = 35 * flamePulse; // Increased from 28 to 35
+                    
+                    // Outer flame (orange glow) - diffused edges
+                    const outerFlameGradient = ctx.createLinearGradient(-5, 0, -5 - flameLength, 0);
+                    outerFlameGradient.addColorStop(0, 'rgba(255, 100, 0, 0.9)');
+                    outerFlameGradient.addColorStop(0.3, 'rgba(255, 85, 0, 0.7)');
+                    outerFlameGradient.addColorStop(0.7, 'rgba(255, 60, 0, 0.3)');
+                    outerFlameGradient.addColorStop(1, 'rgba(255, 85, 0, 0)');
+                    
+                    ctx.fillStyle = outerFlameGradient;
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#ff5500';
+                    ctx.beginPath();
+                    ctx.moveTo(-5, 0);
+                    ctx.lineTo(-5 - flameLength, -5 * flamePulse);
+                    ctx.lineTo(-5 - flameLength * 1.1, 0);
+                    ctx.lineTo(-5 - flameLength, 5 * flamePulse);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Inner flame (hot yellow core)
+                    const innerFlameGradient = ctx.createLinearGradient(-5, 0, -5 - flameLength * 0.6, 0);
+                    innerFlameGradient.addColorStop(0, 'rgba(255, 220, 100, 1)');
+                    innerFlameGradient.addColorStop(0.5, 'rgba(255, 150, 50, 0.8)');
+                    innerFlameGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+                    
+                    ctx.fillStyle = innerFlameGradient;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ffaa00';
+                    ctx.beginPath();
+                    ctx.moveTo(-5, 0);
+                    ctx.lineTo(-5 - flameLength * 0.6, -2.5 * flamePulse);
+                    ctx.lineTo(-5 - flameLength * 0.7, 0);
+                    ctx.lineTo(-5 - flameLength * 0.6, 2.5 * flamePulse);
+                    ctx.closePath();
+                    ctx.fill();
+                    
+                    // Missile body (small cylinder behind warhead)
+                    ctx.shadowBlur = 8;
+                    ctx.shadowColor = '#666';
+                    ctx.fillStyle = '#888';
+                    ctx.fillRect(-5, -2.5, 8, 5);
+                    
+                    // Warhead (nose cone) - sleek
+                    ctx.shadowBlur = 20;
+                    ctx.shadowColor = '#ffaa00';
+                    ctx.fillStyle = '#ffaa00'; 
+                    ctx.beginPath(); 
+                    ctx.moveTo(5, 0); 
+                    ctx.lineTo(-5, -4); 
+                    ctx.lineTo(-5, 4); 
+                    ctx.fill();
+                    
+                    // Bright tip
+                    ctx.fillStyle = '#fff'; 
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath(); 
+                    ctx.moveTo(5, 0); 
+                    ctx.lineTo(-2, -2); 
+                    ctx.lineTo(-2, 2); 
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
                     ctx.restore();
                 } else if (this.type === 'drone_shot') {
-                    // Small cyan energy bolt
+                    // Enhanced cyan energy bolt with trail effect
                     ctx.save();
-                    ctx.shadowBlur = 10;
-                    ctx.shadowColor = '#00aaff';
-                    ctx.fillStyle = '#00aaff';
+                    
+                    // Energy trail particles (very light weight)
+                    const angle = Math.atan2(this.vy, this.vx);
+                    for (let i = 1; i <= 3; i++) {
+                        const trailOffset = i * 6;
+                        const trailAlpha = (4 - i) / 4; // Fades from 0.75 to 0.25
+                        const trailSize = 3 + (4 - i);
+                        
+                        const trailX = this.x - Math.cos(angle) * trailOffset;
+                        const trailY = this.y - Math.sin(angle) * trailOffset;
+                        
+                        ctx.fillStyle = `rgba(0, 221, 255, ${trailAlpha * 0.4})`;
+                        ctx.shadowBlur = 8;
+                        ctx.shadowColor = '#00aaff';
+                        ctx.beginPath();
+                        ctx.arc(trailX, trailY, trailSize, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    
+                    // Main energy bolt (brighter and larger)
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#00ddff';
+                    ctx.fillStyle = '#00ddff';
                     ctx.beginPath();
-                    ctx.arc(this.x, this.y, 4, 0, Math.PI * 2);
+                    ctx.arc(this.x, this.y, 5, 0, Math.PI * 2);
                     ctx.fill();
+                    
+                    // Bright white core
+                    ctx.fillStyle = '#ffffff';
+                    ctx.shadowBlur = 10;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 2.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.shadowBlur = 0;
                     ctx.restore();
                 } else if (this.type === 'ricochet') {
                     // Draw solid glowing trail with fade based on age (draw FIRST, before disc)
@@ -14945,10 +15207,22 @@
                    // VIEWPORT CULLING: Skip if target off-screen
                    if (!inViewport(t.x, t.y)) return;
                    
+                   // Calculate staggered ignition timing (5 frame delay between beams)
+                   const ignitionOrder = player.beamIgnitionOrder || [0, 1, 2];
+                   const beamOrderIndex = ignitionOrder.indexOf(idx);
+                   const ignitionDelay = beamOrderIndex * 5; // 5 frames between each beam
+                   const effectiveActiveTime = player.beamActiveTime - ignitionDelay;
+                   
+                   // Skip if this beam hasn't ignited yet
+                   if (effectiveActiveTime < 5) return;
+                   
                    // Get ramp progress for this target
                    const rampFrames = player.beamRampMap.get(t) || 0;
                    const rampProgress = Math.min(rampFrames / 180, 1.0);
-                   const intensity = 0.75 + (rampProgress * 0.25); // 0.75 to 1.0
+                   
+                   // Ignition fade-in (first 10 frames after delay)
+                   const ignitionProgress = Math.min(effectiveActiveTime / 10, 1.0);
+                   const intensity = (0.75 + (rampProgress * 0.25)) * ignitionProgress; // Fade in + ramp
                    
                    // Calculate beam angle for perpendicular effects
                    const dx = t.x - player.x;
@@ -15017,7 +15291,7 @@
                    // ARCING SPARK PARTICLES (wide spread with gentle arc)
                    // PARTICLE REDUCTION: Reduced base count for better performance
                    const baseSparkCount = Math.floor(7 + rampProgress * 5); // Reduced from 10-18 to 7-12
-                   const numSparks = Math.floor(baseSparkCount * particleFactor);
+                   const numSparks = Math.floor(baseSparkCount * particleFactor * intensity); // Scale by intensity
                    
                    for (let i = 0; i < numSparks; i++) {
                        // Initial ejection angle (perpendicular to beam, wide spread)
@@ -15136,48 +15410,123 @@
             }
             
             // BEAM TERMINATION FLASH (arc break)
-            if (player.beamTerminationFlash > 0) {
-                player.beamTerminationFlash -= scaledDt/16;
+            // PLASMA BEAM TERMINATION - Staggered fade-out with beams dissolving
+            if (player.beamTerminationTimer > 0) {
+                player.beamTerminationTimer -= scaledDt/16;
                 
-                const flashProgress = player.beamTerminationFlash / 15;
-                const flashSize = 8 + (1 - flashProgress) * 4; // Smaller: 8-12px
-                const flashAlpha = Math.pow(flashProgress, 1.5) * 0.9; // Faster fade with power curve
-                
-                ctx.save();
-                ctx.translate(player.x, player.y);
-                
-                // Orange-yellow flash (arc break) - smaller outer glow
-                ctx.fillStyle = `rgba(255, 200, 100, ${flashAlpha * 0.5})`;
-                applyShadow(25, '#ffcc66');
-                ctx.beginPath();
-                ctx.arc(0, 0, flashSize * 1.5, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // White-hot center
-                ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.8})`;
-                applyShadow(20, '#ffffff');
-                ctx.beginPath();
-                ctx.arc(0, 0, flashSize, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // Fewer, smaller spark bursts (skip in performance mode)
-                if (state.performanceMode === 'normal') {
-                    for (let i = 0; i < 4; i++) {
-                        const angle = (i / 4) * Math.PI * 2;
-                        const dist = flashSize * 1.1;
-                        const sparkX = Math.cos(angle) * dist;
-                        const sparkY = Math.sin(angle) * dist;
+                if (player.beamTerminationTargets && player.beamTerminationOrder) {
+                    const terminationOrder = player.beamTerminationOrder;
+                    
+                    player.beamTerminationTargets.forEach((target, idx) => {
+                        // Calculate staggered termination timing (5 frame delay between beams)
+                        const beamOrderIndex = terminationOrder.indexOf(idx);
+                        const terminationDelay = beamOrderIndex * 5; // 5 frames between each beam terminating
+                        const beamTerminationProgress = (25 - player.beamTerminationTimer - terminationDelay) / 15; // 15 frames fade-out
                         
-                        ctx.fillStyle = `rgba(255, 220, 150, ${flashAlpha * 0.6})`;
-                        applyShadow(8, '#ffdc96');
-                        ctx.beginPath();
-                        ctx.arc(sparkX, sparkY, 2, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
+                        // Skip if this beam hasn't started terminating yet
+                        if (beamTerminationProgress < 0) {
+                            // Still active - draw full beam
+                            const dx = target.x - player.x;
+                            const dy = target.y - player.y;
+                            
+                            ctx.save();
+                            
+                            // Full opacity beam layers
+                            ctx.strokeStyle = 'rgba(255, 0, 255, 0.4)';
+                            ctx.lineWidth = 12;
+                            ctx.shadowBlur = 25;
+                            ctx.shadowColor = '#ff00ff';
+                            ctx.lineCap = 'round';
+                            ctx.beginPath();
+                            ctx.moveTo(player.x, player.y);
+                            ctx.lineTo(target.x, target.y);
+                            ctx.stroke();
+                            
+                            ctx.strokeStyle = 'rgba(255, 50, 255, 0.8)';
+                            ctx.lineWidth = 6;
+                            ctx.shadowBlur = 15;
+                            ctx.shadowColor = '#ff66ff';
+                            ctx.beginPath();
+                            ctx.moveTo(player.x, player.y);
+                            ctx.lineTo(target.x, target.y);
+                            ctx.stroke();
+                            
+                            ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+                            ctx.lineWidth = 2;
+                            ctx.shadowBlur = 10;
+                            ctx.shadowColor = '#ffffff';
+                            ctx.beginPath();
+                            ctx.moveTo(player.x, player.y);
+                            ctx.lineTo(target.x, target.y);
+                            ctx.stroke();
+                            
+                            ctx.shadowBlur = 0;
+                            ctx.restore();
+                            return;
+                        }
+                        
+                        // Terminating - fade out
+                        if (beamTerminationProgress > 0 && beamTerminationProgress <= 1) {
+                            const fadeAlpha = Math.pow(1 - beamTerminationProgress, 2); // Smooth fade-out curve
+                            const dx = target.x - player.x;
+                            const dy = target.y - player.y;
+                            
+                            ctx.save();
+                            
+                            // Fading beam layers
+                            ctx.strokeStyle = `rgba(255, 0, 255, ${0.4 * fadeAlpha})`;
+                            ctx.lineWidth = 12 * fadeAlpha;
+                            ctx.shadowBlur = 25 * fadeAlpha;
+                            ctx.shadowColor = '#ff00ff';
+                            ctx.lineCap = 'round';
+                            ctx.beginPath();
+                            ctx.moveTo(player.x, player.y);
+                            ctx.lineTo(target.x, target.y);
+                            ctx.stroke();
+                            
+                            ctx.strokeStyle = `rgba(255, 50, 255, ${0.8 * fadeAlpha})`;
+                            ctx.lineWidth = 6 * fadeAlpha;
+                            ctx.shadowBlur = 15 * fadeAlpha;
+                            ctx.shadowColor = '#ff66ff';
+                            ctx.beginPath();
+                            ctx.moveTo(player.x, player.y);
+                            ctx.lineTo(target.x, target.y);
+                            ctx.stroke();
+                            
+                            ctx.strokeStyle = `rgba(255, 255, 255, ${0.9 * fadeAlpha})`;
+                            ctx.lineWidth = 2 * fadeAlpha;
+                            ctx.shadowBlur = 10 * fadeAlpha;
+                            ctx.shadowColor = '#ffffff';
+                            ctx.beginPath();
+                            ctx.moveTo(player.x, player.y);
+                            ctx.lineTo(target.x, target.y);
+                            ctx.stroke();
+                            
+                            // Termination spark flash at target (when beam just breaks)
+                            if (beamTerminationProgress < 0.2) {
+                                const sparkAlpha = fadeAlpha * 2;
+                                ctx.translate(target.x, target.y);
+                                
+                                ctx.fillStyle = `rgba(255, 200, 100, ${sparkAlpha * 0.5})`;
+                                ctx.shadowBlur = 30 * sparkAlpha;
+                                ctx.shadowColor = '#ffcc66';
+                                ctx.beginPath();
+                                ctx.arc(0, 0, 12, 0, Math.PI * 2);
+                                ctx.fill();
+                                
+                                ctx.fillStyle = `rgba(255, 255, 255, ${sparkAlpha * 0.8})`;
+                                ctx.shadowBlur = 20 * sparkAlpha;
+                                ctx.shadowColor = '#ffffff';
+                                ctx.beginPath();
+                                ctx.arc(0, 0, 8, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                            
+                            ctx.shadowBlur = 0;
+                            ctx.restore();
+                        }
+                    });
                 }
-                
-                clearShadow();
-                ctx.restore();
             }
 
 
@@ -15601,9 +15950,104 @@
                                 
                                 hit=true; 
                                 if (p.type === 'seeker') {
-                                    createExplosion(p.x, p.y, '#ff5500', 5);
-                                    // Add explosive shockwave effect at impact (orange)
+                                    // Main explosion particles
+                                    createExplosion(p.x, p.y, '#ff5500', 8);
+                                    
+                                    // Bright flash particles in explosion core
+                                    for (let i = 0; i < 4; i++) {
+                                        entities.particles.push({
+                                            x: p.x,
+                                            y: p.y,
+                                            vx: 0,
+                                            vy: 0,
+                                            color: '#ffffff',
+                                            life: 6,
+                                            size: 12 - i * 2,
+                                            update: function(dt) {
+                                                this.life -= dt/16;
+                                                this.size *= 0.85;
+                                                return this.life > 0;
+                                            },
+                                            draw: function(ctx) {
+                                                ctx.globalAlpha = this.life / 6;
+                                                ctx.fillStyle = this.color;
+                                                ctx.shadowBlur = 20;
+                                                ctx.shadowColor = '#ff5500';
+                                                ctx.beginPath();
+                                                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                                ctx.fill();
+                                                ctx.shadowBlur = 0;
+                                                ctx.globalAlpha = 1;
+                                            }
+                                        });
+                                    }
+                                    
+                                    // Directional shrapnel burst (8 directions)
+                                    if (entities.particles.length < 160) {
+                                        for (let i = 0; i < 8; i++) {
+                                            const angle = (i / 8) * Math.PI * 2;
+                                            const speed = 4 + Math.random() * 3;
+                                            entities.particles.push({
+                                                x: p.x,
+                                                y: p.y,
+                                                vx: Math.cos(angle) * speed,
+                                                vy: Math.sin(angle) * speed,
+                                                color: i % 2 === 0 ? '#ffaa00' : '#ff5500',
+                                                life: 12,
+                                                size: 3,
+                                                update: function(dt) {
+                                                    this.x += this.vx * (dt/16);
+                                                    this.y += this.vy * (dt/16);
+                                                    this.vx *= 0.93;
+                                                    this.vy *= 0.93;
+                                                    this.life -= dt/16;
+                                                    this.size *= 0.92;
+                                                    return this.life > 0;
+                                                },
+                                                draw: function(ctx) {
+                                                    ctx.globalAlpha = this.life / 12;
+                                                    ctx.fillStyle = this.color;
+                                                    ctx.shadowBlur = 8;
+                                                    ctx.shadowColor = this.color;
+                                                    ctx.beginPath();
+                                                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                                    ctx.fill();
+                                                    ctx.shadowBlur = 0;
+                                                    ctx.globalAlpha = 1;
+                                                }
+                                            });
+                                        }
+                                    }
+                                    
+                                    // Expanding shockwave ring
                                     entities.particles.push(new Shockwave(p.x, p.y, 75, '#ff7733'));
+                                    
+                                    // Secondary inner ring for depth
+                                    entities.particles.push({
+                                        x: p.x,
+                                        y: p.y,
+                                        radius: 5,
+                                        maxRadius: 50,
+                                        life: 15,
+                                        update: function(dt) {
+                                            this.radius += (this.maxRadius - this.radius) * 0.15 * (dt/16);
+                                            this.life -= dt/16;
+                                            return this.life > 0;
+                                        },
+                                        draw: function(ctx) {
+                                            ctx.globalAlpha = this.life / 15;
+                                            ctx.strokeStyle = '#ffaa00';
+                                            ctx.lineWidth = 2;
+                                            ctx.shadowBlur = 8;
+                                            ctx.shadowColor = '#ffaa00';
+                                            ctx.beginPath();
+                                            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                                            ctx.stroke();
+                                            ctx.shadowBlur = 0;
+                                            ctx.globalAlpha = 1;
+                                        }
+                                    });
+                                    
                                     // SPLASH DAMAGE: Damage OTHER enemies in radius (not the primary target)
                                     const splashDist = 75;
                                     entities.enemies.forEach(subE => {
