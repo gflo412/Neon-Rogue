@@ -878,6 +878,7 @@
             screen: 'menu', score: 0, startTime: 0, level: 1, xp: 0, xpToNext: 10,
             lastTime: 0, camera: { x: 0, y: 0 }, shake: 0, frameCount: 0, rerolls: 3,
             paused: false, timeScale: 1.0, pendingLevelUps: 0, zoom: 0.70,
+            upgradeQueue: [], // Queue for all upgrade screens (level ups and ultimate selection)
             pendingSwap: null, bossActive: false, bossWave: 0,
             gameTime: 0,
             spawnTimer: 0, // Framerate-independent enemy spawning
@@ -2477,7 +2478,7 @@
                             }
                             
                             const rad = (25 + (this.weapons.meteor * 6)) * this.weaponStats.meteor.area; // Reduced base: 30→25, scaling: 8→6
-                            const baseDmg = 25 + (this.weapons.meteor * 12); // Reduced: 30→25 base, 15→12 per level
+                            const baseDmg = 25 + (this.weapons.meteor * 8); // Reduced scaling: 15→12→8 per level
                             const dmg = baseDmg * this.weaponStats.meteor.dmg * damageBonus; // Apply cascade bonus
                             const clusterSpread = 80; // Meteors land within 80 units of center
                             
@@ -2719,7 +2720,7 @@
                                     this.beamIgnitionOrder = indices;
                                 }
                                 
-                                const baseDmg = this.damage * 1.0 * this.weaponStats.beam.dmg; // Buffed from 0.5x to 1.0x
+                                const baseDmg = this.damage * 1.5 * this.weaponStats.beam.dmg; // Buffed from 1.0x to 1.5x
 
                                 // Check if targeting a boss - if so, count number of beams hitting it
                                 const bossTarget = this.beamTargets.find(t => t.type === 'boss');
@@ -2818,7 +2819,7 @@
                         const deployMine = (dmgMult = 1.0, depth = 0, angleOffset = 0) => {
                             // Find dense enemy clusters to target
                             const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
-                            const maxSearchRadius = 450; // Slightly longer range than gas
+                            const maxSearchRadius = 350; // Reduced from 450 to prevent off-screen throws
                             
                             // Find enemies in visible range
                             const visibleEnemies = entities.enemies.filter(e => {
@@ -3021,7 +3022,12 @@
                             const maxBounces = Math.min(9, 5 + this.weapons.ricochet); // Increased by 2: 6-9 bounces (was 4-7)
                             // Reduced damage to compensate for more bounces: 2.5 → 2.0 → 1.65
                             const dmgPerDisc = discCount === 1 ? 2.5 : discCount === 2 ? 2.0 : 1.65;
-                            const baseDmg = this.damage * dmgPerDisc * this.weaponStats.ricochet.dmg * damageBonus;
+                            // DAMAGE SCALING: Scales independently with both weapon level AND damage upgrades
+                            // - Per-level scaling: +15% damage per level (1.0 → 1.6x at level 5)
+                            // - maxBounces increases with weapon level (more ricochets)
+                            // - this.weaponStats.ricochet.dmg scales with damage card upgrades
+                            const levelScaling = 1 + (this.weapons.ricochet - 1) * 0.15; // 1.0, 1.15, 1.3, 1.45, 1.6
+                            const baseDmg = this.damage * dmgPerDisc * levelScaling * this.weaponStats.ricochet.dmg * damageBonus;
                             const bounceRange = (600 + this.weapons.ricochet * 150) * this.weaponStats.ricochet.area; // MASSIVE: 750-1350 range!
                             
                             // Track which enemies are already targeted
@@ -3381,10 +3387,10 @@
                 // COMBAT DRONES - Autonomous flying drones that hunt enemies
                 if (this.weapons.drones > 0) {
                     const droneCount = Math.min(3, this.weapons.drones); // Max 3 drones
-                    const droneDmg = this.damage * 0.85 * this.weaponStats.drones.dmg; // Further nerfed from 1.0 to 0.85
+                    const droneDmg = this.damage * 0.6 * this.weaponStats.drones.dmg; // Reduced from 0.85 to 0.6 (weaker individual shots)
                     const droneRange = (250 + this.weapons.drones * 25) * this.weaponStats.drones.area; // 275-350 range
-                    const droneSpeed = 8; // Faster movement - was 6
-                    const fireRate = 28 / this.weaponStats.drones.rate; // Even faster fire rate - was 35
+                    const droneSpeed = 10; // Faster movement - increased from 8
+                    const fireRate = 18 / this.weaponStats.drones.rate; // Much faster fire rate - reduced from 28
                     
                     // Initialize drones array if needed
                     if (!this.drones) {
@@ -3394,13 +3400,14 @@
                     // Add new drones if weapon leveled up
                     while (this.drones.length < droneCount) {
                         const angle = (Math.PI * 2 / droneCount) * this.drones.length;
+                        const droneIndex = this.drones.length;
                         this.drones.push({
                             x: this.x + Math.cos(angle) * 80,
                             y: this.y + Math.sin(angle) * 80,
                             vx: 0,
                             vy: 0,
                             target: null,
-                            fireTimer: seededRandom() * fireRate,
+                            fireTimer: (droneIndex * (fireRate / droneCount)), // Stagger: drone 0 fires first, then 1, then 2
                             orbitAngle: angle,
                             shotsFired: 0 // Track for mini-rocket
                         });
@@ -3439,6 +3446,9 @@
                                 // Skip invulnerable voidwalkers
                                 if (enemy.type === 'voidwalker' && enemy.cloaked) return -1; // Never target cloaked voidwalkers
                                 
+                                // NEVER target hacked enemies - completely untargetable
+                                if (enemy.hackState && enemy.hackState.active) return -1;
+                                
                                 let priority = 0;
                                 if (enemy.isChampion) priority = 7;
                                 else if (enemy.type === 'voidwalker') priority = 6; // Only if not cloaked
@@ -3446,7 +3456,6 @@
                                 else if (enemy.type === 'splitter') priority = 4;
                                 else if (enemy.type === 'swarmer') priority = 3.5; // Higher than drones even with proximity boost
                                 else if (enemy.type === 'drone') priority = 2;
-                                else if (enemy.isHacked) priority = 1;
                                 
                                 // Boost priority if enemy is close to player (protector role)
                                 const distToPlayer = Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2);
@@ -3568,21 +3577,26 @@
                         if (drone.fireTimer <= 0 && drone.target) {
                             drone.shotsFired = (drone.shotsFired || 0) + 1;
                             
-                            // Every 3rd shot fires a mini-rocket
-                            const isMiniRocket = (drone.shotsFired % 3 === 0);
+                            // Every 5th shot fires a mini-rocket with AOE splash
+                            const isMiniRocket = (drone.shotsFired % 5 === 0);
                             
                             const angle = Math.atan2(drone.target.y - drone.y, drone.target.x - drone.x);
-                            const vx = Math.cos(angle) * (isMiniRocket ? 14 : 12);
-                            const vy = Math.sin(angle) * (isMiniRocket ? 14 : 12);
+                            const vx = Math.cos(angle) * (isMiniRocket ? 16 : 14); // Faster projectiles
+                            const vy = Math.sin(angle) * (isMiniRocket ? 16 : 14);
                             
                             if (isMiniRocket) {
-                                // Mini-rocket: more damage, faster, orange
-                                entities.projectiles.push(new Projectile(
-                                    drone.x, drone.y, vx, vy, droneDmg * 1.8, 0, 'drone_rocket', drone.target, 'drones'
-                                ));
+                                // Mini-rocket: AOE splash damage on impact
+                                const rocketProj = new Projectile(
+                                    drone.x, drone.y, vx, vy, droneDmg * 2.0, 0, 'drone_rocket', drone.target, 'drones'
+                                );
+                                // Mark projectile for AOE splash on hit
+                                rocketProj.hasSplash = true;
+                                rocketProj.splashRange = 80; // Small AOE radius
+                                rocketProj.splashDamage = droneDmg * 1.2; // Splash does 60% of rocket damage
+                                entities.projectiles.push(rocketProj);
                                 createExplosion(drone.x, drone.y, '#ff8800', 8);
                             } else {
-                                // Normal shot
+                                // Normal shot - faster and weaker
                                 entities.projectiles.push(new Projectile(
                                     drone.x, drone.y, vx, vy, droneDmg, 0, 'drone_shot', drone.target, 'drones'
                                 ));
@@ -3670,6 +3684,9 @@
                                 // Skip invulnerable voidwalkers
                                 if (enemy.type === 'voidwalker' && enemy.cloaked) return -1;
                                 
+                                // NEVER target hacked enemies - completely untargetable
+                                if (enemy.hackState && enemy.hackState.active) return -1;
+                                
                                 let priority = 0;
                                 if (enemy.isChampion) priority = 7;
                                 else if (enemy.type === 'voidwalker') priority = 6; // Only if not cloaked
@@ -3677,7 +3694,6 @@
                                 else if (enemy.type === 'splitter') priority = 4;
                                 else if (enemy.type === 'swarmer') priority = 3.5;
                                 else if (enemy.type === 'drone') priority = 2;
-                                else if (enemy.isHacked) priority = 1;
                                 
                                 // Boost priority if enemy is close to player (protector role)
                                 const distToPlayer = Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2);
@@ -4789,8 +4805,16 @@
                         
                         // Frozen Plague synergy: Freeze spreads bio to nearby enemies
                         if (player.synergies.cryo_bio && enemy.cryoState.slowed) {
+                            const spreadRangeSq = 100 * 100;
                             entities.enemies.forEach(e => {
-                                if (e !== enemy && e.hp > 0 && !e.bioState.active && Math.sqrt((e.x-enemy.x)**2 + (e.y-enemy.y)**2) < 100) {
+                                if (e === enemy || e.hp <= 0 || e.bioState.active) return;
+                                
+                                // Use squared distance for faster check
+                                const dx = e.x - enemy.x;
+                                const dy = e.y - enemy.y;
+                                const distSq = dx*dx + dy*dy;
+                                
+                                if (distSq < spreadRangeSq) {
                                     e.bioState.active = true;
                                     e.bioState.timer = 300;
                                     e.bioState.level = 1;
@@ -6376,56 +6400,26 @@
         
         // Auto-targeting: Find highest priority enemy ON SCREEN
         function findUltimateTarget() {
-            // Calculate screen bounds using PLAYER position (camera may not have updated yet)
-            const screenWidth = canvas.width / state.zoom;
-            const screenHeight = canvas.height / state.zoom;
-            const screenLeft = player.x - (screenWidth / 2);
-            const screenRight = player.x + (screenWidth / 2);
-            const screenTop = player.y - (screenHeight / 2);
-            const screenBottom = player.y + (screenHeight / 2);
+            console.log('🎯 Finding ultimate target (no distance limit)');
             
-            console.log('📺 Canvas:', canvas.width, 'x', canvas.height);
-            console.log('📺 Zoom:', state.zoom);
-            console.log('📺 Screen size:', Math.floor(screenWidth), 'x', Math.floor(screenHeight));
-            console.log('📺 Player:', Math.floor(player.x), Math.floor(player.y));
-            console.log('📺 Screen left:', Math.floor(screenLeft), 'right:', Math.floor(screenRight));
-            console.log('📺 Screen top:', Math.floor(screenTop), 'bottom:', Math.floor(screenBottom));
-            
-            // Helper to check if enemy is on screen
-            const isOnScreen = (e) => {
-                const onScreen = e.x > screenLeft && e.x < screenRight && 
-                       e.y > screenTop && e.y < screenBottom;
-                return onScreen;
-            };
-            
-            // Count enemies and check first few
+            // Count enemies
             const aliveEnemies = entities.enemies.filter(e => e.hp > 0);
             console.log(`👾 Total alive enemies: ${aliveEnemies.length}`);
             
-            // Log first 3 enemy positions
-            for (let i = 0; i < Math.min(3, aliveEnemies.length); i++) {
-                const e = aliveEnemies[i];
-                const inBounds = isOnScreen(e);
-                console.log(`   Enemy ${i}: ${e.type} at (${Math.floor(e.x)}, ${Math.floor(e.y)}) - On screen: ${inBounds}`);
-            }
-            
-            const onScreenEnemies = aliveEnemies.filter(e => isOnScreen(e));
-            console.log(`👾 On-screen enemies: ${onScreenEnemies.length}`);
-            
-            // Priority 1: Nexus Prime core (if vulnerable and on screen)
-            const nexusPrime = entities.enemies.find(e => e.isNexusPrime && isOnScreen(e));
+            // Priority 1: Nexus Prime core (if vulnerable)
+            const nexusPrime = entities.enemies.find(e => e.isNexusPrime);
             if (nexusPrime) {
                 // If shields are down, target the core
                 if (nexusPrime.coreVulnerable) {
                     return nexusPrime;
                 }
                 
-                // Shields are up - target highest HP shield or turret ON SCREEN
+                // Shields are up - target highest HP shield or turret
                 let highestHpEnemy = null;
                 let highestHp = 0;
                 
                 entities.enemies.forEach(e => {
-                    if (e.hp > 0 && (e.isBossShield || e.isBossTurret) && isOnScreen(e)) {
+                    if (e.hp > 0 && (e.isBossShield || e.isBossTurret)) {
                         if (e.hp > highestHp) {
                             highestHp = e.hp;
                             highestHpEnemy = e;
@@ -6436,12 +6430,12 @@
                 if (highestHpEnemy) return highestHpEnemy;
             }
             
-            // Priority 2: Highest max HP enemy ON SCREEN
+            // Priority 2: Highest max HP enemy (no distance limit)
             let highestMaxHpEnemy = null;
             let highestMaxHp = 0;
             
             entities.enemies.forEach(e => {
-                if (e.hp > 0 && isOnScreen(e) && e.maxHp > highestMaxHp) {
+                if (e.hp > 0 && e.maxHp > highestMaxHp) {
                     highestMaxHp = e.maxHp;
                     highestMaxHpEnemy = e;
                 }
@@ -6450,16 +6444,16 @@
             if (highestMaxHpEnemy) {
                 console.log('✓ Found target:', highestMaxHpEnemy.type, 'maxHP:', highestMaxHp);
             } else {
-                console.log('✗ No on-screen enemies found for targeting');
+                console.log('✗ No enemies found for targeting');
             }
             
             return highestMaxHpEnemy;
         }
         
-        // Check if levelup was queued during ultimate
-        function checkQueuedLevelUp() {
-            if (state.pendingLevelUps > 0 && state.screen === 'game') {
-                showLevelUp();
+        // Check if upgrades were queued during ultimate
+        function checkQueuedUpgrades() {
+            if (state.upgradeQueue && state.upgradeQueue.length > 0 && state.screen === 'game') {
+                processNextUpgrade();
             }
         }
         
@@ -6548,9 +6542,9 @@
                     // Unlock camera so game loop can resume control
                     state.cameraLocked = false;
                     
-                    // Give player 0.5s invulnerability after camera returns
-                    player.invulnTimer = Math.max(player.invulnTimer, 30);
-                    console.log('✅ Camera returned, player has 0.5s invuln (30 frames)');
+                    // Give player 1s invulnerability after camera returns
+                    player.invulnTimer = Math.max(player.invulnTimer, 60);
+                    console.log('✅ Camera returned, player has 1s invuln (60 frames)');
                 }
             }, 16); // 60fps
         }
@@ -6669,7 +6663,7 @@
                         panCameraBackToPlayer();
                         
                         // Check for queued levelup
-                        checkQueuedLevelUp();
+                        checkQueuedUpgrades();
                     }, 500); // Brief linger
                     return false; // Stop interval
                 }
@@ -6695,7 +6689,14 @@
         
         // EVENT HORIZON: Singularity that pulls enemies then collapses
         function executeEventHorizon(target) {
-            console.log('🌀 Event Horizon activating at target:', target.type);
+            console.log('🌀 Event Horizon activating at target:', target ? target.type : 'INVALID');
+            
+            // Validate target still exists and has valid coordinates
+            if (!target || target.hp <= 0 || typeof target.x !== 'number' || typeof target.y !== 'number') {
+                console.log('⚠️ Event Horizon target invalid or dead, using player position');
+                // Fallback to player position if target is invalid
+                target = { x: player.x, y: player.y, type: 'fallback' };
+            }
             
             // Invulnerability for ultimate duration (3.5 seconds = 210 frames)
             player.invulnTimer = Math.max(player.invulnTimer, 210);
@@ -6835,7 +6836,7 @@
                             panCameraBackToPlayer();
                             
                             // Check for queued levelup
-                            checkQueuedLevelUp();
+                            checkQueuedUpgrades();
                         }, 500);
                     }, 100);
                 }
@@ -6844,14 +6845,38 @@
         
         // SEISMIC BOMB: Massive explosion with dual shockwaves and burning ground
         function executeSeismicBomb(target) {
-            console.log('💣 Seismic Bomb activating at target:', target.type);
+            console.log('💣 Seismic Bomb - finding densest cluster');
+            
+            // Find densest enemy cluster
+            let bestClusterX = target.x;
+            let bestClusterY = target.y;
+            let bestDensity = 0;
+            
+            const clusterRadius = 200; // Check for enemies within 200 units
+            const aliveEnemies = entities.enemies.filter(e => e.hp > 0);
+            
+            aliveEnemies.forEach(e => {
+                // Count nearby enemies to this potential center point
+                const nearbyCount = aliveEnemies.filter(other => {
+                    const dist = Math.sqrt((e.x - other.x)**2 + (e.y - other.y)**2);
+                    return dist < clusterRadius;
+                }).length;
+                
+                if (nearbyCount > bestDensity) {
+                    bestDensity = nearbyCount;
+                    bestClusterX = e.x;
+                    bestClusterY = e.y;
+                }
+            });
+            
+            console.log(`💣 Seismic Bomb targeting cluster with ${bestDensity} enemies`);
             
             // Invulnerability for ultimate duration (4.5 seconds = 270 frames)
             player.invulnTimer = Math.max(player.invulnTimer, 270);
             
             const ultimateData = ULTIMATES.seismic_bomb;
-            const bombX = target.x;
-            const bombY = target.y;
+            const bombX = bestClusterX;
+            const bombY = bestClusterY;
             
             // Pan camera to explosion center smoothly, then lock it there
             const startCamX = state.camera.x;
@@ -7073,7 +7098,7 @@
                             panCameraBackToPlayer();
                             
                             // Check for queued levelup
-                            checkQueuedLevelUp();
+                            checkQueuedUpgrades();
                         }
                     }, 1000); // Tick every second
                 }
@@ -7157,7 +7182,7 @@
                 // TIER SYSTEM: basic (hackable), elite (hackable with mastery), boss (never hackable)
                 if (type === 'boss') {
                     this.tier = 'boss'; // Never hackable
-                    this.speed = 0.45 * speedMult; 
+                    this.speed = 0.40 * speedMult; 
                     this.hp = (3000 + (state.level * 300)) * 2.5 * scaling; // Increased from 1.8x to 2.5x
                     this.radius = 60; this.color = '#ff0000'; this.xp = 0; this.dmg = 30 * scaling;
                     this.maxHp = this.hp;
@@ -7165,7 +7190,7 @@
                 else if (type === 'champion') {
                     // Champion: Mini-boss that spawns with regular enemies
                     this.tier = 'elite'; // Hackable with mastery
-                    this.speed = 0.7 * speedMult; // Faster to be more threatening (was 0.5)
+                    this.speed = 0.62 * speedMult; // Faster to be more threatening (was 0.5)
                     this.hp = (1200 + (state.level * 120)) * 2.0 * scaling; // Reduced HP for better fight length (was 3.0x)
                     this.radius = 45; // Larger for visibility
                     this.color = '#ff3300'; // Bright red-orange
@@ -7191,19 +7216,19 @@
                 }
                 else if (type === 'drone') { 
                     this.tier = 'basic'; // Always hackable
-                    this.speed = 0.65 * speedMult; this.hp = (20 + (state.level*5)) * 1.8 * scaling; this.radius = 12; this.color = '#ff3860'; this.xp = 2; this.dmg = (8 + state.level * 1.5) * scaling; 
+                    this.speed = 0.57 * speedMult; this.hp = (20 + (state.level*5)) * 1.8 * scaling; this.radius = 12; this.color = '#ff3860'; this.xp = 2; this.dmg = (8 + state.level * 1.5) * scaling; 
                 }
                 else if (type === 'tank') { 
                     this.tier = 'elite'; // Hackable with mastery
-                    this.speed = 0.8 * speedMult; this.hp = (150 + (state.level*30)) * 1.8 * scaling; this.radius = 28; this.color = '#ffaa00'; this.xp = 12; this.dmg = 40 * scaling; 
+                    this.speed = 0.70 * speedMult; this.hp = (150 + (state.level*30)) * 1.8 * scaling; this.radius = 28; this.color = '#ffaa00'; this.xp = 12; this.dmg = 40 * scaling; 
                 } 
                 else if (type === 'swarm') { 
                     this.tier = 'basic'; // Always hackable
-                    this.speed = 1.5 * speedMult; this.hp = (10 + (state.level*2)) * 1.8 * 0.67 * scaling; this.radius = 8; this.color = '#bf5af2'; this.xp = 3; this.dmg = (6 + state.level * 1.2) * scaling; 
+                    this.speed = 1.32 * speedMult; this.hp = (10 + (state.level*2)) * 1.8 * 0.67 * scaling; this.radius = 8; this.color = '#bf5af2'; this.xp = 3; this.dmg = (6 + state.level * 1.2) * scaling; 
                 }
                 else if (type === 'splitter') { 
                     this.tier = 'basic'; // Always hackable
-                    this.speed = 1.0 * speedMult; this.hp = (45 + (state.level*6)) * 1.8 * scaling; this.radius = 16; this.color = '#ff9500'; this.xp = 10; this.dmg = (12 + state.level * 2) * scaling; 
+                    this.speed = 0.88 * speedMult; this.hp = (45 + (state.level*6)) * 1.8 * scaling; this.radius = 16; this.color = '#ff9500'; this.xp = 10; this.dmg = (12 + state.level * 2) * scaling; 
                 } 
                 else if (type === 'voidwalker') {
                     this.tier = 'elite'; // Hackable with mastery
@@ -7520,8 +7545,19 @@
                     if (player.synergies.pyro_cryo && this.pyroState.active && (this.cryoState.slowed || this.cryoState.frozen)) {
                         createExplosion(this.x, this.y, '#ff00ff', 30);
                         const explosionDmg = (this.maxHp || 100) * 0.5;
+                        const explosionRange = 100;
+                        const explosionRangeSq = explosionRange * explosionRange;
+                        
+                        // OPTIMIZED: Only check enemies within rough distance first
                         entities.enemies.forEach(e => {
-                            if (e !== this && e.hp > 0 && Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2) < 100) {
+                            if (e === this || e.hp <= 0) return;
+                            
+                            // Quick distance check with squared distance (no sqrt needed)
+                            const dx = e.x - this.x;
+                            const dy = e.y - this.y;
+                            const distSq = dx*dx + dy*dy;
+                            
+                            if (distSq < explosionRangeSq) {
                                 e.takeDamage(explosionDmg, '#ff00ff');
                                 // Apply freeze to nearby enemies
                                 if (e.type !== 'boss') {
@@ -7536,8 +7572,25 @@
                     
                     // Meltdown (Pyro + Bio): Burning enemies spread bio on death
                     if (player.synergies.pyro_bio && this.pyroState.active) {
-                        let neighbor = entities.enemies.find(n => n !== this && n.hp > 0 && Math.sqrt((n.x-this.x)**2 + (n.y-this.y)**2) < 150);
-                        if (neighbor && !neighbor.bioState.active) {
+                        // OPTIMIZED: Limit search to reasonable distance
+                        const searchRangeSq = 150 * 150;
+                        let neighbor = null;
+                        
+                        for (let i = 0; i < entities.enemies.length; i++) {
+                            const n = entities.enemies[i];
+                            if (n === this || n.hp <= 0 || n.bioState.active) continue;
+                            
+                            const dx = n.x - this.x;
+                            const dy = n.y - this.y;
+                            const distSq = dx*dx + dy*dy;
+                            
+                            if (distSq < searchRangeSq) {
+                                neighbor = n;
+                                break; // Found one, stop searching
+                            }
+                        }
+                        
+                        if (neighbor) {
                             neighbor.bioState = { active: true, timer: 300, level: 1, jumpCount: 0, maxDmg: player.damage * 0.5 * 4 };
                             entities.projectiles.push(new Projectile(this.x, this.y, 0, 0, 0, 0, 'bio_spore', neighbor, 'bio'));
                         }
@@ -7608,11 +7661,15 @@
                         // Grant one save charge for defeating boss/champion
                         state.saveCharges++;
                         
-                        // NEXUS CORE DROP - 1 per boss kill
-                        entities.pickups.push(new Pickup(this.x - 20, this.y, 0, 'nexus_core'));
+                        // NEXUS CORE DROP - 1 per boss kill (auto-magnetizes)
+                        const nexusCore = new Pickup(this.x - 20, this.y, 0, 'nexus_core');
+                        nexusCore.magnetized = true; // Auto-magnetize titan drops
+                        entities.pickups.push(nexusCore);
                         
-                        // Data Core drop
-                        entities.pickups.push(new Pickup(this.x+20, this.y, 0, 'core')); 
+                        // Data Core drop (also auto-magnetizes)
+                        const dataCore = new Pickup(this.x+20, this.y, 0, 'core');
+                        dataCore.magnetized = true; // Auto-magnetize titan drops
+                        entities.pickups.push(dataCore); 
                     } else if (this.type === 'splitter') {
                         // SPLITTER: Spawns 3 swarm enemies on death
                         for (let i = 0; i < 3; i++) {
@@ -7948,6 +8005,64 @@
                             this.bioState.timer = 300; // Reset to full duration
                         }
                         
+                        // 25% chance to self-destruct when hack ends
+                        if (Math.random() < 0.25) {
+                            const explosionRadius = 70;
+                            const explosionDamage = this.maxHp * 0.1;
+                            
+                            // Store position before enemy is destroyed
+                            const explodeX = this.x;
+                            const explodeY = this.y;
+                            
+                            // Create explosion visual effect with more particles
+                            createExplosion(explodeX, explodeY, '#00ffff', 50);
+                            
+                            // Add multiple expanding shockwaves for emphasis
+                            entities.particles.push(new Shockwave(explodeX, explodeY, explosionRadius * 1.5, '#00ffff'));
+                            setTimeout(() => {
+                                entities.particles.push(new Shockwave(explodeX, explodeY, explosionRadius * 1.2, '#88ffff'));
+                            }, 50);
+                            setTimeout(() => {
+                                entities.particles.push(new Shockwave(explodeX, explodeY, explosionRadius, '#ffffff'));
+                            }, 100);
+                            
+                            // Add white flash particles for extra impact
+                            for (let i = 0; i < 15; i++) {
+                                entities.particles.push(new Particle(explodeX, explodeY, '#ffffff', 2.0));
+                            }
+                            
+                            // Add screen shake
+                            state.shake = 12;
+                            
+                            // Damage and knockback all nearby enemies
+                            entities.enemies.forEach(enemy => {
+                                if (enemy === this || enemy.hp <= 0) return;
+                                
+                                const dx = enemy.x - explodeX;
+                                const dy = enemy.y - explodeY;
+                                const distance = Math.sqrt(dx * dx + dy * dy);
+                                
+                                if (distance < explosionRadius) {
+                                    // Apply damage
+                                    enemy.takeDamage(explosionDamage, '#00ffff');
+                                    
+                                    // Apply knockback
+                                    const knockbackForce = 8;
+                                    const angle = Math.atan2(dy, dx);
+                                    enemy.x += Math.cos(angle) * knockbackForce;
+                                    enemy.y += Math.sin(angle) * knockbackForce;
+                                    
+                                    // Keep enemy in bounds
+                                    enemy.x = Math.max(enemy.radius, Math.min(canvas.width - enemy.radius, enemy.x));
+                                    enemy.y = Math.max(enemy.radius, Math.min(canvas.height - enemy.radius, enemy.y));
+                                }
+                            });
+                            
+                            // Kill the self-destructing enemy
+                            this.hp = 0;
+                            this.takeDamage(0, '#00ffff');
+                        }
+                        
                         // If enemy was marked to die after hack, kill it now
                         if (this.hackState.diesAfter) {
                             this.hp = 0;
@@ -8020,8 +8135,8 @@
                                     entities.enemyProjectiles.push({
                                         x: this.x,
                                         y: this.y,
-                                        vx: Math.cos(angle) * 3.5,
-                                        vy: Math.sin(angle) * 3.5,
+                                        vx: Math.cos(angle) * 2.5,
+                                        vy: Math.sin(angle) * 2.5,
                                         radius: 9,
                                         color: '#00ffff', // Hacked color (cyan/green)
                                         life: 150,
@@ -8173,8 +8288,16 @@
                                 if (!this.hackState.freezeTimer) this.hackState.freezeTimer = 0;
                                 this.hackState.freezeTimer += dt/16;
                                 if (this.hackState.freezeTimer >= 120) { // Every 2 seconds
+                                    const freezeRangeSq = 100 * 100;
                                     entities.enemies.forEach(e => {
-                                        if (e !== this && e.hp > 0 && e.type !== 'boss' && Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2) < 100) {
+                                        if (e === this || e.hp <= 0 || e.type === 'boss') return;
+                                        
+                                        // Use squared distance for faster check
+                                        const dx = e.x - this.x;
+                                        const dy = e.y - this.y;
+                                        const distSq = dx*dx + dy*dy;
+                                        
+                                        if (distSq < freezeRangeSq) {
                                             e.cryoState.frozenTimer = 60; // 1s freeze pulse
                                         }
                                     });
@@ -8954,8 +9077,8 @@
                                 entities.enemyProjectiles.push({
                                     x: this.x,
                                     y: this.y,
-                                    vx: Math.cos(angle) * 3.5, // Slow speed for reaction time
-                                    vy: Math.sin(angle) * 3.5,
+                                    vx: Math.cos(angle) * 2.5, // Slow speed for reaction time (reduced from 3.5)
+                                    vy: Math.sin(angle) * 2.5,
                                     radius: 9, // Reduced from 14 - still visible but not confusing
                                     color: '#ff9500', // Matches splitter orange color
                                     life: 150, // Reduced from 250 - travels less distance
@@ -9095,13 +9218,15 @@
                                 Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2) < 200
                             );
                             if (nearestEnemy) {
-                                // Apply damage reduction for hacked attacks on titans/bosses
-                                let hackDamage = this.dmg * 10; // Buffed from 8x to 10x (+25%)
+                                // Normalized damage based on player damage (not enemy dmg)
+                                // This ensures consistent damage regardless of which enemy is hacked
+                                let hackDamage = player.damage * 1.5; // Balanced base damage
                                 
+                                // Apply damage reduction for bosses/titans
                                 if (nearestEnemy.isNexusPrime) {
-                                    hackDamage *= 0.35; // Buffed from 30% to 35%
+                                    hackDamage *= 0.25; // 75% reduction for final boss
                                 } else if (nearestEnemy.isChampion) {
-                                    hackDamage *= 0.6; // Buffed from 50% to 60%
+                                    hackDamage *= 0.35; // 65% reduction for titans (was 0.6)
                                 }
                                 
                                 nearestEnemy.takeDamage(hackDamage, '#00ffff', false, 'normal');
@@ -9495,20 +9620,26 @@
                     ctx.lineWidth = 4; 
                     ctx.stroke();
                 } else if (this.type === 'drone') {
-                    ctx.rotate(this.animTick); ctx.strokeStyle = this.color; ctx.lineWidth = 2;
+                    const droneColor = this.hackState.active ? '#00ffff' : this.color;
+                    ctx.rotate(this.animTick); ctx.strokeStyle = droneColor; ctx.lineWidth = 2;
                     ctx.beginPath(); ctx.moveTo(this.radius, 0); ctx.lineTo(-this.radius/2, this.radius/2); ctx.lineTo(-this.radius/2, -this.radius/2); ctx.closePath(); ctx.stroke();
+                    ctx.fillStyle = droneColor;
                     ctx.beginPath(); ctx.arc(0,0, 4, 0, Math.PI*2); ctx.fill();
                 } else if (this.type === 'tank') {
                     if (this.chargeState === 1) ctx.translate((seededRandom()-0.5)*4, (seededRandom()-0.5)*4);
-                    ctx.shadowColor = this.color; ctx.shadowBlur = 10;
+                    const tankColor = this.hackState.active ? '#00ffff' : this.color;
+                    ctx.fillStyle = tankColor;
+                    ctx.shadowColor = tankColor; ctx.shadowBlur = 10;
                     ctx.fillRect(-this.radius, -this.radius, this.radius*2, this.radius*2);
                     const scale = 0.8 + Math.sin(this.animTick)*0.1;
                     ctx.fillStyle = '#000'; ctx.fillRect(-this.radius*scale, -this.radius*scale, this.radius*2*scale, this.radius*2*scale);
                 } else if (this.type === 'splitter') {
                     // Splitter: pulsing hexagon to indicate it will split
                     const pulse = 1 + Math.sin(this.animTick * 3) * 0.15; // Faster pulse
+                    const splitterColor = this.hackState.active ? '#00ffff' : this.color;
+                    ctx.fillStyle = splitterColor;
                     ctx.scale(pulse, pulse);
-                    ctx.shadowColor = this.color; ctx.shadowBlur = 15;
+                    ctx.shadowColor = splitterColor; ctx.shadowBlur = 15;
                     ctx.beginPath();
                     for (let i = 0; i < 6; i++) {
                         const angle = (Math.PI / 3) * i;
@@ -9704,6 +9835,8 @@
                     
                     ctx.shadowBlur = 0;
                 } else {
+                    const swarmColor = this.hackState.active ? '#00ffff' : ctx.fillStyle;
+                    ctx.fillStyle = swarmColor;
                     const pulse = 1 + Math.sin(this.animTick * 2) * 0.2;
                     ctx.scale(pulse, pulse); ctx.beginPath(); ctx.moveTo(0, -this.radius); ctx.lineTo(this.radius, this.radius); ctx.lineTo(-this.radius, this.radius); ctx.fill();
                 }
@@ -9998,7 +10131,7 @@
                                 // Pull strength increases as detonation approaches
                                 const detProgress = 1 - (this.detonationTimer / 60);
                                 const distRatio = 1 - (dist / gravityRadius);
-                                const pullStrength = 0.8 * detProgress * distRatio * (dt/16); // dt-scaled pull
+                                const pullStrength = 1.2 * detProgress * distRatio * (dt/16); // Increased from 0.8 to 1.2 (+50% pull)
                                 
                                 e.pushX += (dx/dist) * pullStrength;
                                 e.pushY += (dy/dist) * pullStrength;
@@ -10113,7 +10246,7 @@
                         if (dist < this.target.radius + 15) {
                             // HIT!
                             this.hitEnemies.add(this.target);
-                            player.dealElementalDamage(this.target, this.damage * Math.pow(0.95, this.bounces), 'ricochet', '#ff8800');
+                            player.dealElementalDamage(this.target, this.damage, 'ricochet', '#ff8800'); // Same damage for all bounces
                             createExplosion(this.x, this.y, '#ff8800', 15);
                             this.bounces++;
                             
@@ -10838,25 +10971,25 @@
                     ctx.shadowBlur = 8;
                     ctx.shadowColor = '#666';
                     ctx.fillStyle = '#888';
-                    ctx.fillRect(-5, -2.5, 8, 5);
+                    ctx.fillRect(-5, -3, 9, 6); // Increased from 8x5 to 9x6
                     
                     // Warhead (nose cone) - sleek
                     ctx.shadowBlur = 20;
                     ctx.shadowColor = '#ffaa00';
                     ctx.fillStyle = '#ffaa00'; 
                     ctx.beginPath(); 
-                    ctx.moveTo(5, 0); 
-                    ctx.lineTo(-5, -4); 
-                    ctx.lineTo(-5, 4); 
+                    ctx.moveTo(6, 0); // Extended from 5 to 6
+                    ctx.lineTo(-5, -4.5); // Increased from -4 to -4.5
+                    ctx.lineTo(-5, 4.5); // Increased from 4 to 4.5
                     ctx.fill();
                     
                     // Bright tip
                     ctx.fillStyle = '#fff'; 
                     ctx.shadowBlur = 10;
                     ctx.beginPath(); 
-                    ctx.moveTo(5, 0); 
-                    ctx.lineTo(-2, -2); 
-                    ctx.lineTo(-2, 2); 
+                    ctx.moveTo(6, 0); // Extended from 5 to 6
+                    ctx.lineTo(-2, -2.5); // Slightly larger
+                    ctx.lineTo(-2, 2.5); // Slightly larger
                     ctx.fill();
                     
                     ctx.shadowBlur = 0;
@@ -11365,11 +11498,19 @@
                         console.log('💎 Nexus Core collected!');
                         console.log('   pendingUltimateSelection:', state.pendingUltimateSelection);
                         
-                        // ULTIMATE SELECTION: Trigger if pending
+                        // ULTIMATE SELECTION: Queue it instead of showing immediately
                         if (state.pendingUltimateSelection) {
-                            console.log('✅ Triggering ultimate selection...');
+                            console.log('✅ Queuing ultimate selection...');
                             state.pendingUltimateSelection = false;
-                            showUltimateSelection();
+                            
+                            // Add to upgrade queue
+                            if (!state.upgradeQueue) state.upgradeQueue = [];
+                            state.upgradeQueue.push({ type: 'ultimate' });
+                            
+                            // If not currently showing any upgrade screen, show it now
+                            if (state.screen === 'game' && !player.ultimateActive) {
+                                processNextUpgrade();
+                            }
                         } else {
                             console.log('⚠️ No pending ultimate selection');
                         }
@@ -11880,6 +12021,7 @@
             state.score=0; state.level=1; state.xp=0; state.xpToNext=10; 
             state.startTime=Date.now(); state.screen='game'; state.rerolls=3;
             state.paused = false; state.timeScale = 1.0; state.pendingLevelUps = 0; state.zoom = 0.70; 
+            state.upgradeQueue = []; // Reset upgrade queue 
             state.bossActive = false; state.bossWave = 0; state.pendingSwap = null;
             state.bossTimer = 0; state.gameTime = 0; state.spawnTimer = 0;
             state.saveCharges = 3; state.savedUpgrade = null;
@@ -13538,10 +13680,10 @@
             const baseSpawnCap = state.level < 5 ? 8 : 5;
             const spawnCap = baseSpawnCap + Math.floor(mins * 15) + state.level; 
             
-            // During champion fights, spawn at 50% normal rate (was 40%)
+            // During champion fights, spawn at 60% normal rate (reduced from 50%)
             const spawnInterval = state.bossActive ? 
-                Math.floor((25 - Math.min(12, state.level)) * 2.0) : // 100% slower during champion = 50% rate
-                (25 - Math.min(12, state.level));
+                Math.floor((28 - Math.min(13, state.level)) * 1.67) : // 67% slower during champion = 60% rate
+                (28 - Math.min(13, state.level));
             
             // Normal enemy spawning (skip during final boss) - framerate independent timer
             if(!state.finalBossActive && state.breathingRoomTimer <= 0 && entities.enemies.length < spawnCap && state.spawnTimer >= spawnInterval) { 
@@ -13560,9 +13702,9 @@
 
             entities.pickups = entities.pickups.filter(p => { const a=p.update(scaledDt); if(a) p.draw(ctx); return a; });
             
-            // Check if we have pending level ups - show immediately UNLESS ultimate is active
-            if (state.pendingLevelUps > 0 && state.screen === 'game' && !player.ultimateActive) {
-                showLevelUp();
+            // Check if we have pending upgrades (level ups or ultimate selection)
+            if (state.upgradeQueue && state.upgradeQueue.length > 0 && state.screen === 'game' && !player.ultimateActive) {
+                processNextUpgrade();
             }
             
             // During levelup screen: Skip game updates but continue rendering (world visible behind UI)
@@ -14829,21 +14971,31 @@
                         ctx.stroke();
                     }
                     
-                    // Soft white glow emanating from event horizon
-                    const horizonGlowGradient = ctx.createRadialGradient(horizon.x, horizon.y, voidSize - 5, horizon.x, horizon.y, voidSize + 35);
-                    horizonGlowGradient.addColorStop(0, `rgba(255, 255, 255, ${0.75 * buildUp})`);
-                    horizonGlowGradient.addColorStop(0.4, `rgba(255, 255, 255, ${0.45 * buildUp})`);
-                    horizonGlowGradient.addColorStop(0.7, `rgba(200, 180, 255, ${0.25 * buildUp})`);
+                    // Soft outer glow - ONLY around the event horizon ring, not covering the black center
+                    const horizonGlowGradient = ctx.createRadialGradient(
+                        horizon.x, horizon.y, voidSize + 10, // Start glow OUTSIDE the event horizon
+                        horizon.x, horizon.y, voidSize + 45
+                    );
+                    horizonGlowGradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * buildUp})`);
+                    horizonGlowGradient.addColorStop(0.4, `rgba(200, 180, 255, ${0.35 * buildUp})`);
                     horizonGlowGradient.addColorStop(1, 'rgba(120, 0, 200, 0)');
                     
                     ctx.fillStyle = horizonGlowGradient;
                     ctx.shadowBlur = 40 * buildUp;
                     ctx.shadowColor = '#ffffff';
                     ctx.beginPath();
-                    ctx.arc(horizon.x, horizon.y, voidSize + 35, 0, Math.PI * 2);
+                    ctx.arc(horizon.x, horizon.y, voidSize + 45, 0, Math.PI * 2);
                     ctx.fill();
                     
                     ctx.shadowBlur = 0;
+                    
+                    // REDRAW pure black center on TOP of everything (including glow)
+                    // This ensures the black hole core remains visually devoid of light
+                    ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+                    ctx.shadowBlur = 0;
+                    ctx.beginPath();
+                    ctx.arc(horizon.x, horizon.y, voidSize * 0.5, 0, Math.PI * 2);
+                    ctx.fill();
                     
                 } else if (horizon.phase === 'collapse') {
                     // ULTRA EPIC COSMIC COLLAPSE - Reality-shattering implosion
@@ -15948,6 +16100,25 @@
                                 
                                 player.dealElementalDamage(e, p.damage, p.source, hitColor);
                                 
+                                // DRONE ROCKET SPLASH DAMAGE
+                                if (p.type === 'drone_rocket' && p.hasSplash) {
+                                    createExplosion(p.x, p.y, '#ff8800', 12);
+                                    const splashRangeSq = p.splashRange * p.splashRange;
+                                    
+                                    // Apply splash damage to nearby enemies
+                                    entities.enemies.forEach(splashTarget => {
+                                        if (splashTarget === e || splashTarget.hp <= 0) return;
+                                        
+                                        const dx = splashTarget.x - p.x;
+                                        const dy = splashTarget.y - p.y;
+                                        const distSq = dx*dx + dy*dy;
+                                        
+                                        if (distSq < splashRangeSq) {
+                                            player.dealElementalDamage(splashTarget, p.splashDamage, p.source, '#ff8800');
+                                        }
+                                    });
+                                }
+                                
                                 hit=true; 
                                 if (p.type === 'seeker') {
                                     // Main explosion particles
@@ -16187,6 +16358,8 @@
             if(state.xp >= state.xpToNext && state.level < 50) { // Cap at level 50
                 state.level++; state.xp=0; state.xpToNext = nextCurve;
                 
+                console.log(`⬆️ LEVEL UP to ${state.level} (screen: ${state.screen}, queue length: ${state.upgradeQueue ? state.upgradeQueue.length : 0})`);
+                
                 // CRITICAL: Trigger NEXUS PRIME immediately on level 50 (before levelup queue)
                 if (state.level === 50 && !state.finalBossTriggered) {
                     console.log('⚡ Level 50 hit - triggering NEXUS PRIME immediately');
@@ -16206,6 +16379,12 @@
                     level: state.level,
                     isElemental: isElementalLevel
                 });
+                
+                // Add to unified upgrade queue
+                if (!state.upgradeQueue) state.upgradeQueue = [];
+                state.upgradeQueue.push({ type: 'levelup' });
+                
+                console.log(`   ✅ Queued level up (total in queue: ${state.upgradeQueue.length})`);
                 
                 state.pendingLevelUps++;
                 // Don't show levelup screen immediately - let game loop handle it after XP collection completes
@@ -16234,6 +16413,22 @@
             }
         }
 
+
+        function processNextUpgrade() {
+            if (!state.upgradeQueue || state.upgradeQueue.length === 0) return;
+            
+            console.log(`📋 Processing next upgrade (queue length: ${state.upgradeQueue.length}, screen: ${state.screen})`);
+            
+            const nextUpgrade = state.upgradeQueue[0]; // Peek at first item, don't remove yet
+            
+            if (nextUpgrade.type === 'levelup') {
+                console.log('   → Showing level up screen');
+                showLevelUp();
+            } else if (nextUpgrade.type === 'ultimate') {
+                console.log('   → Showing ultimate selection');
+                showUltimateSelection();
+            }
+        }
 
         function showLevelUp() {
             state.screen = 'levelup';
@@ -16362,6 +16557,7 @@
                     document.getElementById('levelup-screen').classList.remove('active');
                     state.screen = 'game';
                     player.invulnTimer = 120; // Brief invulnerability
+                    resumeGame(); // Remove the ultimate selection from queue
                 };
                 
                 container.appendChild(card);
@@ -16955,29 +17151,45 @@
 
 
         function resumeGame() {
-            state.pendingLevelUps--;
+            console.log(`🎮 Resuming game (queue length before: ${state.upgradeQueue ? state.upgradeQueue.length : 0})`);
             
-            // Remove processed level-up from queue
-            if (state.levelUpQueue && state.levelUpQueue.length > 0) {
-                state.levelUpQueue.shift(); // Remove first item
+            // Remove processed upgrade from unified queue
+            if (state.upgradeQueue && state.upgradeQueue.length > 0) {
+                const completedUpgrade = state.upgradeQueue.shift();
+                console.log(`   ✅ Completed upgrade type: ${completedUpgrade.type}`);
+                
+                // If it was a level up, also decrement the legacy counter
+                if (completedUpgrade.type === 'levelup') {
+                    state.pendingLevelUps--;
+                    
+                    // Remove from levelup-specific queue too
+                    if (state.levelUpQueue && state.levelUpQueue.length > 0) {
+                        state.levelUpQueue.shift();
+                    }
+                }
             }
             
-            // Update pending counter display
+            console.log(`   Remaining in queue: ${state.upgradeQueue ? state.upgradeQueue.length : 0}`);
+            
+            // Update pending counter display (show total pending upgrades)
             const pendingDiv = document.getElementById('pending-upgrades');
             const pendingCount = document.getElementById('pending-count');
+            const remainingUpgrades = state.upgradeQueue ? state.upgradeQueue.length : 0;
             
-            if (state.pendingLevelUps > 1) {
+            if (remainingUpgrades > 0) {
                 pendingDiv.style.display = 'block';
-                pendingCount.textContent = state.pendingLevelUps;
+                pendingCount.textContent = remainingUpgrades + 1; // +1 because we're still on current screen
             } else {
                 pendingDiv.style.display = 'none';
             }
             
-            if (state.pendingLevelUps > 0) { 
-                // Immediately show next upgrade card in the same screen
-                generateCards();
+            if (remainingUpgrades > 0) { 
+                console.log('   → Processing next upgrade in queue');
+                // Process next upgrade in queue
+                processNextUpgrade();
             } 
             else {
+                console.log('   → All upgrades complete, returning to game');
                 // All upgrades chosen - return to game
                 document.getElementById('levelup-screen').classList.remove('active');
                 state.screen = 'game'; state.lastTime = Date.now();
