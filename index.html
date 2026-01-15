@@ -3427,8 +3427,8 @@
                         const minY = this.y - (height / state.zoom / 2) + screenMargin;
                         const maxY = this.y + (height / state.zoom / 2) - screenMargin;
                         
-                        // Find target if we don't have one or current target is dead
-                        if (!drone.target || drone.target.hp <= 0) {
+                        // Find target if we don't have one or current target is dead/hacked
+                        if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active)) {
                             // Priority targeting influenced by proximity to player
                             const priorityOrder = (enemy) => {
                                 // Boss shields are HIGHEST priority (only when active)
@@ -3489,7 +3489,7 @@
                         }
                         
                         // Move drone with more aggressive AI
-                        if (drone.target) {
+                        if (drone.target && !(drone.target.hackState && drone.target.hackState.active)) {
                             // Chase target more actively
                             const dx = drone.target.x - drone.x;
                             const dy = drone.target.y - drone.y;
@@ -3574,33 +3574,49 @@
                         
                         // Fire at target
                         drone.fireTimer -= dt/16;
-                        if (drone.fireTimer <= 0 && drone.target) {
+                        if (drone.fireTimer <= 0 && drone.target && !(drone.target.hackState && drone.target.hackState.active)) {
                             drone.shotsFired = (drone.shotsFired || 0) + 1;
                             
                             // Every 5th shot fires a mini-rocket with AOE splash
                             const isMiniRocket = (drone.shotsFired % 5 === 0);
                             
-                            const angle = Math.atan2(drone.target.y - drone.y, drone.target.x - drone.x);
-                            const vx = Math.cos(angle) * (isMiniRocket ? 16 : 14); // Faster projectiles
-                            const vy = Math.sin(angle) * (isMiniRocket ? 16 : 14);
+                            // Create fire function for multistrike
+                            const fireDroneShot = (damageMultiplier = 1.0, depth = 0) => {
+                                // Verify target still exists and is valid
+                                if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active)) {
+                                    return;
+                                }
+                                
+                                const angle = Math.atan2(drone.target.y - drone.y, drone.target.x - drone.x);
+                                const vx = Math.cos(angle) * (isMiniRocket ? 16 : 14);
+                                const vy = Math.sin(angle) * (isMiniRocket ? 16 : 14);
+                                
+                                if (isMiniRocket) {
+                                    // Mini-rocket: AOE splash damage on impact
+                                    const rocketProj = new Projectile(
+                                        drone.x, drone.y, vx, vy, droneDmg * 2.0 * damageMultiplier, 0, 'drone_rocket', drone.target, 'drones'
+                                    );
+                                    // Mark projectile for AOE splash on hit
+                                    rocketProj.hasSplash = true;
+                                    rocketProj.splashRange = 80; // Small AOE radius
+                                    rocketProj.splashDamage = droneDmg * 1.2 * damageMultiplier; // Splash does 60% of rocket damage
+                                    entities.projectiles.push(rocketProj);
+                                    createExplosion(drone.x, drone.y, '#ff8800', 8);
+                                } else {
+                                    // Normal shot - faster and weaker
+                                    entities.projectiles.push(new Projectile(
+                                        drone.x, drone.y, vx, vy, droneDmg * damageMultiplier, 0, 'drone_shot', drone.target, 'drones'
+                                    ));
+                                }
+                                
+                                // Check for multistrike (only on initial shot, depth=0)
+                                if (depth === 0 && player.multistrikeUnlocked) {
+                                    checkMultistrike(fireDroneShot, damageMultiplier, depth);
+                                }
+                            };
                             
-                            if (isMiniRocket) {
-                                // Mini-rocket: AOE splash damage on impact
-                                const rocketProj = new Projectile(
-                                    drone.x, drone.y, vx, vy, droneDmg * 2.0, 0, 'drone_rocket', drone.target, 'drones'
-                                );
-                                // Mark projectile for AOE splash on hit
-                                rocketProj.hasSplash = true;
-                                rocketProj.splashRange = 80; // Small AOE radius
-                                rocketProj.splashDamage = droneDmg * 1.2; // Splash does 60% of rocket damage
-                                entities.projectiles.push(rocketProj);
-                                createExplosion(drone.x, drone.y, '#ff8800', 8);
-                            } else {
-                                // Normal shot - faster and weaker
-                                entities.projectiles.push(new Projectile(
-                                    drone.x, drone.y, vx, vy, droneDmg, 0, 'drone_shot', drone.target, 'drones'
-                                ));
-                            }
+                            // Fire the initial shot
+                            fireDroneShot();
                             
                             drone.fireTimer = fireRate;
                         }
@@ -6309,9 +6325,9 @@
                 pullRadius: 400,
                 pullStrength: 5, // units per frame
                 collapseDamage: {
-                    center: 20, // 20% max HP within 100 radius
-                    mid: 12,    // 12% max HP within 200 radius
-                    outer: 6    // 6% max HP within 300 radius
+                    center: 30, // 30% max HP within 100 radius (buffed from 20%)
+                    mid: 20,    // 20% max HP within 200 radius (buffed from 12%)
+                    outer: 12   // 12% max HP within 300 radius (buffed from 6%)
                 },
                 chargeTime: 120, // Base 120 seconds
                 damageChargeBonus: 0.00016 // 0.016% per 100 damage
@@ -6415,14 +6431,21 @@
                 }
                 
                 // Shields are up - target highest HP shield or turret
+                // If tied, prioritize closest to player
                 let highestHpEnemy = null;
                 let highestHp = 0;
+                let closestDistance = Infinity;
                 
                 entities.enemies.forEach(e => {
                     if (e.hp > 0 && (e.isBossShield || e.isBossTurret)) {
-                        if (e.hp > highestHp) {
+                        // Calculate distance to player
+                        const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
+                        
+                        // Take if higher HP, or if same HP but closer
+                        if (e.hp > highestHp || (e.hp === highestHp && dist < closestDistance)) {
                             highestHp = e.hp;
                             highestHpEnemy = e;
+                            closestDistance = dist;
                         }
                     }
                 });
@@ -6431,18 +6454,27 @@
             }
             
             // Priority 2: Highest max HP enemy (no distance limit)
+            // If tied, prioritize closest to player
             let highestMaxHpEnemy = null;
             let highestMaxHp = 0;
+            let closestDistance = Infinity;
             
             entities.enemies.forEach(e => {
-                if (e.hp > 0 && e.maxHp > highestMaxHp) {
-                    highestMaxHp = e.maxHp;
-                    highestMaxHpEnemy = e;
+                if (e.hp > 0) {
+                    // Calculate distance to player
+                    const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
+                    
+                    // Take if higher max HP, or if same max HP but closer
+                    if (e.maxHp > highestMaxHp || (e.maxHp === highestMaxHp && dist < closestDistance)) {
+                        highestMaxHp = e.maxHp;
+                        highestMaxHpEnemy = e;
+                        closestDistance = dist;
+                    }
                 }
             });
             
             if (highestMaxHpEnemy) {
-                console.log('✓ Found target:', highestMaxHpEnemy.type, 'maxHP:', highestMaxHp);
+                console.log('✓ Found target:', highestMaxHpEnemy.type, 'maxHP:', highestMaxHp, 'distance:', Math.floor(closestDistance));
             } else {
                 console.log('✗ No enemies found for targeting');
             }
@@ -6553,8 +6585,9 @@
         function executeSkyfallBeam(target) {
             console.log('⚡ Skyfall Beam activating on target:', target.type);
             
-            // Invulnerability for ultimate duration (5 seconds = 300 frames)
-            player.invulnTimer = Math.max(player.invulnTimer, 300);
+            // Invulnerability for ultimate duration + linger + camera pan + 1s buffer
+            // 5000ms ticks + 500ms linger + 500ms camera pan + 1000ms buffer = 7000ms = 420 frames
+            player.invulnTimer = Math.max(player.invulnTimer, 420);
             
             const ultimateData = ULTIMATES.skyfall;
             let tickCount = 0;
@@ -6698,8 +6731,9 @@
                 target = { x: player.x, y: player.y, type: 'fallback' };
             }
             
-            // Invulnerability for ultimate duration (3.5 seconds = 210 frames)
-            player.invulnTimer = Math.max(player.invulnTimer, 210);
+            // Invulnerability for ultimate duration + camera pans + 1s buffer
+            // 500ms camera in + 3000ms pull + 500ms camera out + 1000ms buffer = 5000ms = 300 frames
+            player.invulnTimer = Math.max(player.invulnTimer, 300);
             
             const ultimateData = ULTIMATES.event_horizon;
             const singularityX = target.x;
@@ -6794,9 +6828,9 @@
                             const dist = Math.sqrt(dx * dx + dy * dy);
                             
                             let damagePercent = 0;
-                            if (dist < 100) damagePercent = ultimateData.collapseDamage.center; // 20%
-                            else if (dist < 200) damagePercent = ultimateData.collapseDamage.mid; // 12%
-                            else if (dist < 300) damagePercent = ultimateData.collapseDamage.outer; // 6%
+                            if (dist < 100) damagePercent = ultimateData.collapseDamage.center; // 30%
+                            else if (dist < 200) damagePercent = ultimateData.collapseDamage.mid; // 20%
+                            else if (dist < 300) damagePercent = ultimateData.collapseDamage.outer; // 12%
                             
                             if (damagePercent > 0) {
                                 let damage = e.maxHp * (damagePercent / 100);
@@ -6871,8 +6905,9 @@
             
             console.log(`💣 Seismic Bomb targeting cluster with ${bestDensity} enemies`);
             
-            // Invulnerability for ultimate duration (4.5 seconds = 270 frames)
-            player.invulnTimer = Math.max(player.invulnTimer, 270);
+            // Invulnerability for ultimate duration + camera pans + 1s buffer
+            // 500ms camera in + 5000ms effects + 500ms camera out + 1000ms buffer = 7000ms = 420 frames
+            player.invulnTimer = Math.max(player.invulnTimer, 420);
             
             const ultimateData = ULTIMATES.seismic_bomb;
             const bombX = bestClusterX;
@@ -8204,6 +8239,7 @@
                                     this.chargeTimer = 15; // 0.25s windup
                                     this.chargeAngle = Math.atan2(nearest.y-this.y, nearest.x-this.x);
                                     this.vx = 0; this.vy = 0;
+                                    this.chargeHitEnemies = []; // Track enemies hit in this charge
                                 } else if (this.hackChargeState === 1) {
                                     // Windup - track target perfectly
                                     this.chargeTimer -= (dt/16);
@@ -8233,15 +8269,20 @@
                                         if (e !== this && e.hp > 0 && !e.hackState.active) {
                                             const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
                                             if (dist < this.radius + e.radius + 10) {
+                                                // Only hit each enemy once per charge
+                                                if (!this.chargeHitEnemies) this.chargeHitEnemies = [];
+                                                if (this.chargeHitEnemies.includes(e)) return; // Already hit this enemy
+                                                this.chargeHitEnemies.push(e);
+                                                
                                                 // Deal collision damage based on target's max HP
                                                 const targetMaxHp = e.maxHp || e.hp || 100;
-                                                let collisionDmg = targetMaxHp * 0.20; // 20% max HP base
+                                                let collisionDmg = targetMaxHp * 0.15; // 15% max HP base (reduced from 20%)
                                                 
                                                 // MITIGATION: Reduce damage against titans/bosses
                                                 if (e.isNexusPrime) {
-                                                    collisionDmg *= 0.15; // Only 3% max HP against final boss (was 20%)
+                                                    collisionDmg *= 0.15; // Only 2.25% max HP against final boss (15% × 0.15)
                                                 } else if (e.isChampion || e.tier === 'titan') {
-                                                    collisionDmg *= 0.30; // Only 6% max HP against champions/titans (was 20%)
+                                                    collisionDmg *= 0.30; // Only 4.5% max HP against champions/titans (15% × 0.30)
                                                 }
                                                 
                                                 e.takeDamage(collisionDmg, '#00ffff', false, 'normal', null, 'hack');
@@ -9220,7 +9261,7 @@
                             if (nearestEnemy) {
                                 // Normalized damage based on player damage (not enemy dmg)
                                 // This ensures consistent damage regardless of which enemy is hacked
-                                let hackDamage = player.damage * 1.5; // Balanced base damage
+                                let hackDamage = player.damage * 1.0; // Balanced base damage (reduced from 1.5)
                                 
                                 // Apply damage reduction for bosses/titans
                                 if (nearestEnemy.isNexusPrime) {
@@ -11524,7 +11565,7 @@
                         
                         // Trigger victory after brief delay
                         setTimeout(() => {
-                            gameover();
+                            showVictory();
                         }, 500);
                     }
                     if (this.type === 'core') { gainXp(state.xpToNext * 3); } 
@@ -12703,28 +12744,25 @@
         // ===== NEXUS PRIME FINAL BOSS SYSTEM =====
         
         function triggerNexusPrime() {
-            // Capture player position NOW
+            // IMMEDIATELY capture and lock player position to prevent any drift
             const spawnX = player.x;
             const spawnY = player.y;
+            
+            console.log(`🎯 Triggering Nexus Prime at player position: (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)})`);
             
             // IMMEDIATELY spawn boss to prevent player drift during delays
             spawnNexusPrime(spawnX, spawnY);
             
-            // Make enemies retreat (visual effect only, boss is already spawning)
-            entities.enemies.forEach(e => {
-                if (e.isNexusPrime) return; // Don't affect the boss we just spawned
-                e.retreating = true;
-                const angle = Math.atan2(e.y - player.y, e.x - player.x);
-                e.vx = Math.cos(angle) * 4;
-                e.vy = Math.sin(angle) * 4;
-            });
+            // Clear ALL enemies IMMEDIATELY (except the boss we just spawned and its shields)
+            // This prevents drones from targeting invisible/offscreen enemies
+            entities.enemies = entities.enemies.filter(e => 
+                e.isNexusPrime || e.isBossTurret || e.isBossShield
+            );
             
-            // Clear non-drone enemies after brief retreat
-            setTimeout(() => {
-                entities.enemies = entities.enemies.filter(e => 
-                    (e.type === 'drone' && e.isPlayerDrone) || e.isNexusPrime || e.isBossTurret || e.isBossShield
-                );
-            }, 500);
+            console.log(`✅ Cleared enemies, remaining count: ${entities.enemies.length} (should be boss + 4 shields = 5)`);
+            
+            // Make enemies retreat (visual effect only - they're already cleared)
+            // This section is now just cosmetic since we already filtered
             
             // Show warning AFTER boss is already there (just for drama)
             showBossWarning();
@@ -12750,10 +12788,14 @@
         function spawnNexusPrime(spawnX, spawnY) {
             // Use provided spawn position, or default to current player position
             const bossX = spawnX !== undefined ? spawnX : player.x;
-            const bossY = spawnY !== undefined ? spawnY : player.y + 200;
+            const bossY = spawnY !== undefined ? spawnY : player.y;
             
             const finalBossX = bossX;
-            const finalBossY = bossY + 200; // Spawn 200 units below spawn position
+            const finalBossY = bossY + 200; // Spawn 200 units below the base position
+            
+            console.log(`🔵 spawnNexusPrime called with: (${spawnX}, ${spawnY})`);
+            console.log(`🔵 Boss will spawn at: (${finalBossX.toFixed(2)}, ${finalBossY.toFixed(2)})`);
+            console.log(`🔵 Player current position: (${player.x.toFixed(2)}, ${player.y.toFixed(2)})`);
             
             // Gradually zoom out camera for boss fight
             state.targetZoom = 0.60; // Zoom out from 0.70 to 0.60
@@ -12866,8 +12908,9 @@
             entities.enemies.push(boss);
             state.shake = 30;
             
-            console.log('Boss added to entities.enemies, count:', entities.enemies.length);
-            console.log('Boss position:', boss.x, boss.y);
+            console.log('✅ Boss added to entities.enemies, count:', entities.enemies.length);
+            console.log('✅ Boss final position:', boss.x.toFixed(2), boss.y.toFixed(2));
+            console.log('✅ Shield positions:', boss.shields.map(s => `(${s.x.toFixed(2)}, ${s.y.toFixed(2)})`).join(', '));
             console.log('Boss object:', boss);
             console.log('Shields:', boss.shields.length);
             
@@ -13054,7 +13097,7 @@
                         vx: Math.cos(angle) * 3.5, // Slower (was 4)
                         vy: Math.sin(angle) * 3.5,
                         life: 180,
-                        dmg: 35, // Increased from 28
+                        dmg: 38, // Increased from 35
                         radius: 5
                     });
                 }
@@ -13074,7 +13117,7 @@
                             vx: Math.cos(angle) * 4,
                             vy: Math.sin(angle) * 4,
                             life: 180,
-                            dmg: 28, // Increased from 22
+                            dmg: 30, // Increased from 28
                             radius: 5
                         });
                     }
@@ -13094,7 +13137,7 @@
                             vy: Math.sin(angle) * 1.4,
                             life: 180, // Reduced from 240 - detonates after 3 seconds
                             maxLife: 180, // Track max life for detonation timer
-                            dmg: 35, // Increased from 28
+                            dmg: 38, // Increased from 35
                             radius: 6,
                             homing: true,
                             homingStrength: 0.004, // Much weaker turning (was 0.01) - allows dodging
@@ -13149,7 +13192,7 @@
                                 vx: Math.cos(shield.angle) * 5,
                                 vy: Math.sin(shield.angle) * 5,
                                 life: 120,
-                                dmg: 28, // Increased from 22
+                                dmg: 30, // Increased from 28
                                 radius: 4
                             });
                         }, 100); // Fire every 100ms
@@ -13182,7 +13225,7 @@
                         vx: Math.cos(finalAngle) * 4.5,
                         vy: Math.sin(finalAngle) * 4.5,
                         life: 180,
-                        dmg: 35, // Increased from 28
+                        dmg: 38, // Increased from 35
                         radius: 5
                     });
                 }
@@ -13680,10 +13723,46 @@
             const baseSpawnCap = state.level < 5 ? 8 : 5;
             const spawnCap = baseSpawnCap + Math.floor(mins * 15) + state.level; 
             
+            // MINIMUM ENEMY COUNT SYSTEM (post-level 10)
+            // Prevents enemy drought for strong builds
+            let minimumEnemyTrigger = 0;
+            let minimumEnemyTarget = 0;
+            
+            if (state.level >= 10 && !state.bossActive && !state.finalBossActive) {
+                // Scale minimum with level
+                minimumEnemyTrigger = 8 + Math.floor((state.level - 10) * 0.5); // 8 at lvl 10, 13 at lvl 20, 18 at lvl 30
+                minimumEnemyTarget = minimumEnemyTrigger + 7; // Always 7 above trigger
+            }
+            
+            // Count non-boss enemies
+            const currentEnemyCount = entities.enemies.filter(e => 
+                !e.isNexusPrime && !e.isBossShield && !e.isBossTurret && !e.isChampion
+            ).length;
+            
+            // Check if we need rapid spawning
+            const needsRapidSpawn = minimumEnemyTrigger > 0 && currentEnemyCount < minimumEnemyTrigger;
+            const shouldStopRapidSpawn = minimumEnemyTarget > 0 && currentEnemyCount >= minimumEnemyTarget;
+            
+            // Track rapid spawn state
+            if (!state.rapidSpawning) state.rapidSpawning = false;
+            
+            if (needsRapidSpawn && !state.rapidSpawning) {
+                state.rapidSpawning = true;
+                console.log(`🚨 Rapid spawn activated! ${currentEnemyCount} < ${minimumEnemyTrigger}`);
+            } else if (shouldStopRapidSpawn && state.rapidSpawning) {
+                state.rapidSpawning = false;
+                console.log(`✅ Rapid spawn deactivated! ${currentEnemyCount} >= ${minimumEnemyTarget}`);
+            }
+            
             // During champion fights, spawn at 60% normal rate (reduced from 50%)
-            const spawnInterval = state.bossActive ? 
+            let spawnInterval = state.bossActive ? 
                 Math.floor((28 - Math.min(13, state.level)) * 1.67) : // 67% slower during champion = 60% rate
                 (28 - Math.min(13, state.level));
+            
+            // Override spawn interval during rapid spawning
+            if (state.rapidSpawning) {
+                spawnInterval = 5; // Spawn every 5 frames (~12 per second at 60fps)
+            }
             
             // Normal enemy spawning (skip during final boss) - framerate independent timer
             if(!state.finalBossActive && state.breathingRoomTimer <= 0 && entities.enemies.length < spawnCap && state.spawnTimer >= spawnInterval) { 
@@ -14265,62 +14344,8 @@
                     // Update health bar
                     updateBossHealthBar();
                     
-                    // Check for death
-                    if (e.hp <= 0) {
-                        console.log('NEXUS PRIME DEFEATED!');
-                        state.finalBossActive = false;
-                        state.bossActive = false;
-                        createExplosion(e.x, e.y, '#ffffff', 100);
-                        state.shake = 50;
-                        
-                        // Award Quantum Singularities - always 1
-                        const singularities = 1;
-                        const currentSing = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
-                        localStorage.setItem('neonrogue_singularities', currentSing + singularities);
-                        
-                        setTimeout(() => {
-                            // Change title to VICTORY
-                            const gameoverTitle = document.querySelector('#gameover-screen h2');
-                            if (gameoverTitle) {
-                                gameoverTitle.textContent = 'VICTORY';
-                                gameoverTitle.className = 'text-4xl text-teal-400 font-black mb-1 drop-shadow-[0_0_20px_rgba(0,209,178,0.5)]';
-                            }
-                            
-                            document.getElementById('gameover-screen').classList.add('active');
-                            document.getElementById('hud').style.display = 'none';
-                            
-                            // Hide level display for victory
-                            document.getElementById('final-level').parentElement.style.display = 'none';
-                            
-                            // Set score and time normally
-                            document.getElementById('final-score').textContent = state.score;
-                            const t = Math.floor((state.gameTime)/1000);
-                            const mins = Math.floor(t/60).toString().padStart(2, '0');
-                            const secs = (t%60).toString().padStart(2, '0');
-                            document.getElementById('final-time').textContent = `${mins}:${secs}`;
-                            
-                            // Add victory message after h2
-                            const existingVictoryMsg = document.getElementById('victory-message');
-                            if (existingVictoryMsg) existingVictoryMsg.remove();
-                            
-                            const victoryMessage = document.createElement('div');
-                            victoryMessage.id = 'victory-message';
-                            victoryMessage.className = 'mb-3 text-center';
-                            victoryMessage.innerHTML = `
-                                <div style="color: #00d1b2; font-size: 18px; font-weight: bold; margin-bottom: 8px;">
-                                    ✨ NEXUS PRIME DEFEATED ✨
-                                </div>
-                                <div style="color: #ffd700; font-size: 16px;">
-                                    +1 Quantum Singularity
-                                </div>
-                            `;
-                            
-                            // Insert victory message after title
-                            gameoverTitle.parentElement.insertBefore(victoryMessage, gameoverTitle.nextSibling);
-                        }, 1500);
-                        return false;
-                    }
-                    return true;
+                    // Death sequence is handled in the enemy update loop below
+                    // Don't immediately trigger victory here - let the death animation play
                 }
                 
                 // Boss Turret handling
@@ -16360,11 +16385,19 @@
                 
                 console.log(`⬆️ LEVEL UP to ${state.level} (screen: ${state.screen}, queue length: ${state.upgradeQueue ? state.upgradeQueue.length : 0})`);
                 
-                // CRITICAL: Trigger NEXUS PRIME immediately on level 50 (before levelup queue)
+                // CRITICAL: Trigger NEXUS PRIME immediately on level 50 (NO level-up screen!)
                 if (state.level === 50 && !state.finalBossTriggered) {
-                    console.log('⚡ Level 50 hit - triggering NEXUS PRIME immediately');
+                    console.log('⚡ Level 50 hit - triggering NEXUS PRIME immediately (NO LEVEL-UP)');
                     state.finalBossTriggered = true;
+                    
+                    // Clear all XP gems from screen
+                    entities.pickups = entities.pickups.filter(p => p.type !== 'xp');
+                    
+                    // Trigger boss spawn
                     triggerNexusPrime();
+                    
+                    // Don't queue any level-up for level 50 - boss fight starts immediately
+                    return; // Exit early, skip level-up queue
                 }
                 
                 // Determine if this level is elemental
@@ -17550,6 +17583,137 @@
             }
         }
         
+        function showVictory() {
+            state.screen = 'gameover';
+            
+            // Change title to VICTORY
+            const gameoverTitle = document.querySelector('#gameover-screen h2');
+            if (gameoverTitle) {
+                gameoverTitle.textContent = 'VICTORY';
+                gameoverTitle.className = 'text-4xl text-teal-400 font-black mb-1 drop-shadow-[0_0_20px_rgba(0,209,178,0.5)]';
+            }
+            
+            // Remove any existing victory message
+            const existingVictoryMsg = document.getElementById('victory-message');
+            if (existingVictoryMsg) existingVictoryMsg.remove();
+            
+            // Hide level display for victory
+            document.getElementById('final-level').parentElement.style.display = 'none';
+            
+            // Set score, seed, and time
+            document.getElementById('final-score').innerText = state.score;
+            document.getElementById('final-seed').innerText = state.seed.toString().padStart(6, '0');
+            const t = Math.floor((state.gameTime)/1000);
+            const mins = Math.floor(t/60).toString().padStart(2, '0');
+            const secs = (t%60).toString().padStart(2, '0');
+            document.getElementById('final-time').innerText = `${mins}:${secs}`;
+            
+            // Add victory message after h2
+            const victoryMessage = document.createElement('div');
+            victoryMessage.id = 'victory-message';
+            victoryMessage.className = 'mb-3 text-center';
+            victoryMessage.innerHTML = `
+                <div style="color: #00d1b2; font-size: 18px; font-weight: bold; margin-bottom: 8px;">
+                    ✨ NEXUS PRIME DEFEATED ✨
+                </div>
+                <div style="color: #ffd700; font-size: 16px;">
+                    +1 Quantum Singularity
+                </div>
+            `;
+            
+            // Insert victory message after title
+            if (gameoverTitle && gameoverTitle.parentElement) {
+                gameoverTitle.parentElement.insertBefore(victoryMessage, gameoverTitle.nextSibling);
+            }
+            
+            // Populate weapon stats breakdown (same as gameOver)
+            const statsList = document.getElementById('weapon-stats-list');
+            statsList.innerHTML = '';
+            
+            // Weapon display names - only actual weapons
+            const weaponNames = {
+                'ion': 'Ion Cannon',
+                'turret': 'Auto-Turret',
+                'emp': 'EMP Pulse',
+                'barrier': 'Kinetic Barrier',
+                'orbital': 'Bladestorm',
+                'surge': 'Elemental Surge',
+                'beam': 'Plasma Beam',
+                'seeker': 'Seeker Missiles',
+                'rad': 'Radiation Field',
+                'tesla': 'Tesla Coils',
+                'whip': 'Plasma Whip',
+                'meteor': 'Meteor Strike',
+                'railgun': 'Railgun',
+                'flak': 'Flak Cannon',
+                'pylons': 'Energy Pylons',
+                'mines': 'Collapsar Mines',
+                'gas': 'Toxic Barrage',
+                'ricochet': 'Ricochet Disc',
+                'drones': 'Combat Drones'
+            };
+            
+            // Filter to only actual weapons and sort by damage
+            const weaponArray = Object.entries(state.weaponStats)
+                .filter(([weapon, stats]) => weaponNames[weapon]) // Only known weapons
+                .map(([weapon, stats]) => ({ weapon, ...stats }))
+                .sort((a, b) => b.damage - a.damage);
+            
+            // Calculate totals
+            const totalDamage = weaponArray.reduce((sum, w) => sum + w.damage, 0);
+            const totalKills = weaponArray.reduce((sum, w) => sum + w.kills, 0);
+            
+            // Create table structure with proper header - 4 columns only
+            const table = document.createElement('div');
+            table.className = 'w-full font-mono text-xs'; // Smaller font (text-xs instead of text-sm)
+            
+            // Header row - 4 columns: Weapon, Damage, %, Kills
+            const header = document.createElement('div');
+            header.className = 'grid grid-cols-[120px_75px_40px_50px] gap-2 px-2 py-2 border-b border-gray-600 text-gray-400 font-bold uppercase';
+            header.innerHTML = `
+                <span class="text-left">Weapon</span>
+                <span class="text-right">Damage</span>
+                <span class="text-right">%</span>
+                <span class="text-right">Kills</span>
+            `;
+            table.appendChild(header);
+            
+            // Display each weapon as table row
+            weaponArray.forEach(w => {
+                const weaponName = weaponNames[w.weapon];
+                const damagePercent = totalDamage > 0 ? ((w.damage / totalDamage) * 100).toFixed(0) : 0; // No decimal
+                
+                const row = document.createElement('div');
+                row.className = 'grid grid-cols-[120px_75px_40px_50px] gap-2 px-2 py-1 bg-gray-900 bg-opacity-30 hover:bg-opacity-50 rounded mb-1';
+                row.innerHTML = `
+                    <span class="text-teal-300 font-bold text-left truncate" title="${weaponName}">${weaponName}</span>
+                    <span class="text-orange-400 text-right">${Math.floor(w.damage).toLocaleString()}</span>
+                    <span class="text-gray-500 text-right">${damagePercent}%</span>
+                    <span class="text-red-400 text-right">${w.kills}</span>
+                `;
+                table.appendChild(row);
+            });
+            
+            // Add totals row
+            const totalsRow = document.createElement('div');
+            totalsRow.className = 'grid grid-cols-[120px_75px_40px_50px] gap-2 px-2 py-2 mt-2 border-t border-gray-600 font-bold';
+            totalsRow.innerHTML = `
+                <span class="text-white text-left">TOTAL</span>
+                <span class="text-orange-300 text-right">${Math.floor(totalDamage).toLocaleString()}</span>
+                <span class="text-gray-600 text-right">-</span>
+                <span class="text-red-300 text-right">${totalKills}</span>
+            `;
+            table.appendChild(totalsRow);
+            statsList.appendChild(table);
+            
+            // Update meta progression stats
+            updateMetaStats();
+            
+            // Show the screen
+            document.getElementById('gameover-screen').classList.add('active');
+            document.getElementById('hud').style.display = 'none';
+        }
+
         function gameOver() {
             state.screen = 'gameover';
             
