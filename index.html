@@ -1601,6 +1601,11 @@
                 // Reset volt chain counter each frame for performance
                 this.voltChainsThisFrame = 0;
                 
+                // Calculate fire rate multiplier for Adrenaline Surge (applied to all weapon timers)
+                const fireRateMult = (this.ultimateActive && this.ultimate === 'adrenaline_surge' && this.ultimateData) 
+                    ? this.ultimateData.fireRateMult 
+                    : 1.0;
+                
                 if (this.invulnTimer > 0) this.invulnTimer -= dt/16;
                 
                 // Whip visual timer
@@ -1939,6 +1944,11 @@
                 // Calculate effective speed (apply ship multiplier and mod bonuses)
                 let effectiveSpeed = this.speed * this.shipSpeedMult;
                 
+                // ADRENALINE SURGE: 3x speed boost when active
+                if (this.ultimateActive && this.ultimate === 'adrenaline_surge' && this.ultimateData) {
+                    effectiveSpeed *= this.ultimateData.speedMult;
+                }
+                
                 // EMERGENCY THRUST: +50% speed boost when active
                 if (this.thrustActive) {
                     effectiveSpeed *= 1.50;
@@ -1949,8 +1959,17 @@
                     this.vx = input.vector.x * effectiveSpeed;
                     this.vy = input.vector.y * effectiveSpeed;
                     
-                    this.x += this.vx * (dt/16);
-                    this.y += this.vy * (dt/16);
+                    // Phoenix Protocol: Lock player position during channeling
+                    if (this.phoenixLocked) {
+                        this.x = this.phoenixLockedX;
+                        this.y = this.phoenixLockedY;
+                        this.vx = 0;
+                        this.vy = 0;
+                    } else {
+                        this.x += this.vx * (dt/16);
+                        this.y += this.vy * (dt/16);
+                    }
+                    
                     this.angle = Math.atan2(input.vector.y, input.vector.x);
                     
                     // Thruster particle trail (5 frames = ~0.083s at 60fps)
@@ -1977,7 +1996,7 @@
                 this.cannons.forEach(c => { c.recoil *= 0.8; });
                 
                 if(this.weapons.ion > 0) {
-                    this.lastShot -= dt;
+                    this.lastShot -= dt * fireRateMult;
                     // Prevent catch-up firing after lag spikes by clamping how negative the timer can go
                     if (this.lastShot < -100) this.lastShot = -100; // Max 100ms behind
                     
@@ -2049,7 +2068,7 @@
 
                 // TESLA - FORKING CHAIN LIGHTNING
                 if (this.weapons.tesla > 0) {
-                    this.teslaTimer -= dt/16;
+                    this.teslaTimer -= (dt/16) * fireRateMult;
                     if (this.teslaTimer < -5) this.teslaTimer = -5; // Prevent catch-up
                     if (this.teslaTimer <= 0) {
                         // Number of bolts: 1 at level 1-2, 2 at level 3-5, 3 at level 6+
@@ -2203,7 +2222,7 @@
 
                 // SEEKER
                 if (this.weapons.seeker > 0) {
-                    this.seekerTimer -= dt/16;
+                    this.seekerTimer -= (dt/16) * fireRateMult;
                     if (this.seekerTimer <= 0) {
                         const fireSeeker = (dmgMult = 1.0, depth = 0) => {
                             const count = Math.min(4, this.weapons.seeker); // Cap at 4 missiles instead of 5
@@ -2321,7 +2340,7 @@
 
                 // PLASMA WHIP - Wide arc slash in front of player
                 if (this.weapons.whip > 0) {
-                    this.whipTimer -= dt/16;
+                    this.whipTimer -= (dt/16) * fireRateMult;
                     if (this.whipTimer <= 0) {
                         const range = (100 + (this.weapons.whip * 5)) * this.weaponStats.whip.area; // Much slower scaling: 5 per level
                         const dmg = this.damage * 2.5 * this.weaponStats.whip.dmg; // High damage for cooldown weapon
@@ -2429,7 +2448,7 @@
 
                 // METEOR SHOWER (5 meteors in cluster)
                 if (this.weapons.meteor > 0) {
-                    this.meteorTimer -= dt/16;
+                    this.meteorTimer -= (dt/16) * fireRateMult;
                     if (this.meteorTimer <= 0) {
                         const fireMeteorShower = (damageBonus = 1.0) => {
                             // Filter enemies closer to center of screen (within 60% of visible area)
@@ -2511,7 +2530,7 @@
 
                 // RAILGUN
                 if (this.weapons.railgun > 0) {
-                    this.railgunTimer -= dt/16;
+                    this.railgunTimer -= (dt/16) * fireRateMult;
                     if (this.railgunTimer <= 0) {
                         const fireRailgun = (damageBonus = 1.0, depth = 0) => {
                             // Find dense enemy clusters to target
@@ -2572,7 +2591,7 @@
 
                 // FLAK CANNON
                 if (this.weapons.flak > 0) {
-                    this.flakTimer -= dt/16;
+                    this.flakTimer -= (dt/16) * fireRateMult;
                     if (this.flakTimer <= 0) {
                         // Find dense enemy clusters to target
                         const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
@@ -2753,7 +2772,7 @@
                             }
                         }
                     } else {
-                        this.beamCooldown -= dt;
+                        this.beamCooldown -= dt * fireRateMult;
                         if (this.beamCooldown <= 0) { 
                             this.beamActive = true; 
                             this.beamTimer = 3000; 
@@ -2766,7 +2785,7 @@
 
                 // ENERGY PYLONS
                 if (this.weapons.pylons > 0) {
-                    this.pylonTimer -= dt/16;
+                    this.pylonTimer -= (dt/16) * fireRateMult;
                     if (this.pylonTimer <= 0) {
                         // Place new pylon at current location
                         this.pylons.push({ x: this.x, y: this.y, life: 99999 });
@@ -2809,7 +2828,7 @@
 
                 // COLLAPSAR MINES - Launch toward enemy clusters
                 if (this.weapons.mines > 0) {
-                    this.minesTimer -= dt/16;
+                    this.minesTimer -= (dt/16) * fireRateMult;
                     if (this.minesTimer <= 0) {
                         // Multi-mine deployment based on level
                         let mineCount = 1; // Level 1-2: 1 mine
@@ -2906,7 +2925,7 @@
 
                 // TOXIC BARRAGE - Smart-targeted line of overlapping gas clouds
                 if (this.weapons.gas > 0) {
-                    this.gasTimer -= dt/16;
+                    this.gasTimer -= (dt/16) * fireRateMult;
                     if (this.gasTimer <= 0) {
                         const lobBarrage = (damageBonus = 1.0) => {
                             // Prioritize enemies within visible range, then find densest cluster
@@ -3014,7 +3033,7 @@
 
                 // RICOCHET DISC - Bouncing projectile that chains between enemies
                 if (this.weapons.ricochet > 0) {
-                    this.ricochetTimer -= dt/16;
+                    this.ricochetTimer -= (dt/16) * fireRateMult;
                     if (this.ricochetTimer <= 0) {
                         const fireRicochet = (damageBonus = 1.0) => {
                             // Disc count: 1/1/2/2/3 by level
@@ -3091,7 +3110,7 @@
 
                 // ELEMENTAL SURGE (Catalyst weapon) - Cycling elemental orbs
                 if (this.weapons.surge > 0) {
-                    this.surgeTimer -= dt/16;
+                    this.surgeTimer -= (dt/16) * fireRateMult;
                     if (this.surgeTimer <= 0) {
                         const fireSurge = (damageBonus = 1.0) => {
                             // Get current element in cycle
@@ -3635,7 +3654,7 @@
                     const maxTargetsPerTurret = Math.min(4, Math.max(2, this.turrets.length)); // At least 2, scales with active turrets
                     
                     // Deploy turret on cooldown
-                    this.turretTimer -= dt/16;
+                    this.turretTimer -= (dt/16) * fireRateMult;
                     if (this.turretTimer <= 0) {
                         // Deploy turret sliding forward from ship
                         const slideDistance = 80; // How far forward turret slides
@@ -4593,11 +4612,14 @@
                     
                     enemy.hp -= dmg;
                     
-                    // ULTIMATE CHARGE: Gain charge from damage dealt
+                    // ULTIMATE CHARGE: Gain charge from damage dealt (using ultimate-specific rate)
                     if (player.ultimate && player.ultimateCharge < 100 && !player.ultimateActive) {
-                        const chargeGain = dmg * player.ultimateDamageChargeRate;
-                        player.ultimateCharge += chargeGain;
-                        if (player.ultimateCharge > 100) player.ultimateCharge = 100;
+                        const ultimateData = ULTIMATES[player.ultimate];
+                        if (ultimateData && ultimateData.damageChargeBonus) {
+                            const chargeGain = dmg * ultimateData.damageChargeBonus;
+                            player.ultimateCharge += chargeGain;
+                            if (player.ultimateCharge > 100) player.ultimateCharge = 100;
+                        }
                     }
                     
                     const elementType = forceElement || player.weaponAugments[sourceId] || null;
@@ -5625,6 +5647,63 @@
                     }
                 }
                 
+                // PHOENIX PROTOCOL VISUAL - Intense solar glow during channeling
+                if (this.phoenixLocked) {
+                    const pulsePhase = state.frameCount * 0.12;
+                    const pulse = Math.sin(pulsePhase) * 0.3 + 0.7; // Oscillate between 0.7 and 1.0
+                    
+                    // Outer solar corona (expanding rings)
+                    for (let ring = 0; ring < 4; ring++) {
+                        const ringPhase = (pulsePhase + ring * 0.5) % (Math.PI * 2);
+                        const ringRadius = 60 + ring * 20 + Math.sin(ringPhase) * 15;
+                        const ringAlpha = (0.6 - ring * 0.1) * pulse;
+                        
+                        ctx.strokeStyle = `rgba(255, ${200 - ring * 30}, 0, ${ringAlpha})`;
+                        ctx.lineWidth = 4 - ring;
+                        ctx.shadowBlur = 25;
+                        ctx.shadowColor = '#ff6600';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    
+                    // Intense inner glow (solar core)
+                    const coreRadius = 70;
+                    const phoenixGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
+                    phoenixGradient.addColorStop(0, `rgba(255, 255, 200, ${0.8 * pulse})`);
+                    phoenixGradient.addColorStop(0.3, `rgba(255, 180, 50, ${0.5 * pulse})`);
+                    phoenixGradient.addColorStop(0.6, `rgba(255, 100, 0, ${0.3 * pulse})`);
+                    phoenixGradient.addColorStop(1, 'rgba(200, 50, 0, 0)');
+                    
+                    ctx.fillStyle = phoenixGradient;
+                    ctx.shadowBlur = 40;
+                    ctx.shadowColor = '#ffaa00';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Solar flares (rotating energy spikes)
+                    for (let i = 0; i < 8; i++) {
+                        const flareAngle = (i / 8) * Math.PI * 2 + pulsePhase * 0.5;
+                        const flareLength = 30 + Math.sin(pulsePhase * 2 + i) * 10;
+                        const flareX = Math.cos(flareAngle) * 40;
+                        const flareY = Math.sin(flareAngle) * 40;
+                        const flareEndX = Math.cos(flareAngle) * (40 + flareLength);
+                        const flareEndY = Math.sin(flareAngle) * (40 + flareLength);
+                        
+                        ctx.strokeStyle = `rgba(255, 200, 50, ${0.7 * pulse})`;
+                        ctx.lineWidth = 3;
+                        ctx.shadowBlur = 15;
+                        ctx.shadowColor = '#ff8800';
+                        ctx.beginPath();
+                        ctx.moveTo(flareX, flareY);
+                        ctx.lineTo(flareEndX, flareEndY);
+                        ctx.stroke();
+                    }
+                    
+                    ctx.shadowBlur = 0;
+                }
+                
                 // REPULSOR FIELD VISUAL - Draw before everything else
                 if (this.activeMod === 'repulsor') {
                     const pulsePhase = state.frameCount * 0.05;
@@ -6362,6 +6441,54 @@
                 },
                 chargeTime: 75, // Base 75 seconds
                 damageChargeBonus: 0.00024 // 0.024% per 100 damage
+            },
+            phoenix_protocol: {
+                id: 'phoenix_protocol',
+                name: 'Phoenix Protocol',
+                desc: 'Channel devastating pulse waves. Incinerates everything in expanding radius.',
+                icon: 'fa-sun',
+                color: '#ff6600',
+                duration: 4000, // 4 seconds total
+                pulseCount: 6,
+                pulseInterval: 666, // ~every 0.66 seconds
+                pulseData: [
+                    { radius: 150, damage: 4 },  // Pulse 1: 4% max HP
+                    { radius: 200, damage: 5 },  // Pulse 2: 5% max HP
+                    { radius: 250, damage: 6 },  // Pulse 3: 6% max HP
+                    { radius: 300, damage: 7 },  // Pulse 4: 7% max HP
+                    { radius: 350, damage: 8 },  // Pulse 5: 8% max HP
+                    { radius: 500, damage: 12 }  // Pulse 6: 12% max HP (MASSIVE)
+                ],
+                knockbackForce: 15, // Push enemies outward
+                burningGround: {
+                    duration: 3000, // 3 seconds
+                    radius: 500, // Same as final pulse
+                    damagePerSecond: 2 // 2% max HP/sec
+                },
+                chargeTime: 100, // Base 100 seconds
+                damageChargeBonus: 0.0002 // 0.02% per 100 damage
+            },
+            adrenaline_surge: {
+                id: 'adrenaline_surge',
+                name: 'Adrenaline Surge',
+                desc: 'Explosive speed and firepower. Contact damage and deadly energy trail.',
+                icon: 'fa-bolt-lightning',
+                color: '#ffeb3b',
+                
+                duration: 5000, // 5 seconds (increased from 4)
+                speedMultiplier: 3.0, // 300% movement speed
+                fireRateMultiplier: 3.0, // 3x weapon fire rate
+                
+                contactDamage: 12, // 12% max HP on contact
+                contactCooldown: 500, // 0.5 seconds between hits on SAME enemy
+                
+                trailDamage: 5, // 5% max HP/sec
+                trailTickRate: 200, // Damage tick every 0.2 seconds (5 ticks/sec)
+                trailWidth: 60, // Width of damage trail
+                trailLength: 150, // How far behind player the trail extends
+                
+                chargeTime: 85, // Base 85 seconds
+                damageChargeBonus: 0.00022 // 0.022% per 100 damage
             }
         };
         
@@ -6384,6 +6511,18 @@
             // Reset charge
             player.ultimateCharge = 0;
             player.ultimateActive = true;
+            
+            // Phoenix Protocol doesn't need a target - centered on player
+            if (player.ultimate === 'phoenix_protocol') {
+                executePhoenixProtocol();
+                return;
+            }
+            
+            // Adrenaline Surge doesn't need a target - self-buff ultimate
+            if (player.ultimate === 'adrenaline_surge') {
+                executeAdrenalineSurge();
+                return;
+            }
             
             // Find target using auto-targeting (on-screen only)
             const target = findUltimateTarget();
@@ -6632,6 +6771,7 @@
                         state.cameraLocked = false;
                         state.ultimateCameraTarget = null;
                         panCameraBackToPlayer();
+                        checkQueuedUpgrades(); // Check for queued level ups
                         return false; // Stop ticking
                     }
                 }
@@ -7138,6 +7278,188 @@
                     }, 1000); // Tick every second
                 }
             }, 16);
+        }
+        
+        // PHOENIX PROTOCOL: Player-centered expanding pulses
+        function executePhoenixProtocol() {
+            console.log('🔥 Phoenix Protocol activating!');
+            
+            // Invulnerability for ultimate duration + camera return + 1s buffer
+            // 4000ms pulses + 500ms camera + 1000ms buffer = 5500ms = 330 frames
+            player.invulnTimer = Math.max(player.invulnTimer, 330);
+            
+            const ultimateData = ULTIMATES.phoenix_protocol;
+            
+            // Lock player position
+            const phoenixX = player.x;
+            const phoenixY = player.y;
+            player.phoenixLocked = true;
+            player.phoenixLockedX = phoenixX;
+            player.phoenixLockedY = phoenixY;
+            
+            // Camera stays on player (no panning needed)
+            state.cameraLocked = false; // Let normal follow continue
+            
+            // Store Phoenix Protocol state in player.ultimateData for game-time-based updates
+            player.ultimateData = {
+                phoenixX: phoenixX,
+                phoenixY: phoenixY,
+                pulseCount: 0,
+                nextPulseTimer: 0, // Timer until next pulse (in milliseconds, game-time)
+                pulseInterval: ultimateData.pulseInterval,
+                totalPulses: ultimateData.pulseCount,
+                burningGround: null // Will be set after final pulse
+            };
+            
+            // Execute first pulse immediately
+            executePhoenixPulse();
+        }
+        
+        // Execute a single Phoenix Protocol pulse
+        function executePhoenixPulse() {
+            const ultimateData = ULTIMATES.phoenix_protocol;
+            const data = player.ultimateData;
+            
+            if (!data || data.pulseCount >= data.totalPulses) {
+                return; // All pulses done
+            }
+            
+            const pulseInfo = ultimateData.pulseData[data.pulseCount];
+            console.log(`🔥 Phoenix pulse ${data.pulseCount + 1}/${data.totalPulses}: ${pulseInfo.radius}px radius, ${pulseInfo.damage}% damage`);
+            
+            // Screen shake (increases with pulse number)
+            state.shake = 12 + (data.pulseCount * 3);
+            
+            // Visual explosion
+            createExplosion(data.phoenixX, data.phoenixY, ultimateData.color, 30 + (data.pulseCount * 10));
+            
+            // Add shockwave visual
+            entities.particles.push(new Shockwave(data.phoenixX, data.phoenixY, pulseInfo.radius, ultimateData.color));
+            
+            // Final pulse extra effects
+            if (data.pulseCount === data.totalPulses - 1) {
+                // Massive screen flash
+                state.shake = 35;
+                createExplosion(data.phoenixX, data.phoenixY, '#ffffff', 100);
+                
+                // Secondary explosion for impact (stored for next frame)
+                player.ultimateData.pendingFinalExplosion = 6; // Will trigger in 6 frames (~100ms at 60fps)
+            }
+            
+            // Deal damage to all enemies in radius
+            entities.enemies.forEach(e => {
+                if (e.hp <= 0) return;
+                
+                const dx = e.x - data.phoenixX;
+                const dy = e.y - data.phoenixY;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                if (dist < pulseInfo.radius) {
+                    // Calculate damage
+                    let damage = e.maxHp * (pulseInfo.damage / 100);
+                    
+                    // Apply damage reduction
+                    if (e.isNexusPrime) {
+                        damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                    } else if (e.isChampion) {
+                        damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                    } else {
+                        damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                    }
+                    
+                    // Ensure minimum damage of 1
+                    damage = Math.max(1, damage);
+                    
+                    // Deal damage
+                    e.takeDamage(damage, ultimateData.color, false, 'normal');
+                    
+                    // Knockback (push away from player)
+                    if (dist > 0) {
+                        const knockbackAngle = Math.atan2(dy, dx);
+                        e.pushX = Math.cos(knockbackAngle) * ultimateData.knockbackForce;
+                        e.pushY = Math.sin(knockbackAngle) * ultimateData.knockbackForce;
+                    }
+                    
+                    // Damage text
+                    const damageText = new FloatingText(
+                        e.x + (Math.random() - 0.5) * 30,
+                        e.y - 20,
+                        Math.floor(damage),
+                        ultimateData.color
+                    );
+                    damageText.fontSize = 22;
+                    damageText.life = 75;
+                    entities.texts.push(damageText);
+                }
+            });
+            
+            data.pulseCount++;
+            
+            // Schedule next pulse or finish
+            if (data.pulseCount >= data.totalPulses) {
+                // All pulses done - start burning ground
+                data.burningGround = {
+                    x: data.phoenixX,
+                    y: data.phoenixY,
+                    radius: ultimateData.burningGround.radius,
+                    timer: ultimateData.burningGround.duration,
+                    tickTimer: 1000, // Next tick in 1 second
+                    active: true
+                };
+                
+                // Unlock player
+                player.phoenixLocked = false;
+                
+                console.log('🔥 Phoenix Protocol pulses complete - burning ground active');
+            } else {
+                // Schedule next pulse
+                data.nextPulseTimer = data.pulseInterval;
+            }
+        }
+        
+        // Execute Adrenaline Surge ultimate
+        function executeAdrenalineSurge() {
+            console.log('⚡ Adrenaline Surge activating!');
+            
+            const ultimateData = ULTIMATES.adrenaline_surge;
+            
+            // Invulnerability for ultimate duration + 1s buffer
+            // 5000ms duration + 1000ms buffer = 6000ms = 360 frames
+            player.invulnTimer = Math.max(player.invulnTimer, 360);
+            
+            // Camera stays on player (no panning needed)
+            state.cameraLocked = false;
+            
+            // Initialize Adrenaline Surge state
+            player.ultimateData = {
+                duration: ultimateData.duration,
+                timer: ultimateData.duration, // Countdown timer
+                
+                // Speed and fire rate multipliers
+                speedMult: ultimateData.speedMultiplier,
+                fireRateMult: ultimateData.fireRateMultiplier,
+                
+                // Contact damage system
+                contactCooldowns: new Map(), // enemy.id -> lastHitTime
+                contactDamage: ultimateData.contactDamage,
+                contactCooldown: ultimateData.contactCooldown,
+                
+                // Trail system
+                trail: [], // Array of {x, y, time}
+                trailTickTimer: ultimateData.trailTickRate, // Timer for trail damage ticks
+                trailDamage: ultimateData.trailDamage,
+                trailTickRate: ultimateData.trailTickRate,
+                trailWidth: ultimateData.trailWidth,
+                trailDuration: 500, // Trail exists for 0.5s behind player
+                
+                color: ultimateData.color
+            };
+            
+            // Visual feedback - screen flash
+            state.shake = 20;
+            createExplosion(player.x, player.y, ultimateData.color, 50);
+            
+            console.log('⚡ Adrenaline Surge: 3x speed, 3x fire rate, invulnerable for 4 seconds');
         }
         
         class Enemy {
@@ -12056,7 +12378,22 @@
             }
             setSeed(state.seed);
             
+            // ======= TEST MODE =======
+            // Set to true to enable test mode, false to disable
+            const TEST_MODE = false;
+            const TEST_ULTIMATE = 'adrenaline_surge';  // Options: 'phoenix_protocol', 'adrenaline_surge', 'skyfall', 'event_horizon', 'seismic_bomb'
+            const TEST_CHARGE = 0.9;  // 90% charge (0.0 = empty, 1.0 = full)
+            // =========================
+            
             player = new Player();
+            
+            // Apply test mode if enabled
+            if (TEST_MODE) {
+                player.ultimate = TEST_ULTIMATE;
+                player.ultimateCharge = TEST_CHARGE * 100; // Convert to percentage (0-100)
+                const ultName = ULTIMATES[TEST_ULTIMATE]?.name || TEST_ULTIMATE;
+                console.log(`⚠️ TEST MODE: ${ultName} equipped at ${(TEST_CHARGE * 100).toFixed(0)}% charge`);
+            }
             
             entities = { enemies: [], projectiles: [], enemyProjectiles: [], particles: [], pickups: [], texts: [], lightnings: [], gasClouds: [] };
             state.score=0; state.level=1; state.xp=0; state.xpToNext=10; 
@@ -13817,6 +14154,194 @@
                 if (player.ultimateCharge > 100) player.ultimateCharge = 100;
             }
             
+            // PHOENIX PROTOCOL UPDATE - Game-time-based pulses and burning ground
+            if (player.ultimateActive && player.ultimate === 'phoenix_protocol' && player.ultimateData) {
+                const data = player.ultimateData;
+                const ultimateData = ULTIMATES.phoenix_protocol;
+                
+                // Handle pending final explosion
+                if (data.pendingFinalExplosion !== undefined) {
+                    data.pendingFinalExplosion -= (scaledDt / 16);
+                    if (data.pendingFinalExplosion <= 0) {
+                        createExplosion(data.phoenixX, data.phoenixY, ultimateData.color, 80);
+                        data.pendingFinalExplosion = undefined;
+                    }
+                }
+                
+                // Handle pulse timing
+                if (data.pulseCount < data.totalPulses) {
+                    data.nextPulseTimer -= scaledDt;
+                    if (data.nextPulseTimer <= 0) {
+                        executePhoenixPulse();
+                    }
+                }
+                
+                // Handle burning ground
+                if (data.burningGround && data.burningGround.active) {
+                    const bg = data.burningGround;
+                    
+                    // Update timers
+                    bg.timer -= scaledDt;
+                    bg.tickTimer -= scaledDt;
+                    
+                    // Damage tick
+                    if (bg.tickTimer <= 0) {
+                        bg.tickTimer = 1000; // Reset to 1 second
+                        
+                        entities.enemies.forEach(e => {
+                            if (e.hp <= 0) return;
+                            
+                            const dist = Math.sqrt((e.x - bg.x)**2 + (e.y - bg.y)**2);
+                            
+                            if (dist < bg.radius) {
+                                let damage = e.maxHp * (ultimateData.burningGround.damagePerSecond / 100);
+                                
+                                // Apply damage reduction
+                                if (e.isNexusPrime) {
+                                    damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                                } else if (e.isChampion) {
+                                    damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                                } else {
+                                    damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                }
+                                
+                                // Ensure minimum damage
+                                damage = Math.max(1, damage);
+                                
+                                e.hp -= damage;
+                                
+                                const damageText = new FloatingText(
+                                    e.x + (Math.random() - 0.5) * 20,
+                                    e.y - 10,
+                                    Math.floor(damage),
+                                    '#ff8800'
+                                );
+                                damageText.fontSize = 18;
+                                damageText.life = 50;
+                                entities.texts.push(damageText);
+                            }
+                        });
+                    }
+                    
+                    // Check if burning ground is done
+                    if (bg.timer <= 0) {
+                        bg.active = false;
+                        player.ultimateActive = false;
+                        player.ultimateData = {};
+                        
+                        // Check for queued upgrades
+                        checkQueuedUpgrades();
+                    }
+                }
+            }
+            
+            // ADRENALINE SURGE UPDATE - Game-time-based speed boost and trail damage
+            if (player.ultimateActive && player.ultimate === 'adrenaline_surge' && player.ultimateData) {
+                const data = player.ultimateData;
+                const ultimateData = ULTIMATES.adrenaline_surge;
+                
+                // Update timer (game time)
+                data.timer -= scaledDt;
+                
+                // Store player position for trail (use game time counter instead of Date.now())
+                if (!data.gameTime) data.gameTime = 0;
+                data.gameTime += scaledDt;
+                
+                data.trail.push({ x: player.x, y: player.y, time: data.gameTime });
+                
+                // Keep only recent positions (within trail duration, using game time)
+                data.trail = data.trail.filter(pos => data.gameTime - pos.time < data.trailDuration);
+                
+                // Contact damage - check collision with enemies
+                entities.enemies.forEach(e => {
+                    if (e.hp <= 0) return;
+                    
+                    // Check collision distance (player radius + enemy radius)
+                    const collisionDist = player.radius + (e.radius || 20);
+                    const dx = e.x - player.x;
+                    const dy = e.y - player.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < collisionDist) {
+                        // Check cooldown for this specific enemy (using game time)
+                        const lastHit = data.contactCooldowns.get(e.id) || 0;
+                        const cooldownElapsed = data.gameTime - lastHit;
+                        
+                        if (cooldownElapsed >= data.contactCooldown) {
+                            // Calculate contact damage
+                            let contactDmg = e.maxHp * (data.contactDamage / 100);
+                            
+                            // Apply damage reduction
+                            if (e.isNexusPrime) {
+                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                            } else if (e.isChampion) {
+                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                            } else {
+                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                            }
+                            
+                            contactDmg = Math.max(1, contactDmg);
+                            
+                            // Deal damage
+                            e.takeDamage(contactDmg, data.color, false, 'normal');
+                            
+                            // Update cooldown (game time)
+                            data.contactCooldowns.set(e.id, data.gameTime);
+                            
+                            // Visual feedback
+                            createExplosion(e.x, e.y, data.color, 15);
+                            entities.particles.push(new Shockwave(e.x, e.y, 50, data.color));
+                        }
+                    }
+                });
+                
+                // Trail damage tick
+                data.trailTickTimer -= scaledDt;
+                if (data.trailTickTimer <= 0) {
+                    data.trailTickTimer = data.trailTickRate; // Reset timer
+                    
+                    // Check all enemies against trail
+                    entities.enemies.forEach(e => {
+                        if (e.hp <= 0) return;
+                        
+                        // Check if enemy is within trail
+                        const inTrail = data.trail.some(pos => {
+                            const dist = Math.sqrt((e.x - pos.x)**2 + (e.y - pos.y)**2);
+                            return dist < (data.trailWidth / 2);
+                        });
+                        
+                        if (inTrail) {
+                            // Calculate trail damage per tick
+                            let trailDmg = e.maxHp * (data.trailDamage / 100) * (data.trailTickRate / 1000);
+                            
+                            // Apply damage reduction
+                            if (e.isNexusPrime) {
+                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                            } else if (e.isChampion) {
+                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                            } else {
+                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                            }
+                            
+                            trailDmg = Math.max(1, trailDmg);
+                            
+                            // Deal damage
+                            e.takeDamage(trailDmg, data.color, false, 'dot');
+                        }
+                    });
+                }
+                
+                // Check if ultimate is done
+                if (data.timer <= 0) {
+                    console.log('⚡ Adrenaline Surge complete');
+                    player.ultimateActive = false;
+                    player.ultimateData = {};
+                    
+                    // Check for queued upgrades
+                    checkQueuedUpgrades();
+                }
+            }
+            
             // Apply EMP field effects before enemy updates
             if (player.empFields && player.empFields.length > 0) {
                 entities.enemies.forEach(e => {
@@ -15367,6 +15892,171 @@
                 }
             }
 
+            // Adrenaline Surge energy trail effect
+            if (player.ultimateActive && player.ultimate === 'adrenaline_surge' && player.ultimateData && player.ultimateData.trail.length > 0) {
+                const trail = player.ultimateData.trail;
+                const trailWidth = player.ultimateData.trailWidth;
+                const color = player.ultimateData.color;
+                const gameTime = player.ultimateData.gameTime || 0;
+                
+                ctx.shadowBlur = 12; // Reduced from 25
+                ctx.shadowColor = color;
+                
+                // Draw trail as connected segments
+                for (let i = 1; i < trail.length; i++) {
+                    const prev = trail[i - 1];
+                    const curr = trail[i];
+                    
+                    // Calculate age-based alpha (newer = brighter) using game time - REDUCED
+                    const age = gameTime - curr.time;
+                    const ageRatio = 1 - (age / player.ultimateData.trailDuration);
+                    const alpha = Math.max(0, ageRatio * 0.4); // Reduced from 0.7
+                    
+                    // Draw glowing trail segment
+                    const gradient = ctx.createLinearGradient(prev.x, prev.y, curr.x, curr.y);
+                    gradient.addColorStop(0, `rgba(255, 235, 59, ${alpha * 0.3})`); // Reduced from 0.5
+                    gradient.addColorStop(1, `rgba(255, 235, 59, ${alpha * 0.6})`); // Reduced from 1.0
+                    
+                    ctx.strokeStyle = gradient;
+                    ctx.lineWidth = trailWidth * ageRatio;
+                    ctx.lineCap = 'round';
+                    ctx.beginPath();
+                    ctx.moveTo(prev.x, prev.y);
+                    ctx.lineTo(curr.x, curr.y);
+                    ctx.stroke();
+                }
+                
+                // Electric particles along trail
+                const particleInterval = 3; // Every 3rd trail position
+                for (let i = 0; i < trail.length; i += particleInterval) {
+                    const pos = trail[i];
+                    const age = gameTime - pos.time;
+                    const ageRatio = 1 - (age / player.ultimateData.trailDuration);
+                    
+                    if (ageRatio > 0) {
+                        // Sparks
+                        for (let j = 0; j < 2; j++) {
+                            const angle = seededRandom() * Math.PI * 2;
+                            const dist = seededRandom() * trailWidth * 0.5;
+                            const px = pos.x + Math.cos(angle) * dist;
+                            const py = pos.y + Math.sin(angle) * dist;
+                            const sparkSize = 2 + seededRandom() * 3;
+                            
+                            ctx.fillStyle = `rgba(255, 255, 255, ${ageRatio * 0.8})`;
+                            ctx.shadowBlur = 10;
+                            ctx.shadowColor = color;
+                            ctx.beginPath();
+                            ctx.arc(px, py, sparkSize, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                }
+                
+                ctx.shadowBlur = 0;
+                
+                // Player glow during Adrenaline Surge (use game time for pulse) - VERY SUBTLE
+                const pulse = Math.sin(state.gameTime * 0.01) * 0.2 + 0.5;
+                const glowRadius = 40 * pulse; // Reduced from 50
+                const glowGradient = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, glowRadius);
+                glowGradient.addColorStop(0, `rgba(255, 235, 59, ${0.15 * pulse})`); // Reduced from 0.3
+                glowGradient.addColorStop(0.5, `rgba(255, 235, 59, ${0.08 * pulse})`); // Reduced from 0.15
+                glowGradient.addColorStop(1, 'rgba(255, 235, 59, 0)');
+                
+                ctx.fillStyle = glowGradient;
+                ctx.beginPath();
+                ctx.arc(player.x, player.y, glowRadius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Speed lines - REDUCED
+                for (let i = 0; i < 6; i++) { // Reduced from 8
+                    const angle = (i / 6) * Math.PI * 2;
+                    const lineLength = 30 + seededRandom() * 20; // Reduced from 40 + 30
+                    const startX = player.x + Math.cos(angle) * 20; // Reduced from 25
+                    const startY = player.y + Math.sin(angle) * 20;
+                    const endX = startX + Math.cos(angle) * lineLength;
+                    const endY = startY + Math.sin(angle) * lineLength;
+                    
+                    ctx.strokeStyle = `rgba(255, 235, 59, ${0.2 * pulse})`; // Reduced from 0.4
+                    ctx.lineWidth = 1.5; // Reduced from 2
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.lineTo(endX, endY);
+                    ctx.stroke();
+                }
+                
+                // Clear shadow effects after Adrenaline Surge visuals
+                ctx.shadowBlur = 0;
+            }
+
+            // Phoenix Protocol burning ground effect
+            if (player.ultimateData && player.ultimateData.burningGround && player.ultimateData.burningGround.active) {
+                const burning = player.ultimateData.burningGround;
+                const radius = burning.radius;
+                const alpha = burning.timer / ULTIMATES.phoenix_protocol.burningGround.duration;
+                const pulse = Math.sin(time * 2.5) * 0.25;
+                
+                // Scorched earth gradient (orange/red fire theme)
+                const fireGradient = ctx.createRadialGradient(
+                    burning.x, burning.y, 0,
+                    burning.x, burning.y, radius
+                );
+                fireGradient.addColorStop(0, `rgba(255, 200, 50, ${(alpha * 0.7 + pulse)})`);
+                fireGradient.addColorStop(0.3, `rgba(255, 100, 0, ${alpha * 0.6})`);
+                fireGradient.addColorStop(0.6, `rgba(200, 50, 0, ${alpha * 0.4})`);
+                fireGradient.addColorStop(1, 'rgba(100, 0, 0, 0)');
+                
+                ctx.fillStyle = fireGradient;
+                ctx.shadowBlur = 35;
+                ctx.shadowColor = '#ff6600';
+                ctx.beginPath();
+                ctx.arc(burning.x, burning.y, radius, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Solar flare rings
+                for (let ring = 0; ring < 3; ring++) {
+                    const ringRadius = radius * (0.3 + ring * 0.25) + Math.sin(time * 2 + ring) * 20;
+                    ctx.strokeStyle = `rgba(255, ${150 - ring * 30}, 0, ${alpha * 0.4})`;
+                    ctx.lineWidth = 3;
+                    ctx.shadowBlur = 15;
+                    ctx.shadowColor = '#ff8800';
+                    ctx.beginPath();
+                    ctx.arc(burning.x, burning.y, ringRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                
+                // Flame particles dancing
+                for (let i = 0; i < 16; i++) {
+                    const angle = (i / 16) * Math.PI * 2 + time * 0.4;
+                    const flameDist = radius * (0.5 + Math.sin(time * 1.8 + i) * 0.35);
+                    const fx = burning.x + Math.cos(angle) * flameDist;
+                    const fy = burning.y + Math.sin(angle) * flameDist;
+                    const flameSize = 4 + Math.sin(time * 5 + i) * 3;
+                    
+                    ctx.fillStyle = `rgba(255, ${100 + Math.sin(time * 3 + i) * 100}, 0, ${alpha * 0.8})`;
+                    ctx.shadowBlur = 12;
+                    ctx.shadowColor = '#ff6600';
+                    ctx.beginPath();
+                    ctx.arc(fx, fy, flameSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                // Bright pulsing core
+                const coreSize = 40 + Math.sin(time * 3.5) * 15;
+                const coreGradient = ctx.createRadialGradient(burning.x, burning.y, 0, burning.x, burning.y, coreSize);
+                coreGradient.addColorStop(0, `rgba(255, 255, 200, ${alpha * 0.9})`);
+                coreGradient.addColorStop(0.4, `rgba(255, 180, 50, ${alpha * 0.7})`);
+                coreGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+                
+                ctx.fillStyle = coreGradient;
+                ctx.shadowBlur = 35;
+                ctx.shadowColor = '#ffcc00';
+                ctx.beginPath();
+                ctx.arc(burning.x, burning.y, coreSize, 0, Math.PI * 2);
+                ctx.fill();
+                
+                ctx.shadowBlur = 0;
+            }
+
             if (player.beamActive && player.beamActiveTime >= 5) {
                 // Get targets for drawing (use existing targets or find closest for initial frames)
                 let drawTargets = player.beamTargets && player.beamTargets.length > 0 
@@ -16579,12 +17269,12 @@
                         // Keep current ultimate - don't reset charge or state
                         console.log(`✅ Keeping current ultimate: ${ULTIMATES[player.ultimate].name}`);
                     } else {
-                        // New ultimate - reset everything
+                        // New ultimate - start at full charge, ready to use
                         player.ultimate = ultId;
-                        player.ultimateCharge = 0; // Start fresh
+                        player.ultimateCharge = 100; // Start at full charge
                         player.ultimateActive = false; // Clear active state
                         player.ultimateData = {}; // Clear any lingering ultimate data
-                        console.log(`✅ Ultimate equipped: ${ultData.name}`);
+                        console.log(`✅ Ultimate equipped: ${ultData.name} (ready to fire!)`);
                     }
                     
                     document.getElementById('levelup-screen').classList.remove('active');
