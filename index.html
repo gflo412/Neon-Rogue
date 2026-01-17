@@ -874,6 +874,113 @@
             return Math.floor(100000 + trueRandom() * 900000);
         }
 
+        // ===== SPATIAL HASH GRID SYSTEM =====
+        // Performance optimization for collision detection
+        // Reduces O(n²) to O(n) by partitioning space into cells
+        const spatialGrid = {
+            cellSize: 150, // Cell size in game units (tuned for typical enemy spread)
+            cells: new Map(),
+            
+            // Clear all cells (call at start of each frame)
+            clear() {
+                this.cells.clear();
+            },
+            
+            // Insert entity into grid
+            insert(entity, x, y) {
+                const cellX = Math.floor(x / this.cellSize);
+                const cellY = Math.floor(y / this.cellSize);
+                const key = `${cellX},${cellY}`;
+                
+                if (!this.cells.has(key)) {
+                    this.cells.set(key, []);
+                }
+                this.cells.get(key).push(entity);
+            },
+            
+            // Get all entities in nearby cells (3x3 grid around position)
+            getNearby(x, y, radius = 0) {
+                const cellX = Math.floor(x / this.cellSize);
+                const cellY = Math.floor(y / this.cellSize);
+                const nearby = [];
+                
+                // Calculate how many cells to check based on radius
+                const cellRadius = Math.ceil(radius / this.cellSize);
+                
+                // Check surrounding cells
+                for (let dx = -cellRadius; dx <= cellRadius; dx++) {
+                    for (let dy = -cellRadius; dy <= cellRadius; dy++) {
+                        const key = `${cellX + dx},${cellY + dy}`;
+                        if (this.cells.has(key)) {
+                            nearby.push(...this.cells.get(key));
+                        }
+                    }
+                }
+                
+                return nearby;
+            },
+            
+            // Debug: Show grid statistics
+            getStats() {
+                const cellCount = this.cells.size;
+                let totalEntities = 0;
+                let maxEntitiesInCell = 0;
+                
+                this.cells.forEach(cell => {
+                    totalEntities += cell.length;
+                    maxEntitiesInCell = Math.max(maxEntitiesInCell, cell.length);
+                });
+                
+                return {
+                    cells: cellCount,
+                    totalEntities,
+                    avgPerCell: cellCount > 0 ? (totalEntities / cellCount).toFixed(1) : 0,
+                    maxInCell: maxEntitiesInCell
+                };
+            }
+        };
+        // ===== END SPATIAL HASH GRID =====
+
+        // ===== PARTICLE POOLING SYSTEM =====
+        // Performance optimization to avoid object creation/destruction overhead
+        // Reduces GC pauses and improves frame consistency
+        const particlePool = {
+            pool: [],
+            maxPoolSize: 500, // Maximum particles to keep in pool
+            
+            // Get a particle from pool or create new one
+            spawn(x, y, color, speed) {
+                let particle;
+                if (this.pool.length > 0) {
+                    // Reuse from pool
+                    particle = this.pool.pop();
+                    particle.reset(x, y, color, speed);
+                } else {
+                    // Create new if pool empty
+                    particle = new Particle(x, y, color, speed);
+                }
+                return particle;
+            },
+            
+            // Return particle to pool for reuse
+            recycle(particle) {
+                if (this.pool.length < this.maxPoolSize) {
+                    this.pool.push(particle);
+                }
+                // If pool is full, let it be garbage collected
+            },
+            
+            // Get pool statistics
+            getStats() {
+                return {
+                    pooled: this.pool.length,
+                    maxSize: this.maxPoolSize,
+                    utilizationPercent: ((this.pool.length / this.maxPoolSize) * 100).toFixed(1)
+                };
+            }
+        };
+        // ===== END PARTICLE POOLING =====
+
         const state = {
             screen: 'menu', score: 0, startTime: 0, level: 1, xp: 0, xpToNext: 10,
             lastTime: 0, camera: { x: 0, y: 0 }, shake: 0, frameCount: 0, rerolls: 3,
@@ -7478,7 +7585,9 @@
                     slowed: false,        // Is enemy currently slowed?
                     slowDuration: 0,      // How long they've been slowed (counts up to 120 frames = 2s)
                     frozen: false,        // Are they frozen solid?
-                    frozenTimer: 0        // Freeze duration countdown
+                    frozenTimer: 0,       // Freeze duration countdown
+                    nearbyCheckTimer: 0,  // Timer for cached nearby check optimization
+                    cachedNearbySlowed: 0 // Cached count of nearby slowed enemies
                 };
                 this.bioState = { active: false, timer: 0, level: 0, maxDmg: 0, jumpCount: 0, sourceWeapon: null };
                 this.hackState = { active: false, timer: 0 };
@@ -8113,12 +8222,13 @@
                     if (this.pyroState.timer <= 0) {
                         this.pyroState.active = false;
                     } else {
-                        // Track last tick to prevent multiple ticks per interval
+                        // OPTIMIZED: Only calculate damage on actual tick intervals
                         if (!this.pyroState.lastTick) this.pyroState.lastTick = this.pyroState.timer;
                         
                         const currentInterval = Math.floor(this.pyroState.timer / 20);
                         const lastInterval = Math.floor(this.pyroState.lastTick / 20);
                         
+                        // Only do heavy calculations when actually ticking
                         if (currentInterval < lastInterval) {
                             // Crossed a 20-frame interval boundary - tick now
                             this.pyroState.lastTick = this.pyroState.timer;
@@ -8210,12 +8320,23 @@
                     // Base 60% slow
                     let slowAmount = 0.40; // Move at 40% speed (60% slow)
                     
-                    // Check for nearby slowed enemies to amplify effect
-                    const nearbySlowed = entities.enemies.filter(e => {
-                        if (e === this || !e.cryoState.slowed) return false;
-                        const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                        return dist < 150;
-                    }).length;
+                    // OPTIMIZED: Check for nearby slowed enemies only every 10 frames (cache result)
+                    if (!this.cryoState.nearbyCheckTimer) this.cryoState.nearbyCheckTimer = 0;
+                    this.cryoState.nearbyCheckTimer++;
+                    
+                    if (this.cryoState.nearbyCheckTimer >= 10) {
+                        this.cryoState.nearbyCheckTimer = 0;
+                        
+                        // Cache nearby slowed count
+                        this.cryoState.cachedNearbySlowed = entities.enemies.filter(e => {
+                            if (e === this || !e.cryoState.slowed) return false;
+                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                            return dist < 150;
+                        }).length;
+                    }
+                    
+                    // Use cached value
+                    const nearbySlowed = this.cryoState.cachedNearbySlowed || 0;
                     
                     // 2+ slowed enemies nearby = 70% slow (move at 30%)
                     if (nearbySlowed >= 1) {
@@ -8262,6 +8383,7 @@
                         this.bioState.voltBuff -= dt/16;
                     }
                     
+                    // OPTIMIZED: Only calculate damage on actual tick intervals
                     // Bio Accelerator: Ticks 50% faster (every 13 frames vs 20)
                     let tickInterval = player.elementalMasteries.bio ? 13 : 20;
                     // Bioshock buff: Double rate (half interval)
@@ -8275,6 +8397,7 @@
                     const currentInterval = Math.floor(this.bioState.timer / tickInterval);
                     const lastInterval = Math.floor(this.bioState.lastTick / tickInterval);
                     
+                    // Only do heavy calculations when actually ticking
                     if (currentInterval < lastInterval) {
                         // Crossed an interval boundary - tick now
                         this.bioState.lastTick = this.bioState.timer;
@@ -8390,11 +8513,11 @@
                             
                             // Add white flash particles for extra impact
                             for (let i = 0; i < 15; i++) {
-                                entities.particles.push(new Particle(explodeX, explodeY, '#ffffff', 2.0));
+                                entities.particles.push(particlePool.spawn(explodeX, explodeY, '#ffffff', 2.0));
                             }
                             
-                            // Add screen shake
-                            state.shake = 12;
+                            // ⚠️ REMOVED: Camera shake on self-destruct (was causing screen shake spam)
+                            // state.shake = 12;
                             
                             // Damage and knockback all nearby enemies
                             entities.enemies.forEach(enemy => {
@@ -8434,31 +8557,43 @@
                     else {
                         // Splitter hack behavior - ranged attack targeting enemy clusters
                         if (this.type === 'splitter') {
-                            // Find densest enemy cluster (similar to gas grenade/mines)
-                            let bestTarget = null;
-                            let bestCount = 0;
-                            const maxSearchRadius = 400;
+                            // OPTIMIZED: Cache cluster finding - only update every 15 frames
+                            if (!this.splitterTargetCache) this.splitterTargetCache = { timer: 0, target: null };
+                            this.splitterTargetCache.timer++;
                             
-                            entities.enemies.forEach(e => {
-                                if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                    const distToSplitter = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                    if (distToSplitter > maxSearchRadius) return;
-                                    
-                                    // Count nearby enemies to this potential target
-                                    const nearbyCount = entities.enemies.filter(ne => {
-                                        if (ne === this || ne === e || ne.hackState.active || ne.hp <= 0) return false;
-                                        const dist = Math.sqrt((ne.x - e.x)**2 + (ne.y - e.y)**2);
-                                        return dist < 150; // Cluster detection radius
-                                    }).length;
-                                    
-                                    // Prefer denser clusters, then closer targets
-                                    if (nearbyCount > bestCount || 
-                                        (nearbyCount === bestCount && (!bestTarget || distToSplitter < Math.sqrt((bestTarget.x - this.x)**2 + (bestTarget.y - this.y)**2)))) {
-                                        bestCount = nearbyCount;
-                                        bestTarget = e;
+                            if (this.splitterTargetCache.timer >= 15 || !this.splitterTargetCache.target || this.splitterTargetCache.target.hp <= 0) {
+                                this.splitterTargetCache.timer = 0;
+                                
+                                // Find densest enemy cluster (similar to gas grenade/mines)
+                                let bestTarget = null;
+                                let bestCount = 0;
+                                const maxSearchRadius = 400;
+                                
+                                entities.enemies.forEach(e => {
+                                    if (e !== this && e.hp > 0 && !e.hackState.active) {
+                                        const distToSplitter = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                                        if (distToSplitter > maxSearchRadius) return;
+                                        
+                                        // Count nearby enemies to this potential target
+                                        const nearbyCount = entities.enemies.filter(ne => {
+                                            if (ne === this || ne === e || ne.hackState.active || ne.hp <= 0) return false;
+                                            const dist = Math.sqrt((ne.x - e.x)**2 + (ne.y - e.y)**2);
+                                            return dist < 150; // Cluster detection radius
+                                        }).length;
+                                        
+                                        // Prefer denser clusters, then closer targets
+                                        if (nearbyCount > bestCount || 
+                                            (nearbyCount === bestCount && (!bestTarget || distToSplitter < Math.sqrt((bestTarget.x - this.x)**2 + (bestTarget.y - this.y)**2)))) {
+                                            bestCount = nearbyCount;
+                                            bestTarget = e;
+                                        }
                                     }
-                                }
-                            });
+                                });
+                                
+                                this.splitterTargetCache.target = bestTarget;
+                            }
+                            
+                            const bestTarget = this.splitterTargetCache.target;
                             
                             if (bestTarget) {
                                 const dx = bestTarget.x - this.x;
@@ -8542,19 +8677,31 @@
                         
                         // Special behavior for hacked tanks - charge attack
                         if (this.type === 'tank') {
-                            // Find nearest non-hacked enemy
-                            let nearest = null;
-                            let nearestDist = Infinity;
+                            // OPTIMIZED: Cache nearest enemy check - update every 10 frames
+                            if (!this.tankTargetCache) this.tankTargetCache = { timer: 0, target: null };
+                            this.tankTargetCache.timer++;
                             
-                            entities.enemies.forEach(e => {
-                                if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                    const dist = Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2);
-                                    if (dist < nearestDist && dist < 600) { // Longer detection range
-                                        nearest = e;
-                                        nearestDist = dist;
+                            if (this.tankTargetCache.timer >= 10 || !this.tankTargetCache.target || this.tankTargetCache.target.hp <= 0) {
+                                this.tankTargetCache.timer = 0;
+                                
+                                // Find nearest non-hacked enemy
+                                let nearest = null;
+                                let nearestDist = Infinity;
+                                
+                                entities.enemies.forEach(e => {
+                                    if (e !== this && e.hp > 0 && !e.hackState.active) {
+                                        const dist = Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2);
+                                        if (dist < nearestDist && dist < 600) { // Longer detection range
+                                            nearest = e;
+                                            nearestDist = dist;
+                                        }
                                     }
-                                }
-                            });
+                                });
+                                
+                                this.tankTargetCache.target = nearest;
+                            }
+                            
+                            const nearest = this.tankTargetCache.target;
                             
                             if (nearest) {
                                 // Initialize charge state if needed
@@ -9021,20 +9168,35 @@
                                 let repelX = 0, repelY = 0;
                                 const minTitanDistance = 200; // TITANs try to stay this far apart
                                 
-                                entities.enemies.forEach(other => {
-                                    if (other === this || !other.isChampion || other.hp <= 0) return;
+                                // OPTIMIZED: Cache titan repulsion check - only update every 5 frames
+                                if (!this.titanRepulsionCache) this.titanRepulsionCache = { timer: 0, repelX: 0, repelY: 0 };
+                                this.titanRepulsionCache.timer++;
+                                
+                                if (this.titanRepulsionCache.timer >= 5) {
+                                    this.titanRepulsionCache.timer = 0;
+                                    let cachedRepelX = 0, cachedRepelY = 0;
                                     
-                                    const dx = this.x - other.x;
-                                    const dy = this.y - other.y;
-                                    const dist = Math.sqrt(dx*dx + dy*dy);
+                                    entities.enemies.forEach(other => {
+                                        if (other === this || !other.isChampion || other.hp <= 0) return;
+                                        
+                                        const dx = this.x - other.x;
+                                        const dy = this.y - other.y;
+                                        const dist = Math.sqrt(dx*dx + dy*dy);
+                                        
+                                        if (dist < minTitanDistance && dist > 0) {
+                                            // Push away from other TITANs
+                                            const repelStrength = (minTitanDistance - dist) / minTitanDistance;
+                                            cachedRepelX += (dx / dist) * repelStrength * this.speed * 2.0;
+                                            cachedRepelY += (dy / dist) * repelStrength * this.speed * 2.0;
+                                        }
+                                    });
                                     
-                                    if (dist < minTitanDistance && dist > 0) {
-                                        // Push away from other TITANs
-                                        const repelStrength = (minTitanDistance - dist) / minTitanDistance;
-                                        repelX += (dx / dist) * repelStrength * this.speed * 2.0;
-                                        repelY += (dy / dist) * repelStrength * this.speed * 2.0;
-                                    }
-                                });
+                                    this.titanRepulsionCache.repelX = cachedRepelX;
+                                    this.titanRepulsionCache.repelY = cachedRepelY;
+                                }
+                                
+                                repelX = this.titanRepulsionCache.repelX;
+                                repelY = this.titanRepulsionCache.repelY;
                                 
                                 // Combine movement toward player + repulsion from other TITANs
                                 this.vx = moveX + repelX;
@@ -9516,28 +9678,43 @@
 
                     let sepX = 0, sepY = 0;
                     
+                    // OPTIMIZED: Cache separation checks - only calculate every 3 frames
+                    if (!this.separationCache) this.separationCache = { timer: 0, sepX: 0, sepY: 0 };
+                    this.separationCache.timer++;
+                    
                     // Skip collision if TITAN is charging or spinning
                     if (!this.ignoreCollision) {
-                        for (let other of entities.enemies) {
-                            if (other === this || other.type === 'swarm') continue; // Ignore swarms
-                            if (this.hackState.active || other.hackState.active) continue; // Hacked enemies ignore separation
+                        if (this.separationCache.timer >= 3) {
+                            this.separationCache.timer = 0;
+                            let cachedSepX = 0, cachedSepY = 0;
                             
-                            // TITANs ignore collision with other TITANs (they have their own repulsion system)
-                            if (this.isChampion && other.isChampion) continue;
-                            
-                            // Frozen enemies act as solid obstacles
-                            const treatAsSolid = other.cryoState.frozen;
-                            
-                            const odx = this.x - other.x; const ody = this.y - other.y;
-                            const odist = Math.sqrt(odx*odx + ody*ody);
-                            const minSep = this.radius + other.radius + (treatAsSolid ? 10 : 5); // Extra space around frozen
-                            
-                            if (odist < minSep && odist > 0) { 
-                                const f = (minSep - odist) / odist * (treatAsSolid ? 3.0 : 1.0); // Stronger push from frozen
-                                sepX += odx * f; 
-                                sepY += ody * f; 
+                            for (let other of entities.enemies) {
+                                if (other === this || other.type === 'swarm') continue; // Ignore swarms
+                                if (this.hackState.active || other.hackState.active) continue; // Hacked enemies ignore separation
+                                
+                                // TITANs ignore collision with other TITANs (they have their own repulsion system)
+                                if (this.isChampion && other.isChampion) continue;
+                                
+                                // Frozen enemies act as solid obstacles
+                                const treatAsSolid = other.cryoState.frozen;
+                                
+                                const odx = this.x - other.x; const ody = this.y - other.y;
+                                const odist = Math.sqrt(odx*odx + ody*ody);
+                                const minSep = this.radius + other.radius + (treatAsSolid ? 10 : 5); // Extra space around frozen
+                                
+                                if (odist < minSep && odist > 0) { 
+                                    const f = (minSep - odist) / odist * (treatAsSolid ? 3.0 : 1.0); // Stronger push from frozen
+                                    cachedSepX += odx * f; 
+                                    cachedSepY += ody * f; 
+                                }
                             }
+                            
+                            this.separationCache.sepX = cachedSepX;
+                            this.separationCache.sepY = cachedSepY;
                         }
+                        
+                        sepX = this.separationCache.sepX;
+                        sepY = this.separationCache.sepY;
                     }
                     
                     if (this.type !== 'tank' && !(this.type==='boss' && this.currentAttack===2 && this.actionState === 'attacking') && !this.ignoreCollision) {
@@ -10283,16 +10460,19 @@
                         createExplosion(this.x, this.y, '#ffff00', 10);
                         const baseAngle = Math.atan2(this.vy, this.vx);
                         const range = 250; 
+                        const rangeSq = range * range;
                         const coneHalfAngle = Math.PI/6; // Widened from π/8 (50% wider cone) 
                         
                         // Buffed damage per pellet burst to compete with other weapons
                         const flakDmg = 45 * (1 + (this.flakData.level-1)*0.3) * (player.damage/15); // Increased from 30, better scaling 
 
 
-                        entities.enemies.forEach(e => {
+                        // ⚡ OPTIMIZED: Use spatial grid for flak cone damage
+                        const flakNearby = spatialGrid.getNearby(this.x, this.y, range);
+                        flakNearby.forEach(e => {
                             const dx = e.x - this.x; const dy = e.y - this.y;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
-                            if (dist < range) {
+                            const distSq = dx*dx + dy*dy;
+                            if (distSq < rangeSq) {
                                 const angleToEnemy = Math.atan2(dy, dx);
                                 let diff = angleToEnemy - baseAngle;
                                 while (diff <= -Math.PI) diff += Math.PI*2; while (diff > Math.PI) diff -= Math.PI*2;
@@ -12140,6 +12320,12 @@
                 const a = seededRandom()*Math.PI*2; const s = seededRandom()*speed*3;
                 this.vx = Math.cos(a)*s; this.vy = Math.sin(a)*s;
             }
+            reset(x, y, color, speed) {
+                // Reuse existing particle with new parameters
+                this.x=x; this.y=y; this.color=color; this.life=1;
+                const a = seededRandom()*Math.PI*2; const s = seededRandom()*speed*3;
+                this.vx = Math.cos(a)*s; this.vy = Math.sin(a)*s;
+            }
             update(dt = 16) {
                 const scaledDt = dt || 16;
                 this.x += this.vx * (scaledDt/16);
@@ -12438,7 +12624,8 @@
             }
             
             for(let i=0; i<scaledCount; i++) {
-                entities.particles.push(new Particle(x, y, color, 1.0));
+                // ⚡ OPTIMIZED: Use particle pool instead of creating new objects
+                entities.particles.push(particlePool.spawn(x, y, color, 1.0));
             }
         }
 
@@ -12455,25 +12642,22 @@
             const color = elementColors[element];
             
             if (element === 'fire') {
-                // FIRE: FIERY EXPLOSION (streamlined)
+                // FIRE: FIERY EXPLOSION (optimized for performance)
                 // Base radius: 120, scales with area
                 const baseRadius = 120 * areaMultiplier;
                 
-                // Multiple explosions
-                createExplosion(x, y, color, 40); // Reduced from 60
-                setTimeout(() => createExplosion(x, y, color, 30), 50); // Reduced from 50
-                setTimeout(() => createExplosion(x, y, color, 20), 100); // Reduced from 40
+                // OPTIMIZED: Spread explosions over longer time to reduce frame spikes
+                createExplosion(x, y, color, 25); // Reduced from 40
+                setTimeout(() => createExplosion(x, y, color, 15), 80); // Spread out more
+                setTimeout(() => createExplosion(x, y, color, 10), 160); // Spread out more
                 
-                // Radiating flame shockwaves
-                for (let i = 0; i < 3; i++) {
-                    setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
-                    }, i * 100);
-                }
+                // OPTIMIZED: Fewer shockwaves, more spread out
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 0);
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 120);
                 
-                // 8 flame bursts radiating outward (reduced from 12)
-                for (let i = 0; i < 8; i++) {
-                    const angle = (i / 8) * Math.PI * 2;
+                // OPTIMIZED: Reduced flame bursts from 8 to 4
+                for (let i = 0; i < 4; i++) {
+                    const angle = (i / 4) * Math.PI * 2;
                     const distance = 80;
                     setTimeout(() => {
                         entities.particles.push(new Shockwave(
@@ -12482,11 +12666,11 @@
                             100,
                             color
                         ));
-                    }, i * 25);
+                    }, i * 50); // Spread over 200ms instead of immediate
                 }
                 
-                // Flame particles (reduced from 40)
-                for (let i = 0; i < 25; i++) {
+                // OPTIMIZED: Reduced flame particles from 25 to 12
+                for (let i = 0; i < 12; i++) {
                     entities.particles.push(new Particle(x, y, color, 5));
                 }
                 
@@ -12496,36 +12680,34 @@
                     const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
                     if (dist < baseRadius) {
                         player.dealElementalDamage(e, player.damage * 0.8, 'surge', color, true, 'normal', 'fire');
-                        for (let i = 0; i < 6; i++) { // Reduced from 10
+                        // OPTIMIZED: Reduced hit particles from 6 to 3
+                        for (let i = 0; i < 3; i++) {
                             entities.particles.push(new Particle(e.x, e.y, color, 3));
                         }
                     }
                 });
                 
             } else if (element === 'ice') {
-                // ICE: CRYSTALLINE FREEZE NOVA (streamlined)
+                // ICE: CRYSTALLINE FREEZE NOVA (optimized)
                 // Base radius: 110, scales with area
                 const baseRadius = 110 * areaMultiplier;
                 
-                // Explosions with ice color
-                createExplosion(x, y, color, 30); // Reduced from 50
-                setTimeout(() => createExplosion(x, y, color, 20), 50); // Reduced from 40
+                // OPTIMIZED: Fewer, spread out explosions
+                createExplosion(x, y, color, 20); // Reduced from 30
+                setTimeout(() => createExplosion(x, y, color, 12), 80); // Reduced from 20
                 
-                // Expanding frost waves (reduced from 5)
-                for (let i = 0; i < 3; i++) {
-                    setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
-                    }, i * 80);
-                }
+                // OPTIMIZED: Reduced frost waves from 3 to 2
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 0);
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 100);
                 
-                // 12 ice shards shooting outward (reduced from 20)
-                for (let i = 0; i < 12; i++) {
-                    const angle = (i / 12) * Math.PI * 2;
+                // OPTIMIZED: Reduced ice shards from 12 to 6
+                for (let i = 0; i < 6; i++) {
+                    const angle = (i / 6) * Math.PI * 2;
                     entities.particles.push(new ShrapnelSpark(x, y, angle, 10));
                 }
                 
-                // Ice crystal particles (reduced from 30)
-                for (let i = 0; i < 18; i++) {
+                // OPTIMIZED: Reduced ice particles from 18 to 10
+                for (let i = 0; i < 10; i++) {
                     entities.particles.push(new Particle(x, y, color, 4));
                 }
                 
@@ -12536,19 +12718,20 @@
                     if (dist < baseRadius) {
                         e.cryoState.frozen = true;
                         e.cryoState.frozenTimer = 90; // 1.5 seconds
-                        for (let i = 0; i < 5; i++) { // Reduced from 8
+                        // OPTIMIZED: Reduced hit particles from 5 to 3
+                        for (let i = 0; i < 3; i++) {
                             entities.particles.push(new Particle(e.x, e.y, color, 3));
                         }
                     }
                 });
                 
             } else if (element === 'volt') {
-                // VOLT: LIGHTNING STORM (toned down)
+                // VOLT: LIGHTNING STORM (optimized)
                 // Base radius: 100, scales with area (for targeting range)
                 const baseRadius = 100 * areaMultiplier;
                 
-                // Central explosion
-                createExplosion(x, y, color, 50);
+                // OPTIMIZED: Reduced central explosion
+                createExplosion(x, y, color, 30); // Reduced from 50
                 
                 const nearbyEnemies = entities.enemies
                     .filter(e => {
@@ -12561,52 +12744,45 @@
                         const distB = Math.sqrt((b.x - x)**2 + (b.y - y)**2);
                         return distA - distB;
                     })
-                    .slice(0, 5); // Reduced from 6 to 5 enemies
+                    .slice(0, 4); // Reduced from 5 to 4 enemies
                 
-                // Lightning bolts - reduced from 3 to 2 per target
+                // OPTIMIZED: 1 lightning bolt per target (was 2)
                 nearbyEnemies.forEach((e, idx) => {
                     setTimeout(() => {
-                        // 2 lightning bolts per target (was 3)
                         entities.lightnings.push(new LightningBolt(x, y, e.x, e.y, color));
-                        setTimeout(() => entities.lightnings.push(new LightningBolt(x, y, e.x, e.y, color)), 40);
                         
                         player.dealElementalDamage(e, player.damage * 1.2, 'surge', color, true, 'normal', 'volt');
-                        createExplosion(e.x, e.y, color, 20); // Reduced from 25
+                        createExplosion(e.x, e.y, color, 12); // Reduced from 20
                         
-                        // Reduced electric particles from 15 to 10
-                        for (let i = 0; i < 10; i++) {
+                        // OPTIMIZED: Reduced particles from 10 to 5
+                        for (let i = 0; i < 5; i++) {
                             entities.particles.push(new Particle(e.x, e.y, color, 4));
                         }
-                    }, idx * 60);
+                    }, idx * 80); // Spread out more (was 60ms)
                 });
                 
-                // Electric shockwaves scaled with area
-                for (let i = 0; i < 3; i++) {
-                    setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
-                    }, i * 100);
-                }
+                // OPTIMIZED: Reduced shockwaves from 3 to 2
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 0);
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 120);
                 
             } else if (element === 'bio') {
-                // BIO: MASSIVE TOXIC PLAGUE
+                // BIO: MASSIVE TOXIC PLAGUE (optimized)
                 // Base radius: 120, scales with area
                 const baseRadius = 120 * areaMultiplier;
                 
-                // Multiple toxic explosions
-                createExplosion(x, y, color, 70);
-                setTimeout(() => createExplosion(x, y, color, 60), 60);
-                setTimeout(() => createExplosion(x, y, color, 50), 120);
+                // OPTIMIZED: Fewer, spread explosions
+                createExplosion(x, y, color, 35); // Reduced from 70
+                setTimeout(() => createExplosion(x, y, color, 25), 80); // Reduced from 60
+                setTimeout(() => createExplosion(x, y, color, 20), 160); // Reduced from 50
                 
-                // HUGE pulsing toxic waves scaled with area
-                for (let i = 0; i < 5; i++) {
-                    setTimeout(() => {
-                        entities.particles.push(new Shockwave(x, y, baseRadius, color));
-                    }, i * 100);
-                }
+                // OPTIMIZED: Reduced toxic waves from 5 to 3
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 0);
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 120);
+                setTimeout(() => entities.particles.push(new Shockwave(x, y, baseRadius, color)), 240);
                 
-                // Tons of toxic spores spreading everywhere
-                for (let i = 0; i < 30; i++) {
-                    const angle = (i / 30) * Math.PI * 2;
+                // OPTIMIZED: Reduced toxic spores from 30 to 15
+                for (let i = 0; i < 15; i++) {
+                    const angle = (i / 15) * Math.PI * 2;
                     const speed = 3 + seededRandom() * 3;
                     entities.particles.push(new Particle(
                         x + Math.cos(angle) * 30,
@@ -12627,8 +12803,8 @@
                         e.bioState.maxDmg = player.damage * 1.5;
                         e.bioState.sourceWeapon = 'surge'; // Track source
                         
-                        // Toxic bubble burst on each enemy
-                        for (let i = 0; i < 10; i++) {
+                        // OPTIMIZED: Reduced bubble particles from 10 to 4
+                        for (let i = 0; i < 4; i++) {
                             entities.particles.push(new Particle(e.x, e.y, color, 2));
                         }
                     }
@@ -14257,83 +14433,13 @@
                 // Keep only recent positions (within trail duration, using game time)
                 data.trail = data.trail.filter(pos => data.gameTime - pos.time < data.trailDuration);
                 
-                // Contact damage - check collision with enemies
-                entities.enemies.forEach(e => {
-                    if (e.hp <= 0) return;
-                    
-                    // Check collision distance (player radius + enemy radius)
-                    const collisionDist = player.radius + (e.radius || 20);
-                    const dx = e.x - player.x;
-                    const dy = e.y - player.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (dist < collisionDist) {
-                        // Check cooldown for this specific enemy (using game time)
-                        const lastHit = data.contactCooldowns.get(e.id) || 0;
-                        const cooldownElapsed = data.gameTime - lastHit;
-                        
-                        if (cooldownElapsed >= data.contactCooldown) {
-                            // Calculate contact damage
-                            let contactDmg = e.maxHp * (data.contactDamage / 100);
-                            
-                            // Apply damage reduction
-                            if (e.isNexusPrime) {
-                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
-                            } else if (e.isChampion) {
-                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.titan;
-                            } else {
-                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.normal;
-                            }
-                            
-                            contactDmg = Math.max(1, contactDmg);
-                            
-                            // Deal damage
-                            e.takeDamage(contactDmg, data.color, false, 'normal');
-                            
-                            // Update cooldown (game time)
-                            data.contactCooldowns.set(e.id, data.gameTime);
-                            
-                            // Visual feedback
-                            createExplosion(e.x, e.y, data.color, 15);
-                            entities.particles.push(new Shockwave(e.x, e.y, 50, data.color));
-                        }
-                    }
-                });
+                // ⚡ Contact damage and trail damage now processed in consolidated enemy loop
                 
                 // Trail damage tick
                 data.trailTickTimer -= scaledDt;
                 if (data.trailTickTimer <= 0) {
                     data.trailTickTimer = data.trailTickRate; // Reset timer
-                    
-                    // Check all enemies against trail
-                    entities.enemies.forEach(e => {
-                        if (e.hp <= 0) return;
-                        
-                        // Check if enemy is within trail
-                        const inTrail = data.trail.some(pos => {
-                            const dist = Math.sqrt((e.x - pos.x)**2 + (e.y - pos.y)**2);
-                            return dist < (data.trailWidth / 2);
-                        });
-                        
-                        if (inTrail) {
-                            // Calculate trail damage per tick
-                            let trailDmg = e.maxHp * (data.trailDamage / 100) * (data.trailTickRate / 1000);
-                            
-                            // Apply damage reduction
-                            if (e.isNexusPrime) {
-                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
-                            } else if (e.isChampion) {
-                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.titan;
-                            } else {
-                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.normal;
-                            }
-                            
-                            trailDmg = Math.max(1, trailDmg);
-                            
-                            // Deal damage
-                            e.takeDamage(trailDmg, data.color, false, 'dot');
-                        }
-                    });
+                    // ⚡ Trail damage now processed in consolidated enemy loop
                 }
                 
                 // Check if ultimate is done
@@ -14347,22 +14453,83 @@
                 }
             }
             
-            // Apply EMP field effects before enemy updates
-            if (player.empFields && player.empFields.length > 0) {
-                entities.enemies.forEach(e => {
-                    e.empSlowStacks = 0; // Reset stacks each frame
-                    
-                    player.empFields.forEach(field => {
-                        const dist = Math.sqrt((e.x - field.x)**2 + (e.y - field.y)**2);
-                        if (dist < field.radius) {
-                            e.empSlowStacks++;
-                        }
-                    });
-                });
-            }
+            // ⚡ OPTIMIZED: Consolidated enemy processing (was 3 separate loops, now 1)
+            // Pre-calculate values outside loop for Adrenaline Surge
+            const hasAdrenalineSurge = player.ultimateActive && player.ultimate === 'adrenaline_surge' && player.ultimateData;
+            const adrenalineData = hasAdrenalineSurge ? player.ultimateData : null;
+            const hasEmpFields = player.empFields && player.empFields.length > 0;
+            const adrenalineDoTrailTick = hasAdrenalineSurge && adrenalineData.trailTickTimer <= 0;
             
             // Enemy updates with spatial culling
             entities.enemies = entities.enemies.filter(e => {
+                
+                // ⚡ CONSOLIDATED: EMP field processing (moved from separate loop)
+                if (hasEmpFields) {
+                    e.empSlowStacks = 0; // Reset stacks each frame
+                    player.empFields.forEach(field => {
+                        const distSq = (e.x - field.x)**2 + (e.y - field.y)**2;
+                        if (distSq < field.radius * field.radius) {
+                            e.empSlowStacks++;
+                        }
+                    });
+                }
+                
+                // ⚡ CONSOLIDATED: Adrenaline Surge processing (moved from separate loops)
+                if (hasAdrenalineSurge && e.hp > 0) {
+                    const data = adrenalineData;
+                    
+                    // Contact damage check
+                    const collisionDist = player.radius + (e.radius || 20);
+                    const dx = e.x - player.x;
+                    const dy = e.y - player.y;
+                    const distSq = dx * dx + dy * dy;
+                    
+                    if (distSq < collisionDist * collisionDist) {
+                        const lastHit = data.contactCooldowns.get(e.id) || 0;
+                        const cooldownElapsed = data.gameTime - lastHit;
+                        
+                        if (cooldownElapsed >= data.contactCooldown) {
+                            let contactDmg = e.maxHp * (data.contactDamage / 100);
+                            
+                            if (e.isNexusPrime) {
+                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                            } else if (e.isChampion) {
+                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                            } else {
+                                contactDmg *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                            }
+                            
+                            contactDmg = Math.max(1, contactDmg);
+                            e.takeDamage(contactDmg, data.color, false, 'normal');
+                            data.contactCooldowns.set(e.id, data.gameTime);
+                            createExplosion(e.x, e.y, data.color, 15);
+                            entities.particles.push(new Shockwave(e.x, e.y, 50, data.color));
+                        }
+                    }
+                    
+                    // Trail damage tick (only when tick timer triggers)
+                    if (adrenalineDoTrailTick) {
+                        const inTrail = data.trail.some(pos => {
+                            const dist = Math.sqrt((e.x - pos.x)**2 + (e.y - pos.y)**2);
+                            return dist < (data.trailWidth / 2);
+                        });
+                        
+                        if (inTrail) {
+                            let trailDmg = e.maxHp * (data.trailDamage / 100) * (data.trailTickRate / 1000);
+                            
+                            if (e.isNexusPrime) {
+                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                            } else if (e.isChampion) {
+                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                            } else {
+                                trailDmg *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                            }
+                            
+                            trailDmg = Math.max(1, trailDmg);
+                            e.takeDamage(trailDmg, data.color, false, 'dot');
+                        }
+                    }
+                }
                 
                 // Boss shields - KEEP THEM even if dead (for regeneration)
                 // They're only drawn when hp > 0 anyway
@@ -15057,8 +15224,12 @@
                 state.finalBoss.needsToAddShields = false;
             }
             
-            // Particle system with performance limits
-            entities.particles = entities.particles.filter(p => {
+            // ⚡ OPTIMIZED PARTICLE SYSTEM - Uses object pooling to reduce GC pressure
+            // Instead of filter (which creates new array), we swap-and-pop for better performance
+            for (let i = entities.particles.length - 1; i >= 0; i--) {
+                const p = entities.particles[i];
+                let keepParticle = false;
+                
                 // Danger zones from boss attacks
                 if (p.isDangerZone) {
                     p.timer -= scaledDt/16;
@@ -15175,58 +15346,69 @@
                         ctx.shadowBlur = 0;
                         ctx.restore();
                         
-                        return p.explosionTimer > 0;
+                        keepParticle = p.explosionTimer > 0;
+                    } else {
+                        // Draw pulsing red circle (telegraph phase)
+                        const alpha = (p.timer / 90) * 0.5; // Updated from 120 to 90
+                        const pulse = 0.7 + Math.sin(state.frameCount * 0.15) * 0.3;
+                        ctx.save();
+                        ctx.translate(p.x, p.y);
+                        ctx.strokeStyle = `rgba(255, 0, 0, ${alpha * pulse})`;
+                        ctx.lineWidth = 3;
+                        ctx.shadowBlur = 20;
+                        ctx.shadowColor = '#ff0000';
+                        ctx.beginPath();
+                        ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
+                        ctx.stroke();
+                        ctx.fillStyle = `rgba(255, 50, 0, ${alpha * 0.3})`;
+                        ctx.fill();
+                        ctx.shadowBlur = 0;
+                        ctx.restore();
+                        
+                        keepParticle = p.timer > 0;
                     }
-                    
-                    // Draw pulsing red circle (telegraph phase)
-                    const alpha = (p.timer / 90) * 0.5; // Updated from 120 to 90
-                    const pulse = 0.7 + Math.sin(state.frameCount * 0.15) * 0.3;
-                    ctx.save();
-                    ctx.translate(p.x, p.y);
-                    ctx.strokeStyle = `rgba(255, 0, 0, ${alpha * pulse})`;
-                    ctx.lineWidth = 3;
-                    ctx.shadowBlur = 20;
-                    ctx.shadowColor = '#ff0000';
-                    ctx.beginPath();
-                    ctx.arc(0, 0, p.radius, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.fillStyle = `rgba(255, 50, 0, ${alpha * 0.3})`;
-                    ctx.fill();
-                    ctx.shadowBlur = 0;
-                    ctx.restore();
-                    
-                    return p.timer > 0;
                 }
-                
                 // Falling meteors
-                if (p.isFallingMeteor) {
+                else if (p.isFallingMeteor) {
                     const alive = p.update(scaledDt);
                     if (alive) {
                         p.draw(ctx);
                     }
-                    return alive;
+                    keepParticle = alive;
                 }
-                
                 // Meteor warning crosshairs
-                if (p.isMeteorWarning) {
+                else if (p.isMeteorWarning) {
                     const alive = p.update();
                     if (alive) {
                         p.draw(ctx);
                     }
-                    return alive;
+                    keepParticle = alive;
                 }
-                
-                const a = p.update(scaledDt); 
-                if(a) {
-                    // Cull particles far from player view
-                    const dx = Math.abs(p.x - player.x);
-                    const dy = Math.abs(p.y - player.y);
-                    if(dx < 1500 && dy < 1500) { // Only draw nearby particles
-                        p.draw(ctx);
+                // Standard particles (most common case)
+                else {
+                    const alive = p.update(scaledDt); 
+                    if(alive) {
+                        // Cull particles far from player view
+                        const dx = Math.abs(p.x - player.x);
+                        const dy = Math.abs(p.y - player.y);
+                        if(dx < 1500 && dy < 1500) { // Only draw nearby particles
+                            p.draw(ctx);
+                        }
+                    }
+                    keepParticle = alive;
+                    
+                    // ⚡ POOLING: Recycle standard Particle objects
+                    if (!alive && p.constructor.name === 'Particle') {
+                        particlePool.recycle(p);
                     }
                 }
-                return a; 
-            });
+                
+                // Remove dead particles using swap-and-pop (faster than filter/splice)
+                if (!keepParticle) {
+                    entities.particles[i] = entities.particles[entities.particles.length - 1];
+                    entities.particles.pop();
+                }
+            }
             
             // Hard cap on particle count to prevent performance degradation
             const MAX_PARTICLES = 200; // Reduced from 250 for better performance
@@ -16801,13 +16983,25 @@
             });
 
 
+            // ⚡ SPATIAL GRID OPTIMIZATION - Populate grid with enemies for fast collision lookups
+            spatialGrid.clear();
+            entities.enemies.forEach(e => {
+                if (e.hp > 0 && e.active !== false) {
+                    spatialGrid.insert(e, e.x, e.y);
+                }
+            });
+
             entities.projectiles = entities.projectiles.filter(p => {
                 const active = p.update(scaledDt);
                 if(!active) return false;
                 if (p.type !== 'meteor_warning' && p.type !== 'mine' && p.type !== 'grenade' && p.type !== 'railgun' && p.type !== 'flak_shell' && p.type !== 'bio_spore' && p.type !== 'ricochet' && p.type !== 'emp_pulse' && p.type !== 'surge' && p.source !== 'orbital') {
                     let hit = false;
-                    // Optimize: only check enemies that could possibly collide
-                    for(let e of entities.enemies) {
+                    // ⚡ OPTIMIZED: Use spatial grid instead of checking ALL enemies
+                    // Before: 100 projectiles × 50 enemies = 5000 checks/frame
+                    // After: 100 projectiles × ~8 enemies = 800 checks/frame (87% reduction!)
+                    const nearbyEnemies = spatialGrid.getNearby(p.x, p.y, 100);
+                    
+                    for(let e of nearbyEnemies) {
                         // Skip inactive or dead enemies (including destroyed boss shields)
                         if (e.hp <= 0 || (e.active === false)) continue;
                         
@@ -16825,8 +17019,9 @@
                                     createExplosion(p.x, p.y, '#ff8800', 12);
                                     const splashRangeSq = p.splashRange * p.splashRange;
                                     
-                                    // Apply splash damage to nearby enemies
-                                    entities.enemies.forEach(splashTarget => {
+                                    // ⚡ OPTIMIZED: Apply splash damage to nearby enemies using spatial grid
+                                    const splashNearby = spatialGrid.getNearby(p.x, p.y, p.splashRange);
+                                    splashNearby.forEach(splashTarget => {
                                         if (splashTarget === e || splashTarget.hp <= 0) return;
                                         
                                         const dx = splashTarget.x - p.x;
@@ -16941,16 +17136,18 @@
                                     
                                     // SPLASH DAMAGE: Damage OTHER enemies in radius (not the primary target)
                                     const splashDist = 75;
-                                    entities.enemies.forEach(subE => {
+                                    const splashDistSq = splashDist * splashDist;
+                                    // ⚡ OPTIMIZED: Use spatial grid instead of checking all enemies
+                                    const splashNearby = spatialGrid.getNearby(p.x, p.y, splashDist);
+                                    splashNearby.forEach(subE => {
                                         // Skip the primary target (already took full damage)
                                         if (subE === e) return;
                                         
                                         const sdx = p.x - subE.x;
                                         const sdy = p.y - subE.y;
-                                        if(Math.abs(sdx) + Math.abs(sdy) < splashDist * 1.5) { // Quick check first
-                                            if(Math.sqrt(sdx*sdx + sdy*sdy) < splashDist) {
-                                                player.dealElementalDamage(subE, p.damage * 0.5, 'seeker', '#ffffff');
-                                            }
+                                        const distSq = sdx*sdx + sdy*sdy;
+                                        if(distSq < splashDistSq) {
+                                            player.dealElementalDamage(subE, p.damage * 0.5, 'seeker', '#ffffff');
                                         }
                                     });
                                 }
@@ -16970,14 +17167,17 @@
                     
                     let hitEnemy = false;
                     
-                    for(let e of entities.enemies) {
+                    // ⚡ OPTIMIZED: Use spatial grid for initial collision check
+                    const nearbyEnemies = spatialGrid.getNearby(p.x, p.y, 100);
+                    for(let e of nearbyEnemies) {
                         if (e.hp <= 0 || (e.active === false)) continue;
                         
                         const dx = p.x - e.x;
                         const dy = p.y - e.y;
-                        const dist = Math.sqrt(dx*dx + dy*dy);
+                        const distSq = dx*dx + dy*dy; // ⚡ Use squared distance
+                        const collisionRadiusSq = (e.radius + p.radius) * (e.radius + p.radius);
                         
-                        if(dist < e.radius + p.radius) {
+                        if(distSq < collisionRadiusSq) {
                             // Mark as exploded to prevent re-triggering
                             p.hasExploded = true;
                             hitEnemy = true;
@@ -16987,20 +17187,25 @@
                             
                             // Damage all enemies in AOE (only once per orb)
                             const aoeRadius = 50; // Small AOE radius - catches 1-2 nearby enemies
+                            const aoeRadiusSq = aoeRadius * aoeRadius;
                             const damagedEnemies = new Set(); // Track to prevent double-hit
                             
-                            entities.enemies.forEach(target => {
+                            // ⚡ OPTIMIZED: Use spatial grid for AOE damage too
+                            const aoeNearby = spatialGrid.getNearby(p.x, p.y, aoeRadius + 50);
+                            aoeNearby.forEach(target => {
                                 if (target.hp <= 0 || (target.active === false)) return;
                                 if (damagedEnemies.has(target)) return; // Already hit this enemy
                                 
                                 const aoeDistX = target.x - p.x;
                                 const aoeDistY = target.y - p.y;
-                                const aoeDist = Math.sqrt(aoeDistX*aoeDistX + aoeDistY*aoeDistY);
+                                const aoeDistSq = aoeDistX*aoeDistX + aoeDistY*aoeDistY;
+                                const targetRadiusSq = (aoeRadius + target.radius) * (aoeRadius + target.radius);
                                 
-                                if (aoeDist < aoeRadius + target.radius) {
+                                if (aoeDistSq < targetRadiusSq) {
                                     damagedEnemies.add(target);
                                     
                                     // Damage falls off with distance (100% at center, 50% at edge)
+                                    const aoeDist = Math.sqrt(aoeDistSq);
                                     const damageMult = 1.0 - (aoeDist / aoeRadius) * 0.5;
                                     const aoeDamage = p.damage * damageMult;
                                     
@@ -19642,23 +19847,63 @@
             });
         };
         
+        window.particlePoolStats = function() {
+            const stats = particlePool.getStats();
+            console.log(`
+⚡ PARTICLE POOL PERFORMANCE
+=============================
+Pooled Particles: ${stats.pooled}
+Max Pool Size: ${stats.maxSize}
+Utilization: ${stats.utilizationPercent}%
+Active Particles: ${entities.particles.length}
+
+How it works:
+- Dead particles are recycled instead of GC'd
+- New particles reuse pooled objects
+- Reduces memory allocation overhead
+- Smoother frame times (less GC pauses)
+            `);
+        };
+        
+        window.spatialGridStats = function() {
+            const stats = spatialGrid.getStats();
+            console.log(`
+⚡ SPATIAL GRID PERFORMANCE
+=============================
+Cell Size: ${spatialGrid.cellSize}px
+Active Cells: ${stats.cells}
+Total Entities: ${stats.totalEntities}
+Avg per Cell: ${stats.avgPerCell}
+Max in Cell: ${stats.maxInCell}
+
+Performance Impact:
+- Old: ${stats.totalEntities} checks per projectile
+- New: ~${Math.ceil(stats.avgPerCell * 9)} checks per projectile
+- Reduction: ~${((1 - (stats.avgPerCell * 9) / stats.totalEntities) * 100).toFixed(0)}%
+            `);
+        };
+        
         window.showDebugHelp = function() {
             console.log(`
 🎮 NEON ROGUE - DEBUG COMMANDS
 ================================
-testBoss()          - Jump to level 50 (boss will trigger)
-triggerNexusPrime() - Manually spawn boss immediately
-godMode()           - Max HP, damage, armor
-killAll()           - Kill all enemies on screen
-levelUp(n)          - Level up n times (default 1)
-randomLoadout()     - Give 4 random lvl 10 weapons + stats
-showDebugHelp()     - Show this help
+testBoss()           - Jump to level 50 (boss will trigger)
+triggerNexusPrime()  - Manually spawn boss immediately
+godMode()            - Max HP, damage, armor
+killAll()            - Kill all enemies on screen
+levelUp(n)           - Level up n times (default 1)
+randomLoadout()      - Give 4 random lvl 10 weapons + stats
+spatialGridStats()   - Show collision optimization stats
+particlePoolStats()  - Show particle pooling stats
+showDebugHelp()      - Show this help
 
 USAGE EXAMPLES:
-  testBoss()        → Sets level to 50
-  randomLoadout()   → Random build for testing
-  levelUp(10)       → Gain 10 levels
-  godMode()         → Become invincible
+  testBoss()           → Sets level to 50
+  randomLoadout()      → Random build for testing
+  levelUp(10)          → Gain 10 levels
+  godMode()            → Become invincible
+  spatialGridStats()   → Check collision performance
+  particlePoolStats()  → Check particle system
             `);
         };
         
