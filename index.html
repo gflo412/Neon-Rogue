@@ -6452,18 +6452,18 @@
                 pulseCount: 6,
                 pulseInterval: 666, // ~every 0.66 seconds
                 pulseData: [
-                    { radius: 150, damage: 4 },  // Pulse 1: 4% max HP
-                    { radius: 200, damage: 5 },  // Pulse 2: 5% max HP
-                    { radius: 250, damage: 6 },  // Pulse 3: 6% max HP
-                    { radius: 300, damage: 7 },  // Pulse 4: 7% max HP
-                    { radius: 350, damage: 8 },  // Pulse 5: 8% max HP
-                    { radius: 500, damage: 12 }  // Pulse 6: 12% max HP (MASSIVE)
+                    { radius: 150, damage: 8 },  // Pulse 1: 8% max HP (buffed from 4%)
+                    { radius: 200, damage: 10 },  // Pulse 2: 10% max HP (buffed from 5%)
+                    { radius: 250, damage: 12 },  // Pulse 3: 12% max HP (buffed from 6%)
+                    { radius: 300, damage: 14 },  // Pulse 4: 14% max HP (buffed from 7%)
+                    { radius: 350, damage: 16 },  // Pulse 5: 16% max HP (buffed from 8%)
+                    { radius: 500, damage: 22 }  // Pulse 6: 22% max HP (buffed from 12%) - MASSIVE FINALE
                 ],
                 knockbackForce: 15, // Push enemies outward
                 burningGround: {
                     duration: 3000, // 3 seconds
                     radius: 500, // Same as final pulse
-                    damagePerSecond: 2 // 2% max HP/sec
+                    damagePerSecond: 4 // 4% max HP/sec (buffed from 2%)
                 },
                 chargeTime: 100, // Base 100 seconds
                 damageChargeBonus: 0.0002 // 0.02% per 100 damage
@@ -6495,7 +6495,7 @@
         // Damage reduction multipliers for different enemy types
         const ULTIMATE_DAMAGE_REDUCTION = {
             normal: 1.0,      // 100% damage to normal enemies
-            titan: 0.5,       // 50% damage to Titans
+            titan: 0.6,       // 60% damage to Titans (buffed from 50%)
             nexusPrime: 0.3   // 30% damage to Nexus Prime
         };
         
@@ -7595,7 +7595,7 @@
                     this.color = '#9933ff'; // Purple
                     this.xp = 4;
                     this.dmg = 50; // Base explosion damage to player (NOT scaled)
-                    this.enemyDmg = 100 * scaling; // Explosion damage to enemies
+                    this.enemyDmg = 50 * scaling; // Explosion damage to enemies (reduced from 100)
                     this.blastRadius = 120;
                     
                     // Phase state machine
@@ -7706,6 +7706,11 @@
                 // CHAMPION DAMAGE REDUCTION: Champions have massive damage reduction (75%)
                 if (this.isChampion && this.damageReduction) {
                     amt *= (1 - this.damageReduction); // Apply damage reduction percentage
+                }
+                
+                // CHAMPION HACKED ENEMY MITIGATION: Titans take much less damage from hacked enemy attacks
+                if (this.isChampion && sourceId === 'voidwalker') {
+                    amt *= 0.2; // 80% reduction from hacked voidwalker explosions
                 }
                 
                 // CHAMPION ELEMENTAL RESISTANCE: Champions have strong defense against elements
@@ -19440,6 +19445,7 @@
             shipPrevBtn.addEventListener('click', () => {
                 if (currentShipIndex > 0) {
                     currentShipIndex--;
+                    checkShipUnlocks(); // Refresh unlock status
                     updateShipDisplay();
                 }
             });
@@ -19449,6 +19455,7 @@
             shipNextBtn.addEventListener('click', () => {
                 if (currentShipIndex < ships.length - 1) {
                     currentShipIndex++;
+                    checkShipUnlocks(); // Refresh unlock status
                     updateShipDisplay();
                 }
             });
