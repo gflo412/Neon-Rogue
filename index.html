@@ -618,6 +618,29 @@
         </div>
     </div>
     
+    <!-- Ascension Selection Screen -->
+    <div id="ascension-screen" class="modal">
+        <h2 class="text-4xl text-purple-400 font-black mb-2 tracking-widest drop-shadow-[0_0_20px_rgba(168,85,247,0.6)]">NEXUS ASCENSION</h2>
+        <p class="text-sm text-gray-400 mb-4">Choose your challenge level. Higher ascensions grant greater rewards.</p>
+        
+        <!-- Ascension Level Selector - Scrollable Container -->
+        <div class="w-full max-w-2xl mb-4 overflow-y-auto" style="max-height: 60vh;">
+            <div id="ascension-levels-container" class="flex flex-col gap-2 px-2">
+                <!-- Ascension levels will be dynamically inserted here -->
+            </div>
+        </div>
+        
+        <!-- Action Buttons -->
+        <div class="flex gap-4">
+            <button id="ascension-start-btn" class="bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 px-8 rounded-sm skew-x-[-10deg] shadow-[0_0_30px_rgba(0,209,178,0.3)] transition-all">
+                <span class="inline-block skew-x-[10deg]">START RUN</span>
+            </button>
+            <button id="ascension-back-btn" class="border border-gray-500 text-gray-400 hover:text-white hover:border-white py-3 px-8 rounded transition-all">
+                BACK
+            </button>
+        </div>
+    </div>
+    
     <!-- Seed Options Modal -->
     <div id="seed-modal" class="modal">
         <h2 class="text-3xl text-teal-400 font-black mb-6 tracking-widest">SEED OPTIONS</h2>
@@ -1004,7 +1027,11 @@
             elementsProcced: new Set(), // Track which elements have procced this run (for CATALYST achievement)
             pendingUltimateSelection: false, // Trigger ultimate selection after Titan defeat
             cameraLocked: false, // Lock camera during ultimate cinematics
-            ultimateCameraTarget: null // Target enemy to track during ultimate
+            ultimateCameraTarget: null, // Target enemy to track during ultimate
+            // Ascension System
+            activeAscension: 0, // Current ascension level for this run (0 = normal mode)
+            bloodlustTimer: 0, // Timer for Ascension 2 stacking (seconds without damage)
+            bloodlustStacks: 0 // Current bloodlust damage bonus stacks
         };
 
 
@@ -1258,6 +1285,9 @@
                 
                 console.log(`🛡️ Shields initialized for ${this.selectedShip}: s1=${this.shield1}, s2=${this.shield2}, s3=${this.shield3}`);
                 
+                // Apply Ascension modifiers
+                this.applyAscensionModifiers();
+                
                 this.weaponAugments = {}; // Single augment per weapon: { ion: 'fire', beam: 'ice', ... }
                 this.weaponStats = {};
                 Object.keys(this.weapons).forEach(k => {
@@ -1369,6 +1399,73 @@
                 this.thrustCooldown = 0;
             }
 
+            applyAscensionModifiers() {
+                const ascension = state.activeAscension || 0;
+                if (ascension === 0) return; // No modifiers for normal mode
+                
+                console.log(`🔥 Applying Ascension ${ascension} modifiers`);
+                
+                // Ascension 1: Phoenix Core (handled in takeHit) + Fragile Hull (-25% max HP)
+                if (ascension === 1) {
+                    this.maxHp = Math.floor(this.maxHp * 0.75);
+                    this.hp = this.maxHp;
+                    this.hasPhoenixCore = true; // Flag for respawn mechanic
+                    console.log(`💔 Fragile Hull: Max HP reduced to ${this.maxHp}`);
+                }
+                
+                // Ascension 2: Bloodlust (handled in enemy death) + Power Drain (-20% base damage)
+                else if (ascension === 2) {
+                    this.shipDamageMult *= 0.8; // -20% damage
+                    console.log(`⚡ Power Drain: Base damage reduced to ${(this.shipDamageMult * 100).toFixed(0)}%`);
+                }
+                
+                // Ascension 3: Rapid Fire (+40% fire rate) + Aggressive Swarms (handled in spawn system)
+                else if (ascension === 3) {
+                    this.fireRate *= 1.4; // +40% fire rate
+                    console.log(`🔫 Rapid Fire: Fire rate increased to ${(this.fireRate * 100).toFixed(0)}%`);
+                }
+                
+                // Ascension 4: Titan Slayer (handled in damage calc) + Brittle Armor (-1 shield charge)
+                else if (ascension === 4) {
+                    // Remove one shield charge (works properly for all ship types)
+                    // Vanguard: 3 shields → 2 shields
+                    // Pathfinder/Engineer: 2 shields → 1 shield
+                    // Disruptor: 1 shield → 0 shields
+                    // Reaper: 0 shields → 0 shields (no effect)
+                    if (this.shield3 > 0) {
+                        this.shield3 = 0; // Remove third shield if present
+                    } else if (this.shield2 > 0) {
+                        this.shield2 = 0; // Remove second shield if present
+                    } else if (this.shield1 > 0) {
+                        this.shield1 = 0; // Remove first shield if present
+                    }
+                    console.log(`🛡️ Brittle Armor: Shield removed - now ${this.shield1}/${this.shield2}/${this.shield3}`);
+                }
+                
+                // Ascension 5: Time Dilation (handled in update) + Ticking Doom (handled in update)
+                else if (ascension === 5) {
+                    this.tickingDoomTimer = 0; // Initialize timer for HP drain
+                    console.log(`⏱️ Ticking Doom: Losing 1 HP/second`);
+                }
+            }
+            
+            getAscensionDamageMult(target = null) {
+                let mult = 1.0;
+                
+                // Ascension 2: Bloodlust (+2% damage per stack, max 50 stacks = 100% damage)
+                if (state.activeAscension === 2 && state.bloodlustStacks > 0) {
+                    mult *= (1.0 + (state.bloodlustStacks * 0.02)); // 2% per stack
+                }
+                
+                // Ascension 4: Titan Slayer (+100% boss damage)
+                if (state.activeAscension === 4 && target) {
+                    if (target.isBoss || target.isNexusPrime || target.isBossShield || target.isBossTurret) {
+                        mult *= 2.0; // +100% damage to bosses
+                    }
+                }
+                
+                return mult;
+            }
 
             heal(amount, allowOvershield=false) {
                 if (this.hp < this.maxHp) {
@@ -1584,6 +1681,34 @@
                     defensiveScaling = 1.0 - (levelsPast20 * 0.025); // 2.5% reduction per level (max 25%)
                 }
                 
+                // ASCENSION 2: BLOODLUST - Reset stacks on damage taken
+                if (state.activeAscension === 2 && state.bloodlustStacks > 0) {
+                    const lostStacks = state.bloodlustStacks;
+                    state.bloodlustStacks = 0;
+                    state.bloodlustTimer = 0;
+                    
+                    // Visual feedback
+                    entities.texts.push({
+                        x: this.x,
+                        y: this.y - 40,
+                        vx: 0,
+                        vy: -1.5,
+                        text: `BLOODLUST RESET`,
+                        color: '#ff0066',
+                        life: 60,
+                        size: 16,
+                        update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
+                        draw(ctx) {
+                            const alpha = Math.min(1, this.life / 20);
+                            ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                            ctx.font = `bold ${this.size}px Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(this.text, this.x, this.y);
+                        }
+                    });
+                    console.log(`💔 Bloodlust reset! Lost ${lostStacks} stacks.`);
+                }
+                
                 const reduction = Math.min(this.armor, 80) / 100;
                 let actualDmg = amount * (1 - reduction) * defensiveScaling;
                 
@@ -1699,6 +1824,148 @@
                     }
                 }
                 
+                // PHOENIX CORE (Ascension 1): Respawn once per run
+                if (this.hp <= 0 && this.hasPhoenixCore) {
+                    // RESPAWN!
+                    this.hp = this.maxHp * 0.5; // Restore to 50% HP
+                    this.hasPhoenixCore = false; // Can only use once
+                    this.invulnTimer = 120; // 2 seconds invulnerability
+                    
+                    // Visual feedback - Phoenix flames
+                    createExplosion(this.x, this.y, '#ff6600', 50);
+                    createExplosion(this.x, this.y, '#ffaa00', 40);
+                    entities.particles.push(new Shockwave(this.x, this.y, 200, 'rgba(255, 102, 0, 0.5)'));
+                    
+                    // Phoenix flame particles radiating outward
+                    for (let i = 0; i < 20; i++) {
+                        const angle = (Math.PI * 2 / 20) * i;
+                        const speed = 3 + Math.random() * 2;
+                        entities.particles.push({
+                            x: this.x,
+                            y: this.y,
+                            vx: Math.cos(angle) * speed,
+                            vy: Math.sin(angle) * speed,
+                            color: i % 2 === 0 ? '#ff6600' : '#ffaa00',
+                            life: 40,
+                            size: 4,
+                            update: function(dt) {
+                                this.x += this.vx * (dt/16);
+                                this.y += this.vy * (dt/16);
+                                this.life -= dt/16;
+                                this.vx *= 0.95;
+                                this.vy *= 0.95;
+                                this.size *= 0.98;
+                                return this.life > 0;
+                            },
+                            draw: function(ctx) {
+                                const alpha = Math.min(1, this.life / 20);
+                                ctx.fillStyle = this.color;
+                                ctx.shadowBlur = 12;
+                                ctx.shadowColor = this.color;
+                                ctx.beginPath();
+                                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.shadowBlur = 0;
+                            }
+                        });
+                    }
+                    
+                    // Upward rising flame particles
+                    for (let i = 0; i < 15; i++) {
+                        entities.particles.push({
+                            x: this.x + (Math.random() - 0.5) * 40,
+                            y: this.y + (Math.random() - 0.5) * 20,
+                            vx: (Math.random() - 0.5) * 0.5,
+                            vy: -2 - Math.random() * 2,
+                            color: Math.random() > 0.5 ? '#ff6600' : '#ffdd00',
+                            life: 50 + Math.random() * 20,
+                            size: 3 + Math.random() * 2,
+                            update: function(dt) {
+                                this.x += this.vx * (dt/16);
+                                this.y += this.vy * (dt/16);
+                                this.life -= dt/16;
+                                this.vy -= 0.05 * (dt/16); // Rise faster over time
+                                return this.life > 0;
+                            },
+                            draw: function(ctx) {
+                                const alpha = Math.min(1, this.life / 30);
+                                ctx.fillStyle = this.color;
+                                ctx.shadowBlur = 10;
+                                ctx.shadowColor = '#ff6600';
+                                ctx.beginPath();
+                                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                                ctx.fill();
+                                ctx.shadowBlur = 0;
+                            }
+                        });
+                    }
+                    
+                    // Screen flash - orange phoenix flames
+                    const flash = document.getElementById('damage-flash');
+                    flash.style.background = 'rgba(255, 102, 0, 0.6)';
+                    flash.style.opacity = 0.9;
+                    setTimeout(() => {
+                        flash.style.background = 'rgba(255, 170, 0, 0.4)';
+                        flash.style.opacity = 0.6;
+                    }, 150);
+                    setTimeout(() => {
+                        flash.style.background = 'rgba(255, 0, 0, 0.5)';
+                        flash.style.opacity = 0;
+                    }, 400);
+                    
+                    // Giant notification text with glow effect
+                    entities.texts.push({
+                        x: this.x,
+                        y: this.y - 40,
+                        vx: 0,
+                        vy: -1.5,
+                        text: 'PHOENIX CORE',
+                        color: '#ff6600',
+                        life: 90,
+                        size: 28,
+                        update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
+                        draw(ctx) {
+                            const alpha = Math.min(1, this.life / 30);
+                            const pulse = 1 + Math.sin(this.life * 0.2) * 0.2;
+                            ctx.save();
+                            ctx.shadowBlur = 30;
+                            ctx.shadowColor = '#ff6600';
+                            ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                            ctx.font = `bold ${this.size * pulse}px Orbitron, Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(this.text, this.x, this.y);
+                            ctx.restore();
+                        }
+                    });
+                    
+                    // Second text line
+                    entities.texts.push({
+                        x: this.x,
+                        y: this.y - 10,
+                        vx: 0,
+                        vy: -1,
+                        text: 'ACTIVATED',
+                        color: '#ffaa00',
+                        life: 90,
+                        size: 18,
+                        update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
+                        draw(ctx) {
+                            const alpha = Math.min(1, this.life / 30);
+                            ctx.save();
+                            ctx.shadowBlur = 20;
+                            ctx.shadowColor = '#ffaa00';
+                            ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                            ctx.font = `bold ${this.size}px Orbitron, Arial`;
+                            ctx.textAlign = 'center';
+                            ctx.fillText(this.text, this.x, this.y);
+                            ctx.restore();
+                        }
+                    });
+                    
+                    console.log('🔥 PHOENIX CORE: Player respawned at 50% HP!');
+                    return; // Don't die!
+                }
+                
                 if(this.hp <= 0) gameOver();
             }
 
@@ -1714,6 +1981,53 @@
                     : 1.0;
                 
                 if (this.invulnTimer > 0) this.invulnTimer -= dt/16;
+                
+                // ASCENSION 2: BLOODLUST - gain +2% damage per second without taking damage (max 50 stacks = 100%)
+                if (state.activeAscension === 2) {
+                    if (!state.bloodlustTimer) state.bloodlustTimer = 0;
+                    if (!state.bloodlustStacks) state.bloodlustStacks = 0;
+                    
+                    state.bloodlustTimer += dt/16;
+                    
+                    // Gain 1 stack every 60 frames (1 second) without damage
+                    if (state.bloodlustTimer >= 60 && state.bloodlustStacks < 50) {
+                        state.bloodlustStacks++;
+                        state.bloodlustTimer = 0;
+                        
+                        // Visual feedback every 5 stacks
+                        if (state.bloodlustStacks % 5 === 0) {
+                            entities.texts.push({
+                                x: this.x,
+                                y: this.y - 30,
+                                vx: 0,
+                                vy: -1,
+                                text: `BLOODLUST ${state.bloodlustStacks}`,
+                                color: '#ff0066',
+                                life: 45,
+                                size: 14,
+                                update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
+                                draw(ctx) {
+                                    const alpha = Math.min(1, this.life / 20);
+                                    ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
+                                    ctx.font = `bold ${this.size}px Arial`;
+                                    ctx.textAlign = 'center';
+                                    ctx.fillText(this.text, this.x, this.y);
+                                }
+                            });
+                        }
+                    }
+                }
+                
+                // ASCENSION 5: Ticking Doom - lose 2 HP per second
+                if (state.activeAscension === 5) {
+                    if (!this.tickingDoomTimer) this.tickingDoomTimer = 0;
+                    this.tickingDoomTimer += dt/16;
+                    
+                    if (this.tickingDoomTimer >= 60) { // Every 60 frames (1 second)
+                        this.hp = Math.max(1, this.hp - 2); // Lose 2 HP per second, never go below 1 HP
+                        this.tickingDoomTimer = 0;
+                    }
+                }
                 
                 // Whip visual timer
                 if (this.whipVisualTimer > 0) {
@@ -4630,6 +4944,9 @@
                 if (enemy.spawnInvuln && enemy.spawnInvuln > 0) {
                     return;
                 }
+                
+                // Apply Ascension damage multipliers
+                dmg *= this.getAscensionDamageMult(enemy);
                 
                 // BOSS SHIELD entities - damage them directly
                 if (enemy.isBossShield) {
@@ -12038,12 +12355,27 @@
                     }
                     if (this.type === 'magnet') { activateMagnet(); }
                     if (this.type === 'nexus_core') {
-                        // Collect Nexus Core - increment counter
+                        // Collect Nexus Core - increment counter with Ascension multiplier
                         const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
-                        localStorage.setItem('neonrogue_nexusCores', currentCores + 1);
+                        
+                        // Calculate cores to award based on Ascension level
+                        let coresToAward = 1; // Base: 1 core
+                        if (state.activeAscension > 0) {
+                            const ascensionData = {
+                                1: 2.0, // Ascension 1: +100% cores (2x)
+                                2: 3.0, // Ascension 2: +200% cores (3x)
+                                3: 4.0, // Ascension 3: +300% cores (4x)
+                                4: 5.0, // Ascension 4: +400% cores (5x)
+                                5: 6.0  // Ascension 5: +500% cores (6x)
+                            };
+                            coresToAward = Math.floor(ascensionData[state.activeAscension] || 1);
+                            console.log(`🔥 Ascension ${state.activeAscension}: ${coresToAward}x cores awarded!`);
+                        }
+                        
+                        localStorage.setItem('neonrogue_nexusCores', currentCores + coresToAward);
                         createExplosion(player.x, player.y, '#ff00ff', 30);
                         
-                        console.log('💎 Nexus Core collected!');
+                        console.log(`💎 Nexus Core(s) collected! +${coresToAward} cores`);
                         console.log('   pendingUltimateSelection:', state.pendingUltimateSelection);
                         
                         // ULTIMATE SELECTION: Queue it instead of showing immediately
@@ -14035,6 +14367,14 @@
                 targetTimeScale = 0.2; // 20% slow (everything except player)
             }
             
+            // ASCENSION 5: TIME DILATION - slow time to 40% when below 30% HP
+            if (state.activeAscension === 5 && input.active) {
+                const hpPercent = player.hp / player.maxHp;
+                if (hpPercent < 0.3) {
+                    targetTimeScale = 0.4; // 40% slow when low HP
+                }
+            }
+            
             state.timeScale += (targetTimeScale - state.timeScale) * 0.1;
             const scaledDt = dt * state.timeScale;
 
@@ -14276,6 +14616,11 @@
             let spawnInterval = state.bossActive ? 
                 Math.floor((28 - Math.min(13, state.level)) * 1.67) : // 67% slower during champion = 60% rate
                 (28 - Math.min(13, state.level));
+            
+            // ASCENSION 3: AGGRESSIVE SWARMS - 30% faster spawns (reduce interval by 23%)
+            if (state.activeAscension === 3) {
+                spawnInterval = Math.floor(spawnInterval * 0.77); // 23% faster = ~30% more spawns
+            }
             
             // Override spawn interval during rapid spawning
             if (state.rapidSpawning) {
@@ -17271,6 +17616,16 @@
         function gainXp(amt) {
             state.xp += Math.ceil(amt); 
             state.score += 10;
+            
+            // Apply Ascension score multiplier
+            if (state.activeAscension > 0) {
+                const ascensionData = {
+                    1: 2.0, 2: 3.0, 3: 4.0, 4: 5.0, 5: 6.0
+                };
+                const multiplier = ascensionData[state.activeAscension] || 1.0;
+                state.score += Math.floor(10 * (multiplier - 1)); // Bonus score from ascension
+            }
+            
             let nextCurve;
             
             // Faster early game: reduced XP for levels 1-5
@@ -18193,8 +18548,15 @@
             }
             
             if(id==='hp') { 
-                player.maxHp += 25*mult; // Increased from 20 to 25 (25% buff)
-                player.heal(25*mult, true); // Heal with overshield allowed
+                let hpGain = 25*mult; // Base: 25 HP per upgrade (increased from 20)
+                
+                // ASCENSION 1: FRAGILE HULL - reduce HP upgrades by 25%
+                if (state.activeAscension === 1) {
+                    hpGain = Math.floor(hpGain * 0.75); // -25% HP from upgrades
+                }
+                
+                player.maxHp += hpGain;
+                player.heal(hpGain, true); // Heal with overshield allowed
             }
             // Global damage and cooldown removed - only weapon-specific now
             if(id==='armor') player.armor += 4*mult; // Increased from 3 to 4 (33% buff)
@@ -18483,6 +18845,174 @@
             }
         }
         
+        // ===== ASCENSION SYSTEM =====
+        
+        const ASCENSION_DATA = {
+            1: {
+                name: 'Ascension I',
+                buff: { name: 'Phoenix Core', desc: 'Respawn once per run with 50% HP', icon: 'fa-heart' },
+                debuff: { name: 'Fragile Hull', desc: '-25% max HP & HP upgrades', icon: 'fa-heartbeat' },
+                coreMultiplier: 2.0, // +100% cores
+                scoreMultiplier: 2.0  // +100% score
+            },
+            2: {
+                name: 'Ascension II',
+                buff: { name: 'Bloodlust', desc: '+2% damage per second (max 100%, resets on hit)', icon: 'fa-skull-crossbones' },
+                debuff: { name: 'Power Drain', desc: '-20% base damage', icon: 'fa-battery-quarter' },
+                coreMultiplier: 3.0, // +200% cores
+                scoreMultiplier: 3.0  // +200% score
+            },
+            3: {
+                name: 'Ascension III',
+                buff: { name: 'Rapid Fire', desc: '+40% fire rate for all weapons', icon: 'fa-tachometer-alt' },
+                debuff: { name: 'Aggressive Swarms', desc: '+30% enemy spawn rate', icon: 'fa-exclamation-triangle' },
+                coreMultiplier: 4.0, // +300% cores
+                scoreMultiplier: 4.0  // +300% score
+            },
+            4: {
+                name: 'Ascension IV',
+                buff: { name: 'Titan Slayer', desc: '+100% damage to bosses', icon: 'fa-dragon' },
+                debuff: { name: 'Brittle Armor', desc: '-1 shield charge', icon: 'fa-shield-alt' },
+                coreMultiplier: 5.0, // +400% cores
+                scoreMultiplier: 5.0  // +400% score
+            },
+            5: {
+                name: 'Ascension V',
+                buff: { name: 'Time Dilation', desc: 'Time slows when HP < 30%', icon: 'fa-stopwatch' },
+                debuff: { name: 'Ticking Doom', desc: 'Lose 2 HP per second', icon: 'fa-hourglass-half' },
+                coreMultiplier: 6.0, // +500% cores
+                scoreMultiplier: 6.0  // +500% score
+            }
+        };
+        
+        function showAscensionScreen() {
+            const ascensionScreen = document.getElementById('ascension-screen');
+            const container = document.getElementById('ascension-levels-container');
+            const highestAscension = parseInt(localStorage.getItem('neonrogue_highestAscension') || '0');
+            
+            // Clear container
+            container.innerHTML = '';
+            
+            // Add "Normal Mode" option
+            const normalOption = createAscensionOption(0, 'Normal Mode', null, null, 1.0, highestAscension);
+            container.appendChild(normalOption);
+            
+            // Add Ascension levels 1-5
+            for (let i = 1; i <= 5; i++) {
+                const data = ASCENSION_DATA[i];
+                const option = createAscensionOption(i, data.name, data.buff, data.debuff, data.coreMultiplier, highestAscension);
+                container.appendChild(option);
+            }
+            
+            ascensionScreen.classList.add('active');
+        }
+        
+        function createAscensionOption(level, name, buff, debuff, coreMultiplier, highestAscension) {
+            const div = document.createElement('div');
+            const isLocked = level > highestAscension + 1;
+            const isSelected = level === 0; // Default to Normal Mode
+            
+            div.className = `ascension-option p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                isLocked ? 'border-gray-700 bg-gray-900/60 opacity-60 cursor-not-allowed' : 
+                isSelected ? 'border-purple-500 bg-purple-900/40 shadow-[0_0_15px_rgba(168,85,247,0.4)]' : 
+                'border-gray-500 bg-gray-800 hover:border-purple-400 hover:bg-gray-700 hover:shadow-[0_0_10px_rgba(168,85,247,0.2)]'
+            }`;
+            
+            if (!isLocked) {
+                div.onclick = () => selectAscension(level);
+            }
+            
+            if (level === 0) {
+                // Normal Mode
+                div.innerHTML = `
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <div class="text-lg font-bold text-teal-400">${name}</div>
+                            <div class="text-xs text-gray-400 mt-0.5">Standard difficulty with base rewards</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs text-gray-500">Boss Drops & Score</div>
+                            <div class="text-lg font-bold text-white">×1.0</div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                // Ascension Level - More compact layout
+                div.innerHTML = `
+                    <div class="flex justify-between items-center mb-2">
+                        <div class="text-lg font-bold ${isLocked ? 'text-gray-500' : 'text-purple-400'}">${name}</div>
+                        <div class="text-right">
+                            <div class="text-xs text-gray-500">Boss Drops & Score</div>
+                            <div class="text-xl font-bold ${isLocked ? 'text-gray-500' : 'text-yellow-400'}">×${coreMultiplier.toFixed(1)}</div>
+                        </div>
+                    </div>
+                    ${isLocked ? `
+                        <div class="text-center text-gray-500 text-sm py-2">
+                            <i class="fas fa-lock mr-2"></i>Complete Ascension ${level - 1} to unlock
+                        </div>
+                    ` : `
+                        <div class="grid grid-cols-2 gap-2">
+                            <div class="bg-green-900/20 border border-green-700 rounded p-2">
+                                <div class="text-green-400 font-bold text-sm mb-0.5">
+                                    <i class="fas ${buff.icon} mr-1"></i>${buff.name}
+                                </div>
+                                <div class="text-xs text-gray-400 leading-tight">${buff.desc}</div>
+                            </div>
+                            <div class="bg-red-900/20 border border-red-700 rounded p-2">
+                                <div class="text-red-400 font-bold text-sm mb-0.5">
+                                    <i class="fas ${debuff.icon} mr-1"></i>${debuff.name}
+                                </div>
+                                <div class="text-xs text-gray-400 leading-tight">${debuff.desc}</div>
+                            </div>
+                        </div>
+                    `}
+                `;
+            }
+            
+            div.dataset.level = level;
+            return div;
+        }
+        
+        let selectedAscensionLevel = 0; // Default to Normal Mode
+        
+        function selectAscension(level) {
+            selectedAscensionLevel = level;
+            
+            // Update visual selection - rebuild classes properly
+            document.querySelectorAll('.ascension-option').forEach(opt => {
+                const optLevel = parseInt(opt.dataset.level);
+                const isLocked = opt.classList.contains('cursor-not-allowed');
+                
+                if (isLocked) {
+                    // Keep locked styling
+                    return;
+                }
+                
+                if (optLevel === level) {
+                    // SELECTED - purple border and background
+                    opt.className = 'ascension-option p-3 border-2 rounded-lg cursor-pointer transition-all border-purple-500 bg-purple-900/30';
+                } else {
+                    // NOT SELECTED - gray border and background
+                    opt.className = 'ascension-option p-3 border-2 rounded-lg cursor-pointer transition-all border-gray-600 bg-gray-800 hover:border-purple-400 hover:bg-gray-700';
+                }
+            });
+        }
+        
+        // Ascension Start Button
+        document.getElementById('ascension-start-btn').onclick = () => {
+            document.getElementById('ascension-screen').classList.remove('active');
+            state.activeAscension = selectedAscensionLevel;
+            console.log('🔥 Starting run with Ascension Level:', selectedAscensionLevel);
+            initGame();
+        };
+        
+        // Ascension Back Button
+        document.getElementById('ascension-back-btn').onclick = () => {
+            document.getElementById('ascension-screen').classList.remove('active');
+            document.getElementById('menu-screen').classList.add('active');
+            selectedAscensionLevel = 0; // Reset selection
+        };
+        
         function showVictory() {
             state.screen = 'gameover';
             
@@ -18512,13 +19042,48 @@
             const victoryMessage = document.createElement('div');
             victoryMessage.id = 'victory-message';
             victoryMessage.className = 'mb-3 text-center';
+            
+            // Handle Ascension progression
+            const highestAscension = parseInt(localStorage.getItem('neonrogue_highestAscension') || '0');
+            const currentAscension = state.activeAscension || 0;
+            let ascensionUnlockMessage = '';
+            
+            // If player beat the game on an ascension level equal to their highest, unlock next level
+            if (currentAscension > 0 && currentAscension === highestAscension + 1 && currentAscension < 5) {
+                localStorage.setItem('neonrogue_highestAscension', currentAscension);
+                ascensionUnlockMessage = `
+                    <div style="color: #a855f7; font-size: 16px; font-weight: bold; margin-top: 8px;">
+                        <i class="fas fa-star"></i> Ascension ${currentAscension + 1} Unlocked! <i class="fas fa-star"></i>
+                    </div>
+                `;
+            } else if (currentAscension === 5 && highestAscension < 5) {
+                // First time beating Ascension 5
+                localStorage.setItem('neonrogue_highestAscension', 5);
+                ascensionUnlockMessage = `
+                    <div style="color: #ffd700; font-size: 18px; font-weight: bold; margin-top: 8px; text-shadow: 0 0 20px rgba(255, 215, 0, 0.8);">
+                        <i class="fas fa-trophy"></i> ASCENSION COMPLETE <i class="fas fa-trophy"></i>
+                    </div>
+                    <div style="color: #a855f7; font-size: 14px; margin-top: 4px;">
+                        You have conquered all Ascension levels!
+                    </div>
+                `;
+            }
+            
+            const ascensionDisplay = currentAscension > 0 ? `
+                <div style="color: #a855f7; font-size: 14px; margin-bottom: 8px;">
+                    Ascension ${currentAscension} Completed
+                </div>
+            ` : '';
+            
             victoryMessage.innerHTML = `
+                ${ascensionDisplay}
                 <div style="color: #00d1b2; font-size: 18px; font-weight: bold; margin-bottom: 8px;">
                     ✨ NEXUS PRIME DEFEATED ✨
                 </div>
                 <div style="color: #ffd700; font-size: 16px;">
                     +1 Quantum Singularity
                 </div>
+                ${ascensionUnlockMessage}
             `;
             
             // Insert victory message after title
@@ -18775,8 +19340,19 @@
                 if (!selectedShip.locked) {
                     localStorage.setItem('neonrogue_selectedShip', selectedShip.name);
                 }
-                document.getElementById('menu-screen').classList.remove('active'); 
-                initGame();
+                
+                // Check if Ascension mode is unlocked (player has at least 1 singularity)
+                const singularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
+                
+                if (singularities > 0) {
+                    // Show Ascension selection screen
+                    document.getElementById('menu-screen').classList.remove('active');
+                    showAscensionScreen();
+                } else {
+                    // Go directly to game
+                    document.getElementById('menu-screen').classList.remove('active'); 
+                    initGame();
+                }
                 
                 // If boss test mode is enabled, setup and spawn boss
                 if (bossTestMode) {
@@ -18992,7 +19568,8 @@
                     totalPlaytime: parseInt(localStorage.getItem('neonrogue_totalPlaytime') || '0'),
                     nexusCores: parseInt(localStorage.getItem('neonrogue_nexusCores') || '0'),
                     singularities: parseInt(localStorage.getItem('neonrogue_singularities') || '0'),
-                    fourElementsAchieved: localStorage.getItem('neonrogue_4elementsAchieved') === 'true' // Catalyst unlock
+                    fourElementsAchieved: localStorage.getItem('neonrogue_4elementsAchieved') === 'true', // Catalyst unlock
+                    highestAscension: parseInt(localStorage.getItem('neonrogue_highestAscension') || '0') // Ascension progression
                 }
             };
             console.log('📦 Exporting save data:', saveData);
@@ -19029,6 +19606,12 @@
             if (meta.fourElementsAchieved === true) {
                 localStorage.setItem('neonrogue_4elementsAchieved', 'true');
                 console.log('✅ Loaded Catalyst unlock');
+            }
+            
+            // Load Ascension progression
+            if (meta.highestAscension !== undefined) {
+                localStorage.setItem('neonrogue_highestAscension', meta.highestAscension || 0);
+                console.log('✅ Loaded Ascension level:', meta.highestAscension);
             }
             
             return true;
@@ -19825,8 +20408,15 @@
             
             // Apply stat upgrades (additive, don't reset base values)
             player.damage += (statUpgrades.damage * 10);
-            player.maxHp += (statUpgrades.maxHp * 25);
+            
+            let maxHpBonus = statUpgrades.maxHp * 25;
+            // ASCENSION 1: FRAGILE HULL - reduce HP upgrades by 25%
+            if (state.activeAscension === 1) {
+                maxHpBonus = Math.floor(maxHpBonus * 0.75);
+            }
+            player.maxHp += maxHpBonus;
             player.hp = player.maxHp;
+            
             player.armor += (statUpgrades.armor * 3);
             player.regen += (statUpgrades.regen * 2);
             player.critChance += (statUpgrades.critChance * 0.03);
