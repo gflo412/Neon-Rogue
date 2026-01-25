@@ -1374,6 +1374,70 @@
         };
         // ===== END PARTICLE POOLING =====
 
+        // ===== CONSOLE ERROR TRACKING =====
+        const consoleErrors = [];
+        const MAX_ERRORS_STORED = 50;
+        
+        // Override console.error to capture errors
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            // Call original console.error
+            originalConsoleError.apply(console, args);
+            
+            // Store error with timestamp and stack trace
+            const errorText = args.map(arg => {
+                if (typeof arg === 'object') {
+                    try {
+                        return JSON.stringify(arg);
+                    } catch {
+                        return String(arg);
+                    }
+                }
+                return String(arg);
+            }).join(' ');
+            
+            // Capture stack trace to get line number
+            const stack = new Error().stack;
+            const stackLines = stack ? stack.split('\n') : [];
+            // Skip first 2 lines (Error creation and this function)
+            const callerLine = stackLines[2] || '';
+            // Extract line number from stack trace (e.g., "at functionName (file.js:123:45)")
+            const lineMatch = callerLine.match(/:(\d+):(\d+)/);
+            const lineNumber = lineMatch ? `Line ${lineMatch[1]}:${lineMatch[2]}` : 'unknown';
+            
+            consoleErrors.push({
+                timestamp: new Date().toISOString(),
+                message: errorText,
+                line: lineNumber,
+                stackTrace: stackLines.slice(2, 5).join('\n'), // Keep top 3 stack frames
+                time: Date.now()
+            });
+            
+            // Keep only last MAX_ERRORS_STORED errors
+            if (consoleErrors.length > MAX_ERRORS_STORED) {
+                consoleErrors.shift();
+            }
+        };
+        
+        // Also capture window.onerror
+        window.addEventListener('error', (event) => {
+            const errorText = `Uncaught error: ${event.message}`;
+            const lineInfo = event.filename ? ` at ${event.filename.split('/').pop()}:${event.lineno}:${event.colno}` : '';
+            
+            consoleErrors.push({
+                timestamp: new Date().toISOString(),
+                message: errorText,
+                line: event.lineno ? `Line ${event.lineno}:${event.colno}` : 'unknown',
+                stackTrace: lineInfo,
+                time: Date.now()
+            });
+            
+            if (consoleErrors.length > MAX_ERRORS_STORED) {
+                consoleErrors.shift();
+            }
+        });
+        // ===== END CONSOLE ERROR TRACKING =====
+
         const state = {
             screen: 'menu', score: 0, startTime: 0, level: 1, xp: 0, xpToNext: 10,
             lastTime: 0, camera: { x: 0, y: 0 }, shake: 0, frameCount: 0, rerolls: 3,
@@ -1391,6 +1455,7 @@
             savedUpgrade: null,
             finalBossTriggered: false, // Level 50 boss
             finalBossActive: false, // Boss fight in progress
+            finalBossDefeated: false, // Boss has been defeated (prevents respawn)
             finalBoss: null, // Reference to NEXUS PRIME
             levelUpDelay: null, // Delay before showing upgrade screen (lets XP collection finish)
             elementsProcced: new Set(), // Track which elements have procced this run (for CATALYST achievement)
@@ -4839,8 +4904,8 @@
                         const minY = this.y - (height / state.zoom / 2) + screenMargin;
                         const maxY = this.y + (height / state.zoom / 2) - screenMargin;
                         
-                        // Find target if we don't have one or current target is dead/hacked
-                        if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active)) {
+                        // Find target if we don't have one or current target is dead/hacked/fleeing
+                        if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active) || drone.target.fleeing) {
                             // Priority targeting influenced by proximity to player
                             const priorityOrder = (enemy) => {
                                 // Boss shields are HIGHEST priority (only when active)
@@ -4860,6 +4925,9 @@
                                 
                                 // NEVER target hacked enemies - completely untargetable
                                 if (enemy.hackState && enemy.hackState.active) return -1;
+                                
+                                // NEVER target fleeing enemies - they're running away from boss
+                                if (enemy.fleeing) return -1;
                                 
                                 let priority = 0;
                                 if (enemy.isChampion) priority = 7;
@@ -4900,8 +4968,8 @@
                             drone.target = bestTarget;
                         }
                         
-                        // Move drone with more aggressive AI
-                        if (drone.target && !(drone.target.hackState && drone.target.hackState.active)) {
+                        // Move drone with more aggressive AI (skip fleeing enemies)
+                        if (drone.target && !(drone.target.hackState && drone.target.hackState.active) && !drone.target.fleeing) {
                             // Chase target more actively
                             const dx = drone.target.x - drone.x;
                             const dy = drone.target.y - drone.y;
@@ -4984,9 +5052,9 @@
                             }
                         });
                         
-                        // Fire at target
+                        // Fire at target (skip fleeing enemies)
                         drone.fireTimer -= dt/16;
-                        if (drone.fireTimer <= 0 && drone.target && !(drone.target.hackState && drone.target.hackState.active)) {
+                        if (drone.fireTimer <= 0 && drone.target && !(drone.target.hackState && drone.target.hackState.active) && !drone.target.fleeing) {
                             drone.shotsFired = (drone.shotsFired || 0) + 1;
                             
                             // Every 5th shot fires a mini-rocket with AOE splash
@@ -4994,8 +5062,8 @@
                             
                             // Create fire function for multistrike
                             const fireDroneShot = (damageMultiplier = 1.0, depth = 0) => {
-                                // Verify target still exists and is valid
-                                if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active)) {
+                                // Verify target still exists and is valid (not dead/hacked/fleeing)
+                                if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active) || drone.target.fleeing) {
                                     return;
                                 }
                                 
@@ -5669,11 +5737,6 @@
                         }
                     }
                     
-                    // Initialize per-blade hit tracking on enemies if needed
-                    entities.enemies.forEach(e => {
-                        if (!e.orbitalBladeHits) e.orbitalBladeHits = {}; // Track last hit time per blade (in game milliseconds)
-                    });
-                    
                     // Check each blade for collisions along their length
                     for (let i = 0; i < numBlades; i++) {
                         const bladeAngle = this.orbitalAngle + (Math.PI * 2 / numBlades) * i;
@@ -5686,6 +5749,9 @@
                         
                         entities.enemies.forEach(e => {
                             if (e.hp <= 0) return;
+                            
+                            // Initialize hit tracking if needed (for enemies that spawned after initial loop)
+                            if (!e.orbitalBladeHits) e.orbitalBladeHits = {};
                             
                             // Per-blade cooldown using game time (respects time dilation)
                             const bladeKey = `blade_${i}`;
@@ -11077,7 +11143,7 @@
                 const shakeIntensity = [3, 5, 7]; // Subtle shake: 3, 5, 7 (was 10, 13, 18 - too intense)
                 
                 // Subtle camera shake for impact feedback
-                addCameraShake(shakeIntensity[this.slamHitCount]);
+                state.shake = shakeIntensity[this.slamHitCount];
                 
                 // Damage all enemies in radius
                 entities.enemies.forEach(e => {
@@ -13888,6 +13954,7 @@
             state.bossTimer = 0; state.gameTime = 0; state.spawnTimer = 0;
             state.finalBossActive = false; // Reset final boss flag
             state.finalBossTriggered = false; // Reset final boss trigger
+            state.finalBossDefeated = false; // Reset boss defeated flag
             state.saveCharges = 3; state.savedUpgrade = null;
             state.levelUpQueue = []; // Track level-up types to prevent reroll bugs
             state.weaponStats = {}; // Reset weapon stats tracking
@@ -14679,7 +14746,36 @@
                     pickups: entities.pickups.length,
                     particles: entities.particles.length,
                     texts: entities.texts.length
-                }
+                },
+                
+                // Console Errors (last 10 unique errors)
+                consoleErrors: (() => {
+                    // Get unique errors by message (deduplicate)
+                    const uniqueErrors = [];
+                    const seenMessages = new Set();
+                    
+                    // Process errors in reverse (most recent first)
+                    for (let i = consoleErrors.length - 1; i >= 0 && uniqueErrors.length < 10; i--) {
+                        const error = consoleErrors[i];
+                        // Truncate very long error messages
+                        const truncatedMsg = error.message.length > 500 
+                            ? error.message.substring(0, 500) + '...[truncated]'
+                            : error.message;
+                        
+                        if (!seenMessages.has(truncatedMsg)) {
+                            seenMessages.add(truncatedMsg);
+                            uniqueErrors.push({
+                                message: truncatedMsg,
+                                line: error.line,
+                                stackTrace: error.stackTrace,
+                                secondsAgo: Math.round((Date.now() - error.time) / 1000),
+                                timestamp: error.timestamp
+                            });
+                        }
+                    }
+                    
+                    return uniqueErrors.reverse(); // Return in chronological order
+                })()
             };
             
             // Count enemy types
@@ -14694,7 +14790,9 @@
             // Try to copy to clipboard
             if (navigator.clipboard) {
                 navigator.clipboard.writeText(reportText).then(() => {
-                    alert('✅ Bug report copied to clipboard!\n\nPaste it when reporting the issue.\n\nThe report includes:\n• Game state & player stats\n• All weapons, mods, and augments\n• Enemy positions & boss state\n• Recent damage log\n• Performance metrics');
+                    const errorCount = bugReport.consoleErrors.length;
+                    const errorMsg = errorCount > 0 ? `\n• ${errorCount} console error${errorCount > 1 ? 's' : ''} (last 10 unique)` : '';
+                    alert(`✅ Bug report copied to clipboard!\n\nPaste it when reporting the issue.\n\nThe report includes:\n• Game state & player stats\n• All weapons, mods, and augments\n• Enemy positions & boss state\n• Recent damage log\n• Performance metrics${errorMsg}`);
                 }).catch(() => {
                     // Fallback: show in alert
                     prompt('Copy this bug report:', reportText);
@@ -14826,18 +14924,40 @@
             // IMMEDIATELY spawn boss to prevent player drift during delays
             spawnNexusPrime(spawnX, spawnY);
             
-            // Clear ALL enemies IMMEDIATELY (except the boss we just spawned and its shields)
-            // This prevents drones from targeting invisible/offscreen enemies
-            const enemiesBeforeClear = entities.enemies.length;
-            entities.enemies = entities.enemies.filter(e => 
-                e.isNexusPrime || e.isBossTurret || e.isBossShield
+            // CLEAR ALL PICKUPS (XP, health, magnets)
+            const pickupsBeforeClear = entities.pickups.length;
+            entities.pickups = [];
+            console.log(`✨ Cleared ${pickupsBeforeClear} pickups from map`);
+            
+            // Make enemies FLEE before despawning (cinematic effect)
+            const fleeeingEnemies = entities.enemies.filter(e => 
+                !e.isNexusPrime && !e.isBossTurret && !e.isBossShield
             );
             
-            console.log(`✅ Cleared ${enemiesBeforeClear} enemies, remaining: ${entities.enemies.length} (should be boss + 4 shields = 5)`);
-            console.log(`🎯 Boss entities: ${entities.enemies.filter(e => e.isNexusPrime).length} core, ${entities.enemies.filter(e => e.isBossShield).length} shields`);
+            console.log(`👻 ${fleeeingEnemies.length} enemies fleeing from NEXUS PRIME`);
             
-            // Make enemies retreat (visual effect only - they're already cleared)
-            // This section is now just cosmetic since we already filtered
+            // Mark enemies as fleeing and set them to run away
+            fleeeingEnemies.forEach(e => {
+                e.fleeing = true;
+                e.fleeingTimer = 180; // 3 seconds to flee offscreen
+                
+                // Calculate direction AWAY from player
+                const dx = e.x - player.x;
+                const dy = e.y - player.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                
+                if (dist > 0) {
+                    // Set velocity to flee away at 3x normal speed
+                    const fleeSpeed = (e.speed || 1) * 3;
+                    e.vx = (dx / dist) * fleeSpeed;
+                    e.vy = (dy / dist) * fleeSpeed;
+                }
+                
+                // Make enemy semi-transparent to show fear
+                e.fleeingOpacity = 1.0;
+            });
+            
+            console.log(`🎯 Boss entities: ${entities.enemies.filter(e => e.isNexusPrime).length} core, ${entities.enemies.filter(e => e.isBossShield).length} shields`);
             
             // Show warning AFTER boss is already there (just for drama)
             showBossWarning();
@@ -14908,9 +15028,9 @@
                 // Dummy methods so boss doesn't crash in enemy filter
                 update() { /* Boss updates happen in special isNexusPrime block */ },
                 draw() { /* Boss draws happen in special isNexusPrime block */ },
-                takeDamage(dmg, color) {
+                takeDamage(amt, color = '#ffffff', isCrit = false, type = 'normal', sourceId = null, elementType = null) {
                     if (this.coreVulnerable && this.hp > 0) {
-                        this.hp -= dmg;
+                        this.hp -= amt;
                         
                         // Safety: Prevent HP from going too far negative (can cause issues with death sequence)
                         if (this.hp < -1000) {
@@ -14934,8 +15054,12 @@
                         const damageText = new FloatingText(
                             this.x + (Math.random() - 0.5) * 40,
                             this.y + (Math.random() - 0.5) * 40,
-                            Math.floor(dmg),
-                            color || '#ffffff'
+                            Math.floor(amt),
+                            color || '#ffffff',
+                            isCrit,
+                            type,
+                            sourceId,
+                            elementType
                         );
                         damageText.life = 60;
                         entities.texts.push(damageText);
@@ -15140,6 +15264,9 @@
                     empState: { active: false, timer: 0 },
                     ionState: { active: false, timer: 0 },
                     empSlowStacks: 0,
+                    // Dummy methods so it doesn't crash in enemy loops
+                    update() { /* Updated in boss turret logic */ },
+                    draw() { /* Drawn with boss logic */ },
                     // Add takeDamage method so ultimates can damage turrets
                     takeDamage(amt, color = '#ffffff', isCrit = false, type = 'normal', sourceId = null, elementType = null) {
                         // Turrets take damage and flash
@@ -15799,6 +15926,14 @@
                     const champion = new Enemy('champion');
                     champion.championId = `titan_${i}`;
                     
+                    // DEFENSIVE: Prevent methods from being deleted
+                    // Seal the prototype to prevent modification
+                    if (i === 0) {
+                        // Only need to do this once for the prototype
+                        Object.seal(Object.getPrototypeOf(champion));
+                        console.log('🛡️ Sealed Enemy prototype to prevent method deletion');
+                    }
+                    
                     // Position TITANs in a spread formation
                     if (titanCount === 1) {
                         // Single TITAN - spawn at player position
@@ -15913,7 +16048,7 @@
             }
             
             // Normal enemy spawning (skip during final boss) - framerate independent timer
-            if(!state.finalBossActive && state.breathingRoomTimer <= 0 && entities.enemies.length < spawnCap && state.spawnTimer >= spawnInterval) { 
+            if(!state.finalBossActive && !state.finalBossDefeated && state.breathingRoomTimer <= 0 && entities.enemies.length < spawnCap && state.spawnTimer >= spawnInterval) { 
                 state.spawnTimer -= spawnInterval; // Reset timer by subtracting interval (preserves overflow)
                 let type = 'drone'; const r = seededRandom();
                 if(state.score>300 && r>0.7) type='swarm';
@@ -16101,6 +16236,54 @@
             
             // Enemy updates with spatial culling
             entities.enemies = entities.enemies.filter(e => {
+                // FLEEING ENEMIES: Update and despawn when offscreen
+                if (e.fleeing) {
+                    e.fleeingTimer -= dt / 16;
+                    
+                    // Continue fleeing movement
+                    e.x += e.vx * (dt / 16);
+                    e.y += e.vy * (dt / 16);
+                    
+                    // Fade out
+                    e.fleeingOpacity = Math.max(0, e.fleeingTimer / 180);
+                    
+                    // Check if offscreen or timer expired
+                    const isOffscreen = (
+                        e.x < -200 || e.x > width + 200 ||
+                        e.y < -200 || e.y > height + 200
+                    );
+                    
+                    if (isOffscreen || e.fleeingTimer <= 0) {
+                        return false; // Despawn
+                    }
+                    
+                    // Don't run normal update logic for fleeing enemies
+                    return true;
+                }
+                
+                // DEFENSIVE: Verify enemy has update method before processing
+                // If an enemy somehow lost its update method, try to restore it
+                if (!e.update && e.type) {
+                    console.error(`🐛 CRITICAL: Enemy lost update method! Type: ${e.type}, isChampion: ${e.isChampion}, championId: ${e.championId}`);
+                    console.error(`Enemy object keys:`, Object.keys(e));
+                    console.error(`Enemy prototype:`, Object.getPrototypeOf(e));
+                    
+                    // This should never happen - enemies are created with new Enemy() which has update as a method
+                    // If we reach here, something is corrupting the enemy object or its prototype
+                    
+                    if (e.isChampion) {
+                        console.error(`🚨 Champion lost update method - this is a CRITICAL BUG`);
+                        console.error(`Champion state:`, {
+                            type: e.type,
+                            hp: e.hp,
+                            maxHp: e.maxHp,
+                            x: e.x,
+                            y: e.y,
+                            championId: e.championId,
+                            attackState: e.attackState
+                        });
+                    }
+                }
                 
                 // SAFETY: Remove orphaned boss turrets/shields that are far off-screen or belong to dead boss
                 if ((e.isBossShield || e.isBossTurret) && state.finalBossActive) {
@@ -16843,55 +17026,135 @@
                     // Log if champion is missing update method (this is the bug!)
                     if (e.isChampion && !e.update) {
                         console.error(`🐛 BUG: Champion ${e.championId} has no update method! Removing from game.`);
+                        
+                        // CRITICAL: Clean up health bar before removing
+                        if (e.championId) {
+                            const titanIndex = parseInt(e.championId.split('_')[1]);
+                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                            if (barWrapper) {
+                                barWrapper.remove();
+                                console.log(`🗑️ Removed orphaned health bar for ${e.championId} (no update method)`);
+                            }
+                        }
+                        
                         return false; // Remove this broken champion
                     }
                     
                     // NEXUS PRIME DEATH SEQUENCE
                     if (e.isNexusPrime && e.hp <= 0 && !e.deathSequenceStarted) {
                         e.deathSequenceStarted = true;
-                        console.log('💥 NEXUS PRIME DEFEATED - Starting death sequence');
+                        e.deathTimer = 0; // Track death animation progress
+                        console.log('💥 NEXUS PRIME DEFEATED - Starting EPIC death sequence');
                         
-                        // Store position for death animation (in case entity gets modified)
+                        // Store position for death animation
                         const deathX = e.x;
                         const deathY = e.y;
                         
-                        // First explosion - massive purple burst
-                        createExplosion(deathX, deathY, '#ff00ff', 100);
-                        // Camera shake removed
+                        // Add screen flash data to boss entity for rendering
+                        e.deathFlash = 0;
                         
-                        // Second explosion - cyan/teal
+                        // STAGE 1: Initial implosion (0ms)
+                        createExplosion(deathX, deathY, '#ff00ff', 150);
+                        entities.particles.push(new Shockwave(deathX, deathY, 400, '#ff00ff'));
+                        e.deathFlash = 1.0;
+                        
+                        // STAGE 2: First massive shockwave (400ms)
                         setTimeout(() => {
-                            createExplosion(deathX, deathY, '#00d1b2', 90);
+                            entities.particles.push(new Shockwave(deathX, deathY, 800, '#00d1b2'));
+                            entities.particles.push(new Shockwave(deathX, deathY, 700, '#ffffff'));
+                            createExplosion(deathX, deathY, '#00d1b2', 200);
+                            e.deathFlash = 0.8;
+                            state.shake = 8;
                         }, 400);
                         
-                        // Third explosion - orange/red
+                        // STAGE 3: Energy collapse rings (800ms)
                         setTimeout(() => {
-                            createExplosion(deathX, deathY, '#ff5722', 80);
+                            for (let i = 0; i < 5; i++) {
+                                setTimeout(() => {
+                                    entities.particles.push(new Shockwave(deathX, deathY, 600 - i * 100, '#ff5722'));
+                                }, i * 80);
+                            }
+                            createExplosion(deathX, deathY, '#ff5722', 180);
+                            e.deathFlash = 0.6;
+                            state.shake = 10;
                         }, 800);
                         
-                        // Fourth explosion - yellow
+                        // STAGE 4: Cascading explosions (1200ms)
                         setTimeout(() => {
-                            createExplosion(deathX, deathY, '#ffeb3b', 70);
+                            const angles = [0, Math.PI/3, 2*Math.PI/3, Math.PI, 4*Math.PI/3, 5*Math.PI/3];
+                            angles.forEach((angle, i) => {
+                                setTimeout(() => {
+                                    const offsetX = deathX + Math.cos(angle) * 150;
+                                    const offsetY = deathY + Math.sin(angle) * 150;
+                                    entities.particles.push(new Shockwave(offsetX, offsetY, 500, '#ffeb3b'));
+                                    createExplosion(offsetX, offsetY, '#ffeb3b', 120);
+                                }, i * 100);
+                            });
+                            e.deathFlash = 0.5;
+                            state.shake = 12;
                         }, 1200);
                         
-                        // Fifth explosion - blue
+                        // STAGE 5: Converging energy waves (1800ms)
                         setTimeout(() => {
-                            createExplosion(deathX, deathY, '#00e5ff', 85);
-                        }, 1600);
+                            entities.particles.push(new Shockwave(deathX, deathY, 900, '#00e5ff'));
+                            entities.particles.push(new Shockwave(deathX, deathY, 850, '#ffffff'));
+                            entities.particles.push(new Shockwave(deathX, deathY, 800, '#00e5ff'));
+                            createExplosion(deathX, deathY, '#00e5ff', 220);
+                            e.deathFlash = 0.7;
+                            state.shake = 15;
+                        }, 1800);
                         
-                        // Sixth explosion - green
+                        // STAGE 6: Pre-supernova buildup (2200ms)
                         setTimeout(() => {
-                            createExplosion(deathX, deathY, '#39ff14', 75);
-                        }, 2000);
+                            // Rapid pulse of expanding rings
+                            for (let i = 0; i < 8; i++) {
+                                setTimeout(() => {
+                                    entities.particles.push(new Shockwave(deathX, deathY, 300 + i * 100, '#39ff14'));
+                                }, i * 60);
+                            }
+                            e.deathFlash = 0.9;
+                            state.shake = 18;
+                        }, 2200);
                         
-                        // Final explosion - MASSIVE white supernova
+                        // STAGE 7: MASSIVE SUPERNOVA (2800ms)
                         setTimeout(() => {
-                            createExplosion(deathX, deathY, '#ffffff', 200);
+                            // Screen-filling white flash
+                            e.deathFlash = 1.5;
                             
-                            // Secondary white explosion for extra impact
-                            setTimeout(() => {
-                                createExplosion(deathX, deathY, '#ff00ff', 150);
-                            }, 300);
+                            // Multiple overlapping giant shockwaves
+                            entities.particles.push(new Shockwave(deathX, deathY, 1200, '#ffffff'));
+                            entities.particles.push(new Shockwave(deathX, deathY, 1100, '#ff00ff'));
+                            entities.particles.push(new Shockwave(deathX, deathY, 1000, '#00d1b2'));
+                            entities.particles.push(new Shockwave(deathX, deathY, 900, '#ffeb3b'));
+                            
+                            // Massive central explosion
+                            createExplosion(deathX, deathY, '#ffffff', 300);
+                            
+                            // Ring of secondary shockwaves
+                            const ringAngles = [0, Math.PI/4, Math.PI/2, 3*Math.PI/4, Math.PI, 5*Math.PI/4, 3*Math.PI/2, 7*Math.PI/4];
+                            ringAngles.forEach((angle, i) => {
+                                setTimeout(() => {
+                                    const rx = deathX + Math.cos(angle) * 200;
+                                    const ry = deathY + Math.sin(angle) * 200;
+                                    entities.particles.push(new Shockwave(rx, ry, 600, '#ffffff'));
+                                    createExplosion(rx, ry, '#ffffff', 150);
+                                }, i * 50);
+                            });
+                            
+                            state.shake = 25;
+                        }, 2800);
+                        
+                        // STAGE 8: Aftermath fade (3200ms)
+                        setTimeout(() => {
+                            entities.particles.push(new Shockwave(deathX, deathY, 1000, '#ff00ff'));
+                            entities.particles.push(new Shockwave(deathX, deathY, 900, '#ffffff'));
+                            e.deathFlash = 0.4;
+                            state.shake = 10;
+                        }, 3200);
+                        
+                        // FINAL: Cleanup and victory (3800ms)
+                        setTimeout(() => {
+                            e.deathFlash = 0;
                             
                             // Clear all boss entities
                             entities.enemies = entities.enemies.filter(en => 
@@ -16901,9 +17164,10 @@
                             // Drop Quantum Singularity at boss location
                             entities.pickups.push(new Pickup(deathX, deathY, 1, 'singularity'));
                             
-                            // Victory will trigger when player picks up singularity
+                            // Victory - boss defeated, no more enemy spawns
                             state.finalBossActive = false;
-                        }, 2400);
+                            state.finalBossDefeated = true;
+                        }, 3800);
                     }
                     
                     // Keep boss "alive" during death sequence so it stays in array for animations
@@ -16919,20 +17183,101 @@
                     return e.hp > 0;
                 }
                 
-                try {
-                    // Extra safety check for champions
-                    if (e.isChampion && (!e.update || typeof e.update !== 'function')) {
-                        console.error(`🐛 BUG: Champion ${e.championId} lost its update method! hp=${e.hp}, x=${e.x}, y=${e.y}`);
-                        console.error('Champion state:', { isChampion: e.isChampion, hasUpdate: !!e.update, hp: e.hp });
-                        return false; // Remove broken champion
+                // Extra safety check for champions
+                if (e.isChampion && (!e.update || typeof e.update !== 'function')) {
+                    console.error(`🐛 BUG: Champion ${e.championId} lost its update method! hp=${e.hp}, x=${e.x}, y=${e.y}`);
+                    console.error('Champion state:', { isChampion: e.isChampion, hasUpdate: !!e.update, hp: e.hp });
+                    
+                    // CRITICAL: Clean up health bar before removing
+                    if (e.championId) {
+                        const titanIndex = parseInt(e.championId.split('_')[1]);
+                        const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                        if (barWrapper) {
+                            barWrapper.remove();
+                            console.log(`🗑️ Removed orphaned health bar for ${e.championId}`);
+                        }
                     }
                     
-                    e.update(scaledDt); 
-                    e.draw(ctx); 
-                } catch (err) {
-                    console.error('Error updating/drawing enemy:', err);
+                    return false; // Remove broken champion
+                }
+                
+                // Separate try-catch for update and draw to identify which fails
+                try {
+                    e.update(scaledDt);
+                } catch (updateErr) {
+                    const errorDetails = {
+                        phase: 'UPDATE',
+                        name: updateErr.name || 'Unknown',
+                        message: updateErr.message || 'No message',
+                        stack: updateErr.stack || 'No stack trace',
+                        enemyType: e.type,
+                        enemyHP: e.hp,
+                        isChampion: e.isChampion,
+                        championId: e.championId,
+                        hasUpdate: !!e.update,
+                        updateType: typeof e.update,
+                        attackState: e.attackState,
+                        actionState: e.actionState
+                    };
+                    console.error('Error during enemy UPDATE:', JSON.stringify(errorDetails, null, 2));
+                    
                     if (e.isChampion) {
-                        console.error(`🐛 Champion ${e.championId} crashed during update/draw! Removing...`);
+                        console.error(`🐛 Champion ${e.championId} crashed during UPDATE!`);
+                        console.error(`Error: ${updateErr.name}: ${updateErr.message}`);
+                        
+                        // Clean up health bar
+                        if (e.championId) {
+                            const titanIndex = parseInt(e.championId.split('_')[1]);
+                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                            if (barWrapper) {
+                                barWrapper.remove();
+                                console.log(`🗑️ Removed orphaned health bar for ${e.championId} (update crash)`);
+                            }
+                        }
+                        
+                        return false; // Remove crashed champion
+                    }
+                }
+                
+                try {
+                    // Apply opacity for fleeing enemies
+                    if (e.fleeing && e.fleeingOpacity !== undefined) {
+                        ctx.save();
+                        ctx.globalAlpha = e.fleeingOpacity;
+                        e.draw(ctx);
+                        ctx.restore();
+                    } else {
+                        e.draw(ctx);
+                    }
+                } catch (drawErr) {
+                    const errorDetails = {
+                        phase: 'DRAW',
+                        name: drawErr.name || 'Unknown',
+                        message: drawErr.message || 'No message',
+                        stack: drawErr.stack || 'No stack trace',
+                        enemyType: e.type,
+                        enemyHP: e.hp,
+                        isChampion: e.isChampion,
+                        championId: e.championId,
+                        hasDraw: !!e.draw,
+                        drawType: typeof e.draw
+                    };
+                    console.error('Error during enemy DRAW:', JSON.stringify(errorDetails, null, 2));
+                    
+                    if (e.isChampion) {
+                        console.error(`🐛 Champion ${e.championId} crashed during DRAW!`);
+                        console.error(`Error: ${drawErr.name}: ${drawErr.message}`);
+                        
+                        // Clean up health bar
+                        if (e.championId) {
+                            const titanIndex = parseInt(e.championId.split('_')[1]);
+                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                            if (barWrapper) {
+                                barWrapper.remove();
+                                console.log(`🗑️ Removed orphaned health bar for ${e.championId} (draw crash)`);
+                            }
+                        }
+                        
                         return false; // Remove crashed champion
                     }
                 }
@@ -17938,6 +18283,9 @@
                 const burning = player.ultimateData.burningGround;
                 const radius = burning.radius;
                 
+                // SAFETY: Ensure time is valid for all calculations
+                const safeTime = (time !== undefined && !isNaN(time) && isFinite(time)) ? time : 0;
+                
                 // SAFETY: Calculate alpha with fallback for invalid values
                 let alpha = 1.0;
                 if (burning.timer !== undefined && burning.timer !== null && 
@@ -17945,7 +18293,8 @@
                     alpha = Math.max(0, Math.min(1, burning.timer / ULTIMATES.phoenix_protocol.burningGround.duration));
                 }
                 
-                const pulse = Math.sin(time * 2.5) * 0.25;
+                // SAFETY: Calculate pulse with fallback for invalid time
+                const pulse = Math.sin(safeTime * 2.5) * 0.25;
                 
                 // Scorched earth gradient (orange/red fire theme)
                 const fireGradient = ctx.createRadialGradient(
@@ -17966,7 +18315,7 @@
                 
                 // Solar flare rings
                 for (let ring = 0; ring < 3; ring++) {
-                    const ringRadius = radius * (0.3 + ring * 0.25) + Math.sin(time * 2 + ring) * 20;
+                    const ringRadius = radius * (0.3 + ring * 0.25) + Math.sin(safeTime * 2 + ring) * 20;
                     ctx.strokeStyle = `rgba(255, ${150 - ring * 30}, 0, ${alpha * 0.4})`;
                     ctx.lineWidth = 3;
                     ctx.shadowBlur = 15;
@@ -17978,13 +18327,13 @@
                 
                 // Flame particles dancing
                 for (let i = 0; i < 16; i++) {
-                    const angle = (i / 16) * Math.PI * 2 + time * 0.4;
-                    const flameDist = radius * (0.5 + Math.sin(time * 1.8 + i) * 0.35);
+                    const angle = (i / 16) * Math.PI * 2 + safeTime * 0.4;
+                    const flameDist = radius * (0.5 + Math.sin(safeTime * 1.8 + i) * 0.35);
                     const fx = burning.x + Math.cos(angle) * flameDist;
                     const fy = burning.y + Math.sin(angle) * flameDist;
-                    const flameSize = 4 + Math.sin(time * 5 + i) * 3;
+                    const flameSize = 4 + Math.sin(safeTime * 5 + i) * 3;
                     
-                    ctx.fillStyle = `rgba(255, ${100 + Math.sin(time * 3 + i) * 100}, 0, ${alpha * 0.8})`;
+                    ctx.fillStyle = `rgba(255, ${100 + Math.sin(safeTime * 3 + i) * 100}, 0, ${alpha * 0.8})`;
                     ctx.shadowBlur = 12;
                     ctx.shadowColor = '#ff6600';
                     ctx.beginPath();
@@ -17993,7 +18342,7 @@
                 }
                 
                 // Bright pulsing core
-                const coreSize = 40 + Math.sin(time * 3.5) * 15;
+                const coreSize = 40 + Math.sin(safeTime * 3.5) * 15;
                 const coreGradient = ctx.createRadialGradient(burning.x, burning.y, 0, burning.x, burning.y, coreSize);
                 coreGradient.addColorStop(0, `rgba(255, 255, 200, ${alpha * 0.9})`);
                 coreGradient.addColorStop(0.4, `rgba(255, 180, 50, ${alpha * 0.7})`);
@@ -19019,6 +19368,17 @@
                 ctx.fillRect(0, 0, width, height);
             }
             
+            // NEXUS PRIME DEATH SCREEN FLASH
+            if (state.finalBoss && state.finalBoss.deathFlash > 0) {
+                const flashIntensity = Math.min(1, state.finalBoss.deathFlash);
+                ctx.fillStyle = `rgba(255, 255, 255, ${flashIntensity * 0.6})`;
+                ctx.fillRect(0, 0, width, height);
+                
+                // Fade out the flash
+                state.finalBoss.deathFlash *= 0.92;
+                if (state.finalBoss.deathFlash < 0.01) state.finalBoss.deathFlash = 0;
+            }
+            
             // Update HUD every ~33ms (30 times per second) for smooth cooldown radars
             if (!state.lastHudUpdate) state.lastHudUpdate = 0;
             if (now - state.lastHudUpdate >= 33) {
@@ -19278,8 +19638,13 @@
             container.innerHTML = '';
             const btn = document.getElementById('reroll-btn');
             const saveBtn = document.getElementById('save-btn');
-            document.getElementById('reroll-count').innerText = state.rerolls;
-            document.getElementById('save-count').innerText = state.saveCharges;
+            
+            // Update counts if elements exist
+            const rerollCount = document.getElementById('reroll-count');
+            const saveCount = document.getElementById('save-count');
+            
+            if (rerollCount) rerollCount.innerText = state.rerolls;
+            if (saveCount) saveCount.innerText = state.saveCharges;
             
             // Get current level-up from queue (default to checking state.level if queue doesn't exist)
             const currentLevelUp = state.levelUpQueue && state.levelUpQueue.length > 0 
