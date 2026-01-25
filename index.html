@@ -569,10 +569,10 @@
             <i class="fas fa-chart-bar text-lg"></i>
         </button>
         
-        <!-- Centered Content Area - Fixed positioning, no scroll -->
-        <div class="absolute inset-0 flex flex-col items-center justify-center">
-            <!-- Ship Selection Carousel - Raised higher -->
-            <div class="mb-8 w-80 relative" style="margin-bottom: 40px;">
+        <!-- Centered Content Area - Fixed positioning, pushed down slightly -->
+        <div class="absolute inset-0 flex flex-col items-center justify-center" style="padding-top: 40px;">
+            <!-- Ship Selection Carousel - Raised higher with extra top padding -->
+            <div class="mb-8 w-80 relative" style="margin-bottom: 40px; padding-top: 50px;">
                 <!-- Navigation Arrows - Inside edges -->
                 <button id="ship-prev" class="absolute left-2 top-1/2 -translate-y-1/2 text-2xl z-10 transition-all disabled:text-gray-800 disabled:cursor-not-allowed text-teal-400 hover:text-teal-300" disabled>
                     <i class="fas fa-chevron-circle-left"></i>
@@ -584,7 +584,7 @@
                 <!-- Ship Display - Vertical Layout -->
                 <div class="flex flex-col items-center">
                     <!-- Ship Icon (Canvas) - Top -->
-                    <div class="mb-3">
+                    <div class="mb-1">
                         <canvas id="ship-canvas" width="70" height="70"></canvas>
                     </div>
                     
@@ -597,7 +597,21 @@
                             <div>WEAPON: <span class="text-teal-400">Ion Cannons</span></div>
                             <div class="text-[9px] text-gray-400 mt-0.5 leading-tight max-w-[200px]">Orbiting cannons that auto-target and fire at nearby enemies</div>
                         </div>
+                        <button id="ship-details-btn" class="mt-2 text-[10px] text-teal-400 hover:text-teal-300 underline cursor-pointer">
+                            More Details
+                        </button>
                     </div>
+                </div>
+            </div>
+            
+            <!-- Ship Details Pop-up Modal -->
+            <div id="ship-details-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50" style="display: none;">
+                <div class="bg-gray-900 border-2 border-teal-500 p-6 rounded-lg max-w-md max-h-[80vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 id="modal-ship-name" class="text-2xl font-bold text-teal-400"></h3>
+                        <button id="close-details-btn" class="text-gray-400 hover:text-white text-2xl">&times;</button>
+                    </div>
+                    <div id="modal-ship-details" class="text-sm text-gray-300 space-y-3"></div>
                 </div>
             </div>
             
@@ -808,15 +822,24 @@
                 <!-- Ultimate Selection -->
                 <div>
                     <label class="text-sm font-bold text-teal-300 mb-2 block">ULTIMATE ABILITY</label>
-                    <select id="test-ultimate-select" class="w-full bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 font-mono text-sm">
-                        <option value="">-- No Ultimate --</option>
-                        <option value="random">Random Ultimate</option>
-                        <option value="skyfall">Skyfall Beam</option>
-                        <option value="event_horizon">Event Horizon</option>
-                        <option value="seismic_bomb">Seismic Bomb</option>
-                        <option value="phoenix_protocol">Phoenix Protocol</option>
-                        <option value="adrenaline_surge">Adrenaline Surge</option>
-                    </select>
+                    <div class="flex gap-2">
+                        <select id="test-ultimate-select" class="flex-1 bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 font-mono text-sm">
+                            <option value="">-- No Ultimate --</option>
+                            <option value="random">Random Ultimate</option>
+                            <option value="skyfall">Skyfall Beam</option>
+                            <option value="event_horizon">Event Horizon</option>
+                            <option value="seismic_bomb">Seismic Bomb</option>
+                            <option value="phoenix_protocol">Phoenix Protocol</option>
+                            <option value="adrenaline_surge">Adrenaline Surge</option>
+                        </select>
+                        <div class="flex items-center gap-2 bg-gray-800 border border-gray-600 rounded px-3">
+                            <input type="checkbox" id="test-instant-ult" class="w-4 h-4">
+                            <label for="test-instant-ult" class="text-xs font-bold text-yellow-300 whitespace-nowrap">
+                                Instant Recharge
+                            </label>
+                        </div>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Instant recharge: Ultimate refills 3 seconds after use</p>
                 </div>
                 
                 <!-- Ultimate Charge -->
@@ -1374,6 +1397,7 @@
             pendingUltimateSelection: false, // Trigger ultimate selection after Titan defeat
             cameraLocked: false, // Lock camera during ultimate cinematics
             ultimateCameraTarget: null, // Target enemy to track during ultimate
+            manualCameraControl: false, // Manual camera pan mode (prevents game loop interference)
             // Ascension System
             activeAscension: 0, // Current ascension level for this run (0 = normal mode)
             bloodlustTimer: 0, // Timer for Ascension 2 stacking (seconds without damage)
@@ -1398,7 +1422,7 @@
             emp: { id: 'emp', type: 'weapon', name: 'EMP Pulse', icon: 'fa-bullseye', desc: 'Slowing pulses that create lingering fields.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'DISRUPTOR' },
             barrier: { id: 'barrier', type: 'weapon', name: 'Kinetic Barrier', icon: 'fa-shield-alt', desc: 'Frontal energy plow that damages, deflects enemies, and redirects projectiles.', offensive: true, validUpgrades: ['dmg', 'area'], shipLocked: 'VANGUARD' },
             orbital: { id: 'orbital', type: 'weapon', name: 'Bladestorm', icon: 'fa-compact-disc', desc: 'Spinning energy blades orbit the ship at close range.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'REAPER' },
-            surge: { id: 'surge', type: 'weapon', name: 'Elemental Surge', icon: 'fa-atom', desc: 'Cycles through elemental orbs that create auras on hit.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'CATALYST' },
+            surge: { id: 'surge', type: 'weapon', name: 'Elemental Surge', icon: 'fa-atom', desc: 'Cycles through elemental orbs. Every 5th hit triggers a burst.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'CATALYST' },
             beam: { id: 'beam', type: 'weapon', name: 'Plasma Beam', icon: 'fa-fire', desc: 'Continuous energy beam.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             seeker: { id: 'seeker', type: 'weapon', name: 'Seeker Swarm', icon: 'fa-rocket', desc: 'Launches homing missiles.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             rad: { id: 'rad', type: 'weapon', name: 'Rad-Field', icon: 'fa-radiation', desc: 'Emits a damaging aura.', offensive: true, validUpgrades: ['dmg', 'area'] },
@@ -1503,9 +1527,9 @@
                 rarity: 'rare',
                 icon: 'fa-star',
                 tiers: [
-                    { level: 1, critChance: 0.15, critDamage: 0.25, costCores: 50, costSingularities: 0, desc: '+15% crit chance, +25% crit damage' },
-                    { level: 2, critChance: 0.25, critDamage: 0.40, costCores: 100, costSingularities: 0, desc: '+25% crit chance, +40% crit damage' },
-                    { level: 3, critChance: 0.35, critDamage: 0.60, costCores: 150, costSingularities: 2, desc: '+35% crit chance, +60% crit damage' }
+                    { level: 1, critChance: 0.10, critDamage: 0.10, costCores: 50, costSingularities: 0, desc: '+10% crit chance, +10% crit damage (adds to base 7% chance, 50% damage)' },
+                    { level: 2, critChance: 0.20, critDamage: 0.20, costCores: 100, costSingularities: 0, desc: '+20% crit chance, +20% crit damage (adds to base 7% chance, 50% damage)' },
+                    { level: 3, critChance: 0.30, critDamage: 0.30, costCores: 150, costSingularities: 2, desc: '+30% crit chance, +30% crit damage (adds to base 7% chance, 50% damage)' }
                 ]
             },
             titan_slayer: {
@@ -1601,9 +1625,9 @@
                 rarity: 'epic',
                 icon: 'fa-layer-group',
                 tiers: [
-                    { level: 1, baseChance: 0.15, chainChance: 0.30, maxChain: 2, costCores: 100, costSingularities: 0, desc: 'Unlock multistrike (15% chance), can chain 2x at 30%' },
-                    { level: 2, baseChance: 0.20, chainChance: 0.40, maxChain: 3, costCores: 200, costSingularities: 0, desc: 'Unlock multistrike (20% chance), can chain 3x at 40%' },
-                    { level: 3, baseChance: 0.25, chainChance: 0.50, maxChain: 5, costCores: 300, costSingularities: 3, desc: 'Unlock multistrike (25% chance), can chain 5x at 50%' }
+                    { level: 1, baseChance: 0.15, chainChance: 0.15, costCores: 100, costSingularities: 0, desc: 'Unlock multistrike (15% chance), +15% chance for 1 additional chain' },
+                    { level: 2, baseChance: 0.20, chainChance: 0.30, costCores: 200, costSingularities: 0, desc: 'Unlock multistrike (20% chance), +30% chance for 1 additional chain' },
+                    { level: 3, baseChance: 0.25, chainChance: 0.50, costCores: 300, costSingularities: 3, desc: 'Unlock multistrike (25% chance), +50% chance for 1 additional chain' }
                 ]
             },
             emergency_barrier: {
@@ -1616,6 +1640,18 @@
                     { level: 1, threshold: 0.20, duration: 2, cooldown: 60, costCores: 100, costSingularities: 0, desc: 'Invulnerable for 2s when below 20% HP (1min cooldown)' },
                     { level: 2, threshold: 0.25, duration: 3, cooldown: 50, costCores: 200, costSingularities: 0, desc: 'Invulnerable for 3s when below 25% HP (50s cooldown)' },
                     { level: 3, threshold: 0.30, duration: 4, cooldown: 40, costCores: 300, costSingularities: 3, desc: 'Invulnerable for 4s when below 30% HP (40s cooldown)' }
+                ]
+            },
+            reactive_shielding: {
+                id: 'reactive_shielding',
+                name: 'Reactive Shielding',
+                category: 'defense',
+                rarity: 'epic',
+                icon: 'fa-stopwatch',
+                tiers: [
+                    { level: 1, invulnBonus: 15, costCores: 100, costSingularities: 0, desc: 'Invulnerability window after taking damage: 0.75s → 1.0s' },
+                    { level: 2, invulnBonus: 30, costCores: 200, costSingularities: 0, desc: 'Invulnerability window after taking damage: 0.75s → 1.25s' },
+                    { level: 3, invulnBonus: 45, costCores: 300, costSingularities: 3, desc: 'Invulnerability window after taking damage: 0.75s → 1.5s' }
                 ]
             }
         };
@@ -1639,6 +1675,7 @@
                 spd: '100%',
                 weapon: 'Ion Cannons',
                 weaponDesc: 'Orbiting cannons that auto-target and fire at nearby enemies',
+                weaponDetails: 'Starts with 1 orbiting ion cannon that automatically targets and fires at the closest enemy to itself. Cannons orbit around the ship at a fixed radius, providing consistent coverage.\n\nAs you upgrade this weapon, you gain additional cannons (up to 4 total at max level), and each upgrade increases damage, fire rate, and orbit radius.\n\nEach cannon independently targets the enemy closest to its current position. Perfect for consistent, reliable damage output.',
                 locked: false
             },
             'ENGINEER': {
@@ -1649,6 +1686,7 @@
                 spd: '100%',
                 weapon: 'Auto-Turret',
                 weaponDesc: 'Deploys stationary turrets that auto-target and fire independently',
+                weaponDetails: 'Automatically deploys stationary turrets as you move. Starts with 2 turrets that remain in position and independently target and fire at enemies within their range.\n\nAs you upgrade, you gain more turrets (up to 4 total), increased turret damage, longer range, faster fire rate, and each turret can target multiple enemies simultaneously.\n\nTurrets last indefinitely. Deploying more turrets than the current maximum will replace the oldest turret first.',
                 unlockCores: 10,
                 unlockAchievement: 'Survive to Level 20',
                 locked: true
@@ -1661,6 +1699,7 @@
                 spd: '110%',
                 weapon: 'EMP Pulse',
                 weaponDesc: 'Electromagnetic pulse that slows enemies and projectiles in range',
+                weaponDetails: 'Fires an EMP projectile that creates an electromagnetic pulse field on impact. Enemies caught in the initial impact take damage.\n\nThe pulse field lingers for 2.5 seconds, slowing all enemies within its radius. The slow effect stacks up to 3 times on each enemy for maximum crowd control.\n\nEnemy projectiles within the field are also slowed, giving you more time to dodge.\n\nAs you upgrade, the pulse field radius expands and damage increases. Particularly effective against large groups and bullet-heavy enemies.',
                 unlockCores: 20,
                 unlockAchievement: 'Survive to Level 30',
                 locked: true
@@ -1673,6 +1712,7 @@
                 spd: '80%',
                 weapon: 'Kinetic Barrier',
                 weaponDesc: 'Frontal energy plow - damages and deflects enemies, redirects projectiles',
+                weaponDetails: 'Projects a kinetic energy barrier in front of the ship. Contact with the barrier deals impact damage to enemies, briefly stuns them, and deflects them away.\n\nEnemy projectiles that hit the barrier are redirected harmlessly.\n\nThe barrier\'s damage and size scale with your current Max HP, Armor, and Movement Speed - making defensive upgrades also boost your offensive power.\n\nUpgrades increase base damage, barrier size, and deflection force. Ideal for aggressive, in-your-face gameplay.',
                 unlockCores: 30,
                 unlockAchievement: 'Survive to Level 40',
                 locked: true
@@ -1685,10 +1725,11 @@
                 spd: '130%',
                 weapon: 'Bladestorm',
                 weaponDesc: 'Spinning energy blades orbit close while launching piercing knife bursts',
+                weaponDetails: 'Dual-attack weapon system.\n\nClose-range: 5 spinning energy blades orbit tightly around the ship, shredding nearby enemies.\n\nLong-range: Periodically launches piercing knife projectiles at random enemies, dealing high damage and passing through multiple targets.\n\nAs you upgrade, blade length and orbit radius increase, damage improves significantly, knife damage and pierce count increase, and launch frequency increases. High damage output but requires aggressive positioning.',
                 unlockSingularities: 1,
                 unlockRuns: 30,
                 unlockAchievement: 'Defeat NEXUS PRIME & Complete 30 Runs',
-                locked: true // Properly locked
+                locked: true
             },
             'CATALYST': {
                 name: 'CATALYST',
@@ -1697,7 +1738,8 @@
                 dmg: '90%',
                 spd: '100%',
                 weapon: 'Elemental Surge',
-                weaponDesc: 'Cycles through elemental orbs, creates brief auras on hit',
+                weaponDesc: 'Cycles through elemental orbs, every 5th hit bursts',
+                weaponDetails: 'Fires elemental orbs that cycle through Pyro, Cryo, Volt, and Bio elements. Each orb applies its respective elemental effect on hit with AOE damage.\n\nEvery 5th hit triggers a powerful resonance burst, creating a massive explosion of the current element.\n\nThe cycling system ensures you consistently apply all elemental effects.\n\nUpgrades increase orb damage, AOE radius, and fire rate. Synergizes exceptionally well with elemental mastery upgrades.',
                 unlockSingularities: 3,
                 unlockRuns: 50,
                 unlockAchievement: 'Proc 4 elements in the same run',
@@ -1723,7 +1765,7 @@
             { id: 'fire', name: 'Pyro Mod', desc: 'Burns for ramping damage over time.', icon: 'fa-fire', color: '#ff5722' },
             { id: 'ice', name: 'Cryo Mod', desc: 'Slows enemies, spreads to nearby, freezes after 2s.', icon: 'fa-snowflake', color: '#88d8ff' },
             { id: 'volt', name: 'Volt Mod', desc: 'Chains lightning to nearby enemies.', icon: 'fa-bolt', color: '#ffeb3b' },
-            { id: 'bio', name: 'Bio Mod', desc: 'Decay damage spreads once to nearest enemy.', icon: 'fa-biohazard', color: '#00cc44' },
+            { id: 'bio', name: 'Bio Mod', desc: 'Decay damage over time that reduces enemy armor. Spreads once to nearest enemy.', icon: 'fa-biohazard', color: '#00cc44' },
             { id: 'hack', name: 'Cyber Hack', desc: 'Turns weaker enemies to fight for you temporarily.', icon: 'fa-terminal', color: '#9c27b0' }
         ];
 
@@ -1732,7 +1774,7 @@
             fire: { id: 'fire', type: 'mastery', name: 'Pyro Mastery', desc: '+2s burn duration, +0.5% HP/tick', icon: 'fa-fire-alt', offensive: true },
             ice: { id: 'ice', type: 'mastery', name: 'Cryo Control', desc: '+50% aura range, frozen take +50% damage', icon: 'fa-snowflake', offensive: true },
             volt: { id: 'volt', type: 'mastery', name: 'Volt Amplifier', desc: '+1 chain jump, +30% chain damage', icon: 'fa-bolt', offensive: true },
-            bio: { id: 'bio', type: 'mastery', name: 'Bio Accelerator', desc: 'Ticks 50% faster, +1% starting damage', icon: 'fa-biohazard', offensive: true },
+            bio: { id: 'bio', type: 'mastery', name: 'Bio Accelerator', desc: 'Decay ticks 50% faster (more armor reduction), +1% starting damage', icon: 'fa-biohazard', offensive: true },
             hack: { id: 'hack', type: 'mastery', name: 'Hack Override', desc: '+2s duration, +67% damage, can hack elite enemies (tanks, voidwalkers)', icon: 'fa-terminal', offensive: true }
         };
 
@@ -1816,19 +1858,23 @@
                     this.shield1 = 100; // 1 shield only
                     this.shield2 = 0;
                     this.shield3 = 0;
+                    this.shield4 = 0; // Disruptor doesn't use shield4
                 } else if (this.selectedShip === 'VANGUARD') {
                     this.shield1 = 100; // 3 shields
                     this.shield2 = 100;
                     this.shield3 = 100;
+                    this.shield4 = 0; // Only available with Shield Capacitor Tier 3 augment
                 } else if (this.selectedShip === 'REAPER') {
                     this.shield1 = 0; // 0 shields - glass cannon
                     this.shield2 = 0;
                     this.shield3 = 0;
+                    this.shield4 = 0; // Reaper doesn't use shield4
                 } else {
                     // Pathfinder and Engineer: 2 shields (default)
                     this.shield1 = 100;
                     this.shield2 = 100;
                     this.shield3 = 0;
+                    this.shield4 = 0; // Only Vanguard uses shield4 with augment
                 }
                 
                 console.log(`🛡️ Shields initialized for ${this.selectedShip}: s1=${this.shield1}, s2=${this.shield2}, s3=${this.shield3}`);
@@ -1952,7 +1998,10 @@
 
             applyAscensionModifiers() {
                 const ascension = state.activeAscension || 0;
-                if (ascension === 0) return; // No modifiers for normal mode
+                if (ascension === 0) {
+                    console.log('✅ No ascension debuffs applied (Normal Mode)');
+                    return; // No modifiers for normal mode
+                }
                 
                 console.log(`🔥 Applying Ascension ${ascension} unique debuffs`);
                 
@@ -2037,10 +2086,26 @@
             }
             
             applyAugmentEffects() {
-                console.log('🔮 Applying augment effects to player...');
+                console.log('🔮 Checking for augment effects...');
+                console.log('  augmentProgress exists:', typeof augmentProgress !== 'undefined');
+                console.log('  augmentProgress:', augmentProgress);
+                
+                // Safety check: Ensure augmentProgress exists
+                if (typeof augmentProgress === 'undefined' || !augmentProgress || !augmentProgress.loadout) {
+                    console.log('✅ No augments available (new player or system not unlocked)');
+                    return;
+                }
                 
                 // Get equipped augments from loadout
                 const equippedAugments = augmentProgress.loadout.filter(id => id !== null);
+                console.log('  Equipped augments:', equippedAugments);
+                
+                if (equippedAugments.length === 0) {
+                    console.log('✅ No augments equipped');
+                    return;
+                }
+                
+                console.log(`🔮 Applying ${equippedAugments.length} equipped augment(s)...`);
                 
                 equippedAugments.forEach(augmentId => {
                     const augment = augmentDefs[augmentId];
@@ -2056,38 +2121,47 @@
                     switch (augmentId) {
                         case 'armor_piercing':
                             this.armorPiercing = tierData.effect;
+                            console.log(`  🎯 Armor Piercing: ${(tierData.effect * 100).toFixed(0)}% enemy armor reduction`);
                             break;
                             
                         case 'fortified_hull':
                             // Apply max HP bonus
+                            const hpBefore = this.maxHp;
                             this.maxHp = Math.floor(this.maxHp * (1 + tierData.hpBonus));
                             this.hp = this.maxHp;
                             // Store HP upgrade bonus for later use
                             this.fortifiedHullUpgradeBonus = tierData.upgradeBonus;
+                            console.log(`  🛡️ Fortified Hull: Max HP ${hpBefore} → ${this.maxHp}, +${(tierData.upgradeBonus * 100).toFixed(0)}% HP upgrades`);
                             break;
                             
                         case 'treasure_hunter':
                             this.pickupRadiusBonus = tierData.pickupRadius;
                             this.xpBonus = tierData.xpBonus;
+                            console.log(`  💎 Treasure Hunter: +${(tierData.pickupRadius * 100).toFixed(0)}% pickup radius, +${(tierData.xpBonus * 100).toFixed(0)}% XP`);
                             break;
                             
                         case 'rapid_fire':
                             this.fireRateBonus = tierData.fireRateBonus;
                             this.rapidFireDamageReduction = tierData.damageReduction;
+                            console.log(`  ⚡ Rapid Fire: +${(tierData.fireRateBonus * 100).toFixed(0)}% fire rate, -${(tierData.damageReduction * 100).toFixed(0)}% damage`);
                             break;
                             
                         case 'nanite_swarm':
-                            this.naniteHealPerSecond = tierData.healPerSecond;
-                            this.naniteHealTimer = 0;
+                            this.regen += tierData.healPerSecond; // Add to regen stat
+                            console.log(`  🔧 Nanite Swarm: +${tierData.healPerSecond} HP/s regen (total: ${this.regen.toFixed(2)} HP/s)`);
                             break;
                             
                         case 'critical_mass':
+                            const critBefore = this.critChance;
+                            const multBefore = this.critMult;
                             this.critChance += tierData.critChance;
                             this.critMult += tierData.critDamage;
+                            console.log(`  💥 Critical Mass: Crit ${(critBefore*100).toFixed(1)}% → ${(this.critChance*100).toFixed(1)}%, Mult ${multBefore.toFixed(2)}x → ${this.critMult.toFixed(2)}x`);
                             break;
                             
                         case 'titan_slayer':
                             this.titanSlayerBonus = tierData.bossDamage;
+                            console.log(`  🐉 Titan Slayer: +${(tierData.bossDamage * 100).toFixed(0)}% damage to bosses/titans`);
                             break;
                             
                         case 'adaptive_armor':
@@ -2095,11 +2169,13 @@
                             this.adaptiveArmorMaxStacks = tierData.maxStacks;
                             this.adaptiveArmorStacks = 0;
                             this.adaptiveArmorTimer = 0;
+                            console.log(`  🛡️ Adaptive Armor: +${tierData.armorPerSecond} armor/s (max ${tierData.maxStacks} stacks)`);
                             break;
                             
                         case 'elemental_savant':
                             this.elementalProcBonus = tierData.procBonus;
                             this.elementalDamageBonus = tierData.damageBonus;
+                            console.log(`  ⚡ Elemental Savant: +${(tierData.procBonus * 100).toFixed(0)}% proc chance, +${(tierData.damageBonus * 100).toFixed(0)}% elemental damage`);
                             break;
                             
                         case 'shield_capacitor':
@@ -2161,8 +2237,7 @@
                             this.multistrikeUnlocked = true;
                             this.multicast = tierData.baseChance;
                             this.cascadeChainChance = tierData.chainChance;
-                            this.cascadeMaxChain = tierData.maxChain;
-                            console.log(`  🔗 Cascade: base ${(tierData.baseChance*100).toFixed(0)}%, chain ${(tierData.chainChance*100).toFixed(0)}%, max ${tierData.maxChain}x`);
+                            console.log(`  🔗 Cascade: base ${(tierData.baseChance*100).toFixed(0)}%, +${(tierData.chainChance*100).toFixed(0)}% chance for 1 extra chain`);
                             break;
                             
                         case 'emergency_barrier':
@@ -2171,6 +2246,11 @@
                             this.barrierCooldownDuration = tierData.cooldown * 60; // Convert to frames
                             this.barrierActive = 0;
                             this.barrierCooldown = 0;
+                            break;
+                            
+                        case 'reactive_shielding':
+                            this.invulnBonusFrames = tierData.invulnBonus; // Bonus frames added to invuln timer
+                            console.log(`  ⏱️ Reactive Shielding: +${tierData.invulnBonus} frames (${(tierData.invulnBonus/60).toFixed(2)}s) invuln window`);
                             break;
                     }
                 });
@@ -2411,8 +2491,7 @@
                         flash.style.background = '#ff0000'; // Reset to red
                     }, 100);
                     
-                    // Subtle camera shake for shield hit
-                    state.shake = 5;
+                    // Camera shake removed - only on HP damage now
                     
                     this.invulnTimer = 60;
                     
@@ -2578,7 +2657,10 @@
                     
                     const flash = document.getElementById('damage-flash');
                     flash.style.opacity = 0.6; setTimeout(() => flash.style.opacity = 0, 100);
-                    this.invulnTimer = 30; // Back to 0.5 seconds - was 60 (1 second)
+                    
+                    // Base invuln: 0.75s (45 frames)
+                    // Reactive Shielding augment adds bonus frames
+                    this.invulnTimer = 45 + (this.invulnBonusFrames || 0);
                     
                     // RED DAMAGE NUMBER for player (bigger and pulsing for enemy crit)
                     entities.texts.push({
@@ -2859,6 +2941,12 @@
                     }
                 }
                 
+                // CRITICAL: Force immediate HUD update to show damage taken
+                // This ensures the UI reflects current HP/shields even if game is running slow
+                if (typeof updateHud === 'function') {
+                    updateHud();
+                }
+                
                 if(this.hp <= 0) {
                     console.log('💀 Player HP <= 0, triggering death...');
                     console.log('   state.playerDead:', state.playerDead);
@@ -2983,123 +3071,8 @@
                     if (this.whipVisualTimer < 0) this.whipVisualTimer = 0;
                 }
                 
-                // CATALYST: Update surge aura (PERFORMANCE OPTIMIZED)
-                if (this.selectedShip === 'CATALYST') {
-                    // Update surge aura timer and apply aura effects
-                    if (this.surgeAuraTimer > 0) {
-                        this.surgeAuraTimer -= dt/16;
-                        
-                        // Initialize aura pulse timer if needed
-                        if (!this.surgeAuraPulse) this.surgeAuraPulse = 0;
-                        this.surgeAuraPulse += dt/16;
-                        
-                        // MAJOR OPTIMIZATION: Only update aura every 0.33 seconds (framerate independent)
-                        if (!this.surgeAuraUpdateCounter) this.surgeAuraUpdateCounter = 0;
-                        this.surgeAuraUpdateCounter += dt/16;
-                        
-                        // Reduced update frequency - 20 "frames" (0.33 seconds at 60fps) - framerate independent
-                        const updateInterval = 20; // In "frames" but dt-scaled
-                        
-                        // Only update aura effects every 0.33 seconds
-                        if (this.surgeAuraUpdateCounter >= updateInterval) {
-                            this.surgeAuraUpdateCounter = 0;
-                            
-                            // Apply aura effects based on element
-                            const auraRadius = 120;
-                            const auraRadiusSq = auraRadius * auraRadius; // Square for faster comparison
-                            
-                            // Safety check: entities.enemies might not exist yet at game start
-                            if (entities && entities.enemies) {
-                                // OPTIMIZED: Pre-filter enemies more aggressively
-                                const enemiesInRange = [];
-                                for (let e of entities.enemies) {
-                                    if (e.hp <= 0) continue;
-                                    
-                                    // Fast distance check using squared distance (no sqrt needed)
-                                    const dx = e.x - this.x;
-                                    const dy = e.y - this.y;
-                                    const distSq = dx * dx + dy * dy;
-                                    
-                                    if (distSq < auraRadiusSq) {
-                                        enemiesInRange.push(e);
-                                    }
-                                    
-                                    // LIMIT: Max 20 enemies per aura update for performance
-                                    if (enemiesInRange.length >= 20) break;
-                                }
-                                
-                                for (let e of enemiesInRange) {
-                                    if (this.surgeAuraElement === 'fire') {
-                                        // FIRE AURA: Stacking burn - gets STRONGER over time in aura
-                                        if (!e.fireAuraStacks) e.fireAuraStacks = 0;
-                                        
-                                        // Pulse every 10 frames (0.167s) - fast ticking
-                                        if (this.surgeAuraPulse >= 10 && this.surgeAuraPulse < 10.5) {
-                                            e.fireAuraStacks = Math.min(e.fireAuraStacks + 1, 5); // Stack up to 5
-                                            const dmg = this.damage * 0.5 * e.fireAuraStacks; // Ramps: 0.5x, 1x, 1.5x, 2x, 2.5x
-                                            e.takeDamage(dmg, '#ff5722', false, 'normal', 'surge', 'fire');
-                                            
-                                            // Minimal particles
-                                            const particleCount = Math.min(e.fireAuraStacks, 2);
-                                            for (let i = 0; i < particleCount; i++) {
-                                                entities.particles.push(new Particle(e.x, e.y, '#ff5722', 2));
-                                            }
-                                        }
-                                    } else if (this.surgeAuraElement === 'ice') {
-                                        // Ice aura: 30% slow
-                                        e.cryoState.slowed = true;
-                                    } else if (this.surgeAuraElement === 'volt') {
-                                        // Volt aura: Chain lightning (reduced frequency for performance)
-                                        if (seededRandom() < 0.05 * (dt/16)) {
-                                            this.chainVolt(e, this.damage * 0.6, 0, 1, 'surge');
-                                            entities.particles.push(new Particle(e.x, e.y, '#ffeb3b', 2));
-                                        }
-                                    } else if (this.surgeAuraElement === 'bio') {
-                                        // BIO AURA: Spreading contagion - jumps between enemies
-                                        // Pulse every 20 frames (0.333s) - slower, heavier hits
-                                        if (this.surgeAuraPulse >= 20 && this.surgeAuraPulse < 20.5) {
-                                            // Damage this enemy
-                                            e.takeDamage(this.damage * 1.2, '#39ff14', false, 'normal', 'surge', 'bio');
-                                            
-                                            // SPREAD to nearest enemy only (max 1 spread for performance)
-                                            let nearestTarget = null;
-                                            let nearestDistSq = 6400; // 80px squared
-                                            
-                                            for (let target of enemiesInRange) {
-                                                if (target === e || target.hp <= 0) continue;
-                                                const dx = target.x - e.x;
-                                                const dy = target.y - e.y;
-                                                const distSq = dx * dx + dy * dy;
-                                                if (distSq < nearestDistSq) {
-                                                    nearestDistSq = distSq;
-                                                    nearestTarget = target;
-                                                }
-                                            }
-                                            
-                                            if (nearestTarget) {
-                                                nearestTarget.takeDamage(this.damage * 0.6, '#39ff14', false, 'normal', 'surge', 'bio');
-                                                // Minimal spread particles
-                                                entities.particles.push(new Particle(e.x, e.y, '#39ff14', 2));
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        
-                        // Reset pulse counter
-                        if (this.surgeAuraPulse >= 20.5) {
-                            this.surgeAuraPulse = 0;
-                        }
-                    } else {
-                        // Clear fire aura stacks when aura expires
-                        if (entities && entities.enemies) {
-                            entities.enemies.forEach(e => {
-                                if (e.fireAuraStacks) e.fireAuraStacks = 0;
-                            });
-                        }
-                    }
-                }
+                // CATALYST: Aura functionality removed for clean gameplay
+                // Burst every 5th hit still functions normally
                 
                 // SHIELD RECHARGE SYSTEM
                 // Once a shield STARTS charging (timer <= 0), it NEVER stops until 100%
@@ -3111,7 +3084,7 @@
                 const hasShield1 = this.selectedShip !== 'REAPER'; // All ships except Reaper have shield1
                 const hasShield2 = this.selectedShip !== 'REAPER' && this.selectedShip !== 'DISRUPTOR'; // Pathfinder, Engineer, Vanguard
                 const hasShield3 = this.selectedShip === 'VANGUARD'; // Only Vanguard
-                const hasShield4 = this.selectedShip === 'VANGUARD' && this.shield4 !== undefined; // Only Vanguard with Shield Capacitor
+                const hasShield4 = this.selectedShip === 'VANGUARD' && (this.shield4 === 100 || this.shield4RechargeTimer > 0); // Only Vanguard with Shield Capacitor Tier 3
                 
                 const shield1Charging = hasShield1 && this.shield1 < 100 && this.shield1RechargeTimer <= 0;
                 const shield2Charging = hasShield2 && this.shield2 < 100 && this.shield2RechargeTimer <= 0;
@@ -7283,65 +7256,17 @@
                     const time = Date.now() * 0.001;
                     const auraRadius = 120;
                     
-                    // OPTIMIZATION: Reduce stream count based on performance mode
-                    const numStreams = perfMode === 'minimal' ? 3 : perfMode === 'reduced' ? 4 : 6;
-                    for (let i = 0; i < numStreams; i++) {
-                        const baseAngle = (i / numStreams) * Math.PI * 2;
-                        const rotation = -time * 2; // Negative for opposite direction
-                        const angle = baseAngle + rotation;
-                        
-                        // Draw curved energy stream
-                        ctx.strokeStyle = auraColor;
-                        ctx.globalAlpha = alpha * 0.3;
-                        ctx.lineWidth = 2;
-                        if (useShadows) {
-                            ctx.shadowBlur = 15;
-                            ctx.shadowColor = auraColor;
-                        }
-                        
-                        ctx.beginPath();
-                        // OPTIMIZATION: Reduce spiral detail based on performance
-                        const spiralStep = perfMode === 'minimal' ? 10 : perfMode === 'reduced' ? 7 : 5;
-                        for (let r = 20; r < auraRadius; r += spiralStep) {
-                            const spiralAngle = angle + (r / auraRadius) * Math.PI * 0.5;
-                            const x = Math.cos(spiralAngle) * r;
-                            const y = Math.sin(spiralAngle) * r;
-                            if (r === 20) {
-                                ctx.moveTo(x, y);
-                            } else {
-                                ctx.lineTo(x, y);
-                            }
-                        }
-                        ctx.stroke();
-                    }
-                    
-                    // OPTIMIZATION: Reduce particle count based on performance mode
-                    const numParticles = perfMode === 'minimal' ? 4 : perfMode === 'reduced' ? 6 : 8;
-                    for (let i = 0; i < numParticles; i++) {
-                        const particleAngle = (i / numParticles) * Math.PI * 2 + time * 1.5;
-                        const x = Math.cos(particleAngle) * auraRadius;
-                        const y = Math.sin(particleAngle) * auraRadius;
-                        
-                        ctx.fillStyle = auraColor;
-                        ctx.globalAlpha = alpha * 0.6;
-                        if (useShadows) {
-                            ctx.shadowBlur = 10;
-                            ctx.shadowColor = auraColor;
-                        }
-                        ctx.beginPath();
-                        ctx.arc(x, y, 3, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                    
-                    // Inner soft glow (no hard edges)
-                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, auraRadius * 0.6);
+                    // Simple pulsing glow instead of complex spirals (prevents flickering during slowdown)
+                    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, auraRadius * 0.8);
                     const rgb = auraColor.match(/\w\w/g).map(x => parseInt(x, 16));
-                    gradient.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${alpha * 0.15})`);
+                    const pulseAlpha = alpha * (0.2 + Math.sin(time * 3) * 0.1);
+                    gradient.addColorStop(0, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${pulseAlpha})`);
+                    gradient.addColorStop(0.5, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, ${pulseAlpha * 0.5})`);
                     gradient.addColorStop(1, `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0)`);
                     ctx.fillStyle = gradient;
                     ctx.globalAlpha = 1;
                     ctx.beginPath();
-                    ctx.arc(0, 0, auraRadius * 0.6, 0, Math.PI * 2);
+                    ctx.arc(0, 0, auraRadius * 0.8, 0, Math.PI * 2);
                     ctx.fill();
                     
                     ctx.globalAlpha = 1.0;
@@ -7684,21 +7609,21 @@
                     aoe: 18      // Increased from 12% - strong AoE
                 },
                 shockwave1: {
-                    delay: 500,
+                    delay: 300, // Reduced from 500ms - faster sequence
                     radius: 280, // Increased from 250
                     damage: 14,  // Increased from 10%
                     stunDuration: 2500 // Increased from 2000ms
                 },
                 shockwave2: {
-                    delay: 1000,
+                    delay: 600, // Reduced from 1000ms - faster sequence
                     radius: 400, // Increased from 350
                     damage: 9,   // Increased from 6%
                     stunDuration: 2500
                 },
                 burningGround: {
                     radius: 180, // Increased from 150
-                    duration: 3500, // Increased from 3000ms
-                    damagePerSecond: 4 // Increased from 3% per second
+                    duration: 2000, // Reduced from 3500ms - much faster
+                    damagePerSecond: 4 // 4% per second = 8% total over 2s
                 },
                 chargeTime: 75, // Base 75 seconds
                 damageChargeBonus: 0.00024 // 0.024% per 100 damage
@@ -7773,6 +7698,14 @@
             player.ultimateCharge = 0;
             player.ultimateActive = true;
             
+            // Test Mode: Instant Ultimate Recharge (refill after 3 seconds)
+            if (testModeEnabled && testModeSettings.instantUltRecharge) {
+                setTimeout(() => {
+                    player.ultimateCharge = 100;
+                    console.log('⚡ Test Mode: Ultimate instantly recharged to 100%');
+                }, 3000); // 3 seconds
+            }
+            
             // Phoenix Protocol doesn't need a target - centered on player
             if (player.ultimate === 'phoenix_protocol') {
                 executePhoenixProtocol();
@@ -7797,21 +7730,27 @@
             
             console.log('🎯 Target found:', target.type, 'HP:', target.hp);
             
-            // Pan camera to target, then execute ultimate
-            panCameraToTarget(target, (targetEnemy) => {
-                // Execute ultimate based on type
-                switch (player.ultimate) {
-                    case 'skyfall':
+            // Execute ultimate based on type
+            switch (player.ultimate) {
+                case 'skyfall':
+                    // Skyfall uses camera pan
+                    panCameraToTarget(target, (targetEnemy) => {
                         executeSkyfallBeam(targetEnemy);
-                        break;
-                    case 'event_horizon':
-                        executeEventHorizon(targetEnemy);
-                        break;
-                    case 'seismic_bomb':
-                        executeSeismicBomb(targetEnemy);
-                        break;
-                }
-            });
+                    });
+                    break;
+                    
+                case 'event_horizon':
+                    // Event Horizon targets densest cluster (like Seismic Bomb)
+                    const eventHorizonCluster = findDensestCluster(target);
+                    executeEventHorizon(eventHorizonCluster);
+                    break;
+                    
+                case 'seismic_bomb':
+                    // Seismic Bomb handles its own camera (no pan needed)
+                    const clusterLocation = findDensestCluster(target);
+                    executeSeismicBomb(clusterLocation);
+                    break;
+            }
         }
         
         // Auto-targeting: Find highest priority enemy ON SCREEN
@@ -8063,7 +8002,7 @@
                 
                 // Visual feedback
                 createExplosion(target.x, target.y, '#00d4ff', 30 + (tickCount * 5));
-                state.shake = 15 + (tickCount * 3);
+                // Camera shake removed
                 
                 // Damage text - use FloatingText class (larger and longer for ultimates)
                 const damageColor = tickCount === 4 ? '#ffdd57' : '#00d4ff'; // Gold for final tick
@@ -8123,43 +8062,34 @@
         
         // EVENT HORIZON: Singularity that pulls enemies then collapses
         function executeEventHorizon(target) {
-            console.log('🌀 Event Horizon activating at target:', target ? target.type : 'INVALID');
+            console.log('🌀 Event Horizon activating');
             
-            // Get the CURRENT position of the target (not the position from when targeting started)
+            // Determine singularity location
             let singularityX, singularityY;
-            
-            // Validate target still exists and has valid coordinates
             if (!target || target.hp <= 0 || typeof target.x !== 'number' || typeof target.y !== 'number') {
-                console.log('⚠️ Event Horizon target invalid or dead, using player position');
+                console.log('⚠️ No valid target, centering on player');
                 singularityX = player.x;
                 singularityY = player.y;
             } else {
-                // Use CURRENT target position (important for moving enemies)
                 singularityX = target.x;
                 singularityY = target.y;
-                console.log('✅ Event Horizon locked to target at:', singularityX, singularityY);
+                console.log('✅ Singularity at target:', singularityX, singularityY);
             }
-            
-            // Invulnerability for ultimate duration + camera pans + 1s buffer
-            // 500ms camera in + 3000ms pull + 500ms camera out + 1000ms buffer = 5000ms = 300 frames
-            player.invulnTimer = Math.max(player.invulnTimer, 300);
             
             const ultimateData = ULTIMATES.event_horizon;
             
-            // IMPORTANT: Pan camera to the ACTUAL singularity position
-            // This ensures camera goes where the ultimate will actually happen
+            // Player invulnerability: 3.5s total (pan + pull + collapse + return)
+            player.invulnTimer = Math.max(player.invulnTimer, 210);
+            
+            // SMOOTH camera pan to singularity (0.5s)
             const startCamX = state.camera.x;
             const startCamY = state.camera.y;
             const targetCamX = width/2 - singularityX * state.zoom;
             const targetCamY = height/2 - singularityY * state.zoom;
-            const panDuration = 300; // Shorter pan since we're already close from panCameraToTarget
+            const panDuration = 500;
             const panStartTime = Date.now();
             
-            // Update camera lock to Event Horizon position
             state.cameraLocked = true;
-            state.lockedWorldX = singularityX;
-            state.lockedWorldY = singularityY;
-            state.ultimateCameraTarget = null; // Clear old target, we have a fixed position now
             
             const panInterval = setInterval(() => {
                 const elapsed = Date.now() - panStartTime;
@@ -8171,129 +8101,167 @@
                 
                 if (progress >= 1) {
                     clearInterval(panInterval);
+                    // Lock camera to world position
+                    state.lockedWorldX = singularityX;
+                    state.lockedWorldY = singularityY;
+                    console.log('🎥 Camera locked to singularity');
                 }
             }, 16);
             
-            // Create singularity visual at the LOCKED position
-            player.ultimateData.eventHorizon = {
-                x: singularityX,
-                y: singularityY,
-                pullTimer: ultimateData.pullDuration,
-                active: true,
-                phase: 'pull' // pull -> collapse
-            };
-            
-            // Pull phase (3 seconds)
-            const pullInterval = setInterval(() => {
-                if (!player.ultimateData.eventHorizon || !player.ultimateData.eventHorizon.active) {
-                    clearInterval(pullInterval);
-                    return;
-                }
+            // Wait for pan to complete, then start pull phase
+            setTimeout(() => {
+                // Create singularity
+                player.ultimateData.eventHorizon = {
+                    x: singularityX,
+                    y: singularityY,
+                    pullTimer: ultimateData.pullDuration,
+                    active: true,
+                    phase: 'pull'
+                };
                 
-                player.ultimateData.eventHorizon.pullTimer -= 16;
+                console.log('🌀 Event Horizon pull phase started');
                 
-                // Pull enemies toward singularity
-                entities.enemies.forEach(e => {
-                    if (e.hp <= 0) return;
-                    
-                    const dx = singularityX - e.x;
-                    const dy = singularityY - e.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    
-                    if (dist < ultimateData.pullRadius) {
-                        let pullStrength = ultimateData.pullStrength;
-                        
-                        // Reduce pull on bosses/titans
-                        if (e.isNexusPrime) pullStrength *= 0.3;
-                        else if (e.isChampion) pullStrength *= 0.5;
-                        
-                        // Pull toward center
-                        e.x += (dx / dist) * pullStrength;
-                        e.y += (dy / dist) * pullStrength;
-                        
-                        // Disable normal enemies (not bosses/titans)
-                        if (!e.isNexusPrime && !e.isChampion) {
-                            e.vx = 0;
-                            e.vy = 0;
-                        }
+                // Pull phase loop (runs every frame for 3 seconds)
+                const pullInterval = setInterval(() => {
+                    const eventHorizon = player.ultimateData.eventHorizon;
+                    if (!eventHorizon || !eventHorizon.active) {
+                        clearInterval(pullInterval);
+                        return;
                     }
-                });
-                
-                // End pull phase after 3 seconds
-                if (player.ultimateData.eventHorizon.pullTimer <= 0) {
-                    clearInterval(pullInterval);
-                    player.ultimateData.eventHorizon.phase = 'collapse';
                     
-                    // Collapse damage
-                    setTimeout(() => {
-                        if (!player.ultimateData.eventHorizon) return;
+                    eventHorizon.pullTimer -= 16;
+                    
+                    // Pull enemies toward singularity AND deal damage during pull
+                    entities.enemies.forEach(e => {
+                        if (e.hp <= 0) return;
                         
-                        // Deal damage based on distance from center
-                        entities.enemies.forEach(e => {
-                            if (e.hp <= 0) return;
+                        const dx = singularityX - e.x;
+                        const dy = singularityY - e.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy);
+                        
+                        if (dist < ultimateData.pullRadius) {
+                            let pullStrength = ultimateData.pullStrength;
+                            if (e.isNexusPrime) pullStrength *= 0.3;
+                            else if (e.isChampion) pullStrength *= 0.5;
                             
-                            const dx = singularityX - e.x;
-                            const dy = singularityY - e.y;
-                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            e.x += (dx / dist) * pullStrength;
+                            e.y += (dy / dist) * pullStrength;
                             
-                            let damagePercent = 0;
-                            if (dist < 100) damagePercent = ultimateData.collapseDamage.center; // 30%
-                            else if (dist < 200) damagePercent = ultimateData.collapseDamage.mid; // 20%
-                            else if (dist < 300) damagePercent = ultimateData.collapseDamage.outer; // 12%
+                            if (!e.isNexusPrime && !e.isChampion) {
+                                e.vx = 0;
+                                e.vy = 0;
+                            }
                             
-                            if (damagePercent > 0) {
-                                let damage = e.maxHp * (damagePercent / 100);
+                            // PULL DAMAGE: Deal damage every 100ms (6 frames)
+                            if (!e.eventHorizonDamageTick) e.eventHorizonDamageTick = 0;
+                            e.eventHorizonDamageTick += 16;
+                            
+                            if (e.eventHorizonDamageTick >= 100) {
+                                e.eventHorizonDamageTick = 0;
                                 
-                                // Apply damage reduction
-                                if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
-                                else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
-                                else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                // 1% max HP damage per tick (10% total over 3s pull)
+                                let pullDamage = e.maxHp * 0.01;
                                 
-                                // Use takeDamage to respect boss invulnerability and proper death handling
-                                e.takeDamage(damage, '#9400ff', false, 'normal');
-                                e.flash = 8;
+                                if (e.isNexusPrime) pullDamage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                                else if (e.isChampion) pullDamage *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                                else pullDamage *= ULTIMATE_DAMAGE_REDUCTION.normal;
                                 
-                                // Damage text - use FloatingText
-                                const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage), '#9400ff');
-                                damageText.fontSize = 24;
-                                damageText.life = 90;
+                                e.takeDamage(pullDamage, '#9400ff', false, 'normal');
+                                
+                                // Small damage text
+                                const damageText = new FloatingText(e.x, e.y - 20, Math.floor(pullDamage), '#bb66ff');
+                                damageText.fontSize = 16;
+                                damageText.life = 60;
                                 entities.texts.push(damageText);
                             }
-                        });
-                        
-                        // Massive explosion visual
-                        createExplosion(singularityX, singularityY, '#9400ff', 80);
-                        state.shake = 25;
-                        
-                        // Stop rendering immediately
-                        if (player.ultimateData.eventHorizon) {
-                            player.ultimateData.eventHorizon.active = false;
                         }
+                    });
+                    
+                    // Pull phase complete - trigger collapse
+                    if (eventHorizon.pullTimer <= 0) {
+                        clearInterval(pullInterval);
+                        console.log('💥 Event Horizon collapsing');
+                        eventHorizon.phase = 'collapse';
                         
-                        // End ultimate after short delay
+                        // Collapse damage
                         setTimeout(() => {
-                            // Completely remove event horizon data to prevent lingering visuals
-                            player.ultimateData.eventHorizon = null;
-                            player.ultimateActive = false;
+                            entities.enemies.forEach(e => {
+                                if (e.hp <= 0) return;
+                                
+                                const dx = singularityX - e.x;
+                                const dy = singularityY - e.y;
+                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                
+                                let damagePercent = 0;
+                                if (dist < 100) damagePercent = ultimateData.collapseDamage.center;
+                                else if (dist < 200) damagePercent = ultimateData.collapseDamage.mid;
+                                else if (dist < 300) damagePercent = ultimateData.collapseDamage.outer;
+                                
+                                if (damagePercent > 0) {
+                                    let damage = e.maxHp * (damagePercent / 100);
+                                    
+                                    if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                                    else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                                    else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                    
+                                    e.takeDamage(damage, '#9400ff', false, 'normal');
+                                    e.flash = 8;
+                                    
+                                    const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage), '#9400ff');
+                                    damageText.fontSize = 24;
+                                    damageText.life = 90;
+                                    entities.texts.push(damageText);
+                                }
+                            });
                             
-                            // Pan camera back to player
-                            panCameraBackToPlayer();
+                            createExplosion(singularityX, singularityY, '#9400ff', 80);
                             
-                            // Check for queued levelup
-                            checkQueuedUpgrades();
-                        }, 500);
-                    }, 100);
-                }
-            }, 16); // Run every frame during pull
+                            // Cleanup
+                            if (player.ultimateData.eventHorizon) {
+                                player.ultimateData.eventHorizon.active = false;
+                            }
+                            
+                            // SMOOTH camera return to player (0.5s)
+                            setTimeout(() => {
+                                const returnStartCamX = state.camera.x;
+                                const returnStartCamY = state.camera.y;
+                                const returnTargetCamX = width/2 - player.x * state.zoom;
+                                const returnTargetCamY = height/2 - player.y * state.zoom;
+                                const returnStartTime = Date.now();
+                                
+                                state.lockedWorldX = undefined;
+                                state.lockedWorldY = undefined;
+                                
+                                const returnInterval = setInterval(() => {
+                                    const elapsed = Date.now() - returnStartTime;
+                                    const progress = Math.min(1, elapsed / panDuration);
+                                    const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                                    
+                                    state.camera.x = returnStartCamX + (returnTargetCamX - returnStartCamX) * eased;
+                                    state.camera.y = returnStartCamY + (returnTargetCamY - returnStartCamY) * eased;
+                                    
+                                    if (progress >= 1) {
+                                        clearInterval(returnInterval);
+                                        state.cameraLocked = false;
+                                        player.ultimateData.eventHorizon = null;
+                                        player.ultimateActive = false;
+                                        console.log('✅ Event Horizon complete, camera returned');
+                                        checkQueuedUpgrades();
+                                    }
+                                }, 16);
+                            }, 200);
+                        }, 100);
+                    }
+                }, 16);
+            }, panDuration);
         }
         
-        // SEISMIC BOMB: Massive explosion with dual shockwaves and burning ground
-        function executeSeismicBomb(target) {
-            console.log('💣 Seismic Bomb - finding densest cluster');
+        // SEISMIC BOMB: Find densest enemy cluster for bomb placement
+        function findDensestCluster(nearTarget) {
+            console.log('💣 Finding densest enemy cluster for Seismic Bomb');
             
-            // Find densest enemy cluster
-            let bestClusterX = target.x;
-            let bestClusterY = target.y;
+            let bestClusterX = nearTarget.x;
+            let bestClusterY = nearTarget.y;
             let bestDensity = 0;
             
             const clusterRadius = 200; // Check for enemies within 200 units
@@ -8313,28 +8281,30 @@
                 }
             });
             
-            console.log(`💣 Seismic Bomb targeting cluster with ${bestDensity} enemies`);
+            console.log(`💣 Found cluster with ${bestDensity} enemies at (${Math.floor(bestClusterX)}, ${Math.floor(bestClusterY)})`);
+            return { x: bestClusterX, y: bestClusterY, density: bestDensity };
+        }
+        
+        // SEISMIC BOMB: Massive explosion with dual shockwaves and burning ground
+        function executeSeismicBomb(clusterLocation) {
+            console.log('💣 Seismic Bomb executing');
             
-            // Invulnerability for ultimate duration + camera pans + 1s buffer
-            // 500ms camera in + 5000ms effects + 500ms camera out + 1000ms buffer = 7000ms = 420 frames
-            player.invulnTimer = Math.max(player.invulnTimer, 420);
-            
+            const bombX = clusterLocation.x;
+            const bombY = clusterLocation.y;
             const ultimateData = ULTIMATES.seismic_bomb;
-            const bombX = bestClusterX;
-            const bombY = bestClusterY;
             
-            // Pan camera to explosion center smoothly, then lock it there
+            // Player invulnerability: 4.5s total (faster sequence)
+            player.invulnTimer = Math.max(player.invulnTimer, 270);
+            
+            // SMOOTH camera pan to bomb location (0.3s - faster)
             const startCamX = state.camera.x;
             const startCamY = state.camera.y;
             const targetCamX = width/2 - bombX * state.zoom;
             const targetCamY = height/2 - bombY * state.zoom;
-            const panDuration = 500;
+            const panDuration = 300; // Reduced from 500ms
             const panStartTime = Date.now();
             
             state.cameraLocked = true;
-            // Store locked world position so game loop can maintain it
-            state.lockedWorldX = bombX;
-            state.lockedWorldY = bombY;
             
             const panInterval = setInterval(() => {
                 const elapsed = Date.now() - panStartTime;
@@ -8346,214 +8316,240 @@
                 
                 if (progress >= 1) {
                     clearInterval(panInterval);
+                    // Lock camera to world position
+                    state.lockedWorldX = bombX;
+                    state.lockedWorldY = bombY;
+                    console.log('🎥 Camera locked to bomb location');
                 }
             }, 16);
             
-            // Create bomb visual (travels to target)
-            player.ultimateData.seismicBomb = {
-                x: player.x,
-                y: player.y,
-                targetX: bombX,
-                targetY: bombY,
-                phase: 'travel', // travel -> explode -> shockwave1 -> shockwave2 -> burning
-                timer: 0,
-                active: true
-            };
-            
-            // Bomb travel animation (0.5 seconds)
-            const travelDuration = 500;
-            const travelInterval = setInterval(() => {
-                if (!player.ultimateData.seismicBomb || !player.ultimateData.seismicBomb.active) {
-                    clearInterval(travelInterval);
-                    return;
-                }
+            // Wait for pan to complete, then start bomb sequence
+            setTimeout(() => {
+                // Create bomb (travels from player to target)
+                player.ultimateData.seismicBomb = {
+                    x: player.x,
+                    y: player.y,
+                    targetX: bombX,
+                    targetY: bombY,
+                    phase: 'travel',
+                    timer: 0,
+                    active: true
+                };
                 
-                const bomb = player.ultimateData.seismicBomb;
-                bomb.timer += 16;
+                console.log('💣 Bomb traveling to target');
                 
-                // Lerp bomb position
-                const progress = Math.min(1, bomb.timer / travelDuration);
-                bomb.x = player.x + (bombX - player.x) * progress;
-                bomb.y = player.y + (bombY - player.y) * progress;
-                
-                if (progress >= 1) {
-                    clearInterval(travelInterval);
+                // Bomb travel animation (0.3s - faster)
+                const travelDuration = 300; // Reduced from 500ms
+                const travelInterval = setInterval(() => {
+                    const bomb = player.ultimateData.seismicBomb;
+                    if (!bomb || !bomb.active) {
+                        clearInterval(travelInterval);
+                        return;
+                    }
                     
-                    // INITIAL BLAST
-                    bomb.phase = 'explode';
+                    bomb.timer += 16;
+                    const progress = Math.min(1, bomb.timer / travelDuration);
+                    bomb.x = player.x + (bombX - player.x) * progress;
+                    bomb.y = player.y + (bombY - player.y) * progress;
                     
-                    entities.enemies.forEach(e => {
-                        if (e.hp <= 0) return;
+                    // Travel complete - trigger explosion sequence
+                    if (progress >= 1) {
+                        clearInterval(travelInterval);
+                        console.log('💥 Bomb impact - starting explosion phases');
+                        bomb.phase = 'explode';
                         
-                        const dx = bombX - e.x;
-                        const dy = bombY - e.y;
-                        const dist = Math.sqrt(dx * dx + dy * dy);
-                        
-                        if (dist < ultimateData.blastRadius) {
-                            // Primary target gets full damage, others get AoE damage
-                            let damagePercent = (e === target) ? 
-                                ultimateData.blastDamage.primary : 
-                                ultimateData.blastDamage.aoe;
-                            
-                            let damage = e.maxHp * (damagePercent / 100);
-                            
-                            // Apply damage reduction
-                            if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
-                            else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
-                            else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
-                            
-                            // Use takeDamage to respect boss invulnerability and proper death handling
-                            e.takeDamage(damage, '#ff6600', false, 'normal');
-                            e.flash = 10;
-                            
-                            // Knockback - BOSS IMMUNE
-                            if (!e.isNexusPrime && !e.isBossShield && !e.isBossTurret) {
-                                const knockbackAngle = Math.atan2(e.y - bombY, e.x - bombX);
-                                e.pushX = Math.cos(knockbackAngle) * 20;
-                                e.pushY = Math.sin(knockbackAngle) * 20;
-                            }
-                            
-                            // Damage text - use FloatingText
-                            const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage), '#ff6600');
-                            damageText.fontSize = 24; // Larger for ultimate
-                            damageText.life = 90;
-                            entities.texts.push(damageText);
-                        }
-                    });
-                    
-                    createExplosion(bombX, bombY, '#ff6600', 60);
-                    state.shake = 20;
-                    
-                    // SHOCKWAVE 1 (after 0.5s)
-                    setTimeout(() => {
-                        if (!player.ultimateData.seismicBomb) return;
-                        bomb.phase = 'shockwave1';
-                        
+                        // INITIAL BLAST
                         entities.enemies.forEach(e => {
                             if (e.hp <= 0) return;
-                            
                             const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
                             
-                            if (dist < ultimateData.shockwave1.radius) {
-                                let damage = e.maxHp * (ultimateData.shockwave1.damage / 100);
+                            if (dist < ultimateData.blastRadius) {
+                                let damage = e.maxHp * (ultimateData.blastDamage.aoe / 100);
                                 
                                 if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
                                 else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
                                 else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
                                 
-                                // Use takeDamage to respect boss invulnerability and proper death handling
-                                e.takeDamage(damage, '#ffaa00', false, 'normal');
-                                e.flash = 5;
+                                e.takeDamage(damage, '#ff6600', false, 'normal');
+                                e.flash = 10;
                                 
-                                // Stun (reduced for titans/boss)
-                                if (!e.isNexusPrime) {
-                                    e.frozen = e.isChampion ? 60 : 120; // 1s for titans, 2s for normal
+                                if (!e.isNexusPrime && !e.isBossShield && !e.isBossTurret) {
+                                    const angle = Math.atan2(e.y - bombY, e.x - bombX);
+                                    e.pushX = Math.cos(angle) * 20;
+                                    e.pushY = Math.sin(angle) * 20;
                                 }
                                 
-                                const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage), '#ffaa00');
+                                const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage), '#ff6600');
                                 damageText.fontSize = 24;
                                 damageText.life = 90;
                                 entities.texts.push(damageText);
                             }
                         });
                         
-                        entities.particles.push(new Shockwave(bombX, bombY, ultimateData.shockwave1.radius, '#ff6600'));
-                        state.shake = 15;
-                    }, ultimateData.shockwave1.delay);
-                    
-                    // SHOCKWAVE 2 (after 1s)
-                    setTimeout(() => {
-                        if (!player.ultimateData.seismicBomb) return;
-                        bomb.phase = 'shockwave2';
+                        createExplosion(bombX, bombY, '#ff6600', 60);
                         
-                        entities.enemies.forEach(e => {
-                            if (e.hp <= 0) return;
+                        // Transition from 'explode' visual to 'shockwave1' visual (after 300ms)
+                        setTimeout(() => {
+                            if (player.ultimateData.seismicBomb) {
+                                console.log('🎬 Visual transition: explode -> shockwave1');
+                            }
+                        }, 300);
+                        
+                        // SHOCKWAVE 1 (after 0.5s)
+                        setTimeout(() => {
+                            if (!player.ultimateData.seismicBomb) return;
+                            player.ultimateData.seismicBomb.phase = 'shockwave1';
+                            console.log('💥 Shockwave 1');
                             
-                            const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
+                            entities.enemies.forEach(e => {
+                                if (e.hp <= 0) return;
+                                const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
+                                
+                                if (dist < ultimateData.shockwave1.radius) {
+                                    let damage = e.maxHp * (ultimateData.shockwave1.damage / 100);
+                                    
+                                    if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                                    else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                                    else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                    
+                                    e.takeDamage(damage, '#ffaa00', false, 'normal');
+                                    e.flash = 5;
+                                    
+                                    if (!e.isNexusPrime) {
+                                        e.frozen = e.isChampion ? 60 : 120;
+                                    }
+                                    
+                                    const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage), '#ffaa00');
+                                    damageText.fontSize = 24;
+                                    damageText.life = 90;
+                                    entities.texts.push(damageText);
+                                }
+                            });
                             
-                            if (dist < ultimateData.shockwave2.radius) {
-                                let damage = e.maxHp * (ultimateData.shockwave2.damage / 100);
+                            entities.particles.push(new Shockwave(bombX, bombY, ultimateData.shockwave1.radius, '#ff6600'));
+                        }, ultimateData.shockwave1.delay);
+                        
+                        // SHOCKWAVE 2 (after 1s)
+                        setTimeout(() => {
+                            if (!player.ultimateData.seismicBomb) return;
+                            player.ultimateData.seismicBomb.phase = 'shockwave2';
+                            console.log('💥 Shockwave 2');
+                            
+                            entities.enemies.forEach(e => {
+                                if (e.hp <= 0) return;
+                                const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
                                 
-                                if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
-                                else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
-                                else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
-                                
-                                // Use takeDamage to respect boss invulnerability and proper death handling
-                                e.takeDamage(damage, '#ffcc00', false, 'normal');
-                                e.flash = 5;
-                                
-                                // Stun
-                                if (!e.isNexusPrime) {
-                                    e.frozen = e.isChampion ? 60 : 120;
+                                if (dist < ultimateData.shockwave2.radius) {
+                                    let damage = e.maxHp * (ultimateData.shockwave2.damage / 100);
+                                    
+                                    if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                                    else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                                    else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                    
+                                    e.takeDamage(damage, '#ffcc00', false, 'normal');
+                                    e.flash = 5;
+                                    
+                                    if (!e.isNexusPrime) {
+                                        e.frozen = e.isChampion ? 60 : 120;
+                                    }
+                                    
+                                    const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage), '#ffcc00');
+                                    damageText.fontSize = 24;
+                                    damageText.life = 90;
+                                    entities.texts.push(damageText);
+                                }
+                            });
+                            
+                            entities.particles.push(new Shockwave(bombX, bombY, ultimateData.shockwave2.radius, '#ffaa00'));
+                        }, ultimateData.shockwave2.delay);
+                        
+                        // BURNING GROUND - start after shockwaves, track with bomb.burningTimer for rendering
+                        setTimeout(() => {
+                            if (!player.ultimateData.seismicBomb) return;
+                            
+                            // Set up burning ground visual data
+                            player.ultimateData.seismicBomb.phase = 'burning';
+                            player.ultimateData.seismicBomb.burningX = bombX;
+                            player.ultimateData.seismicBomb.burningY = bombY;
+                            player.ultimateData.seismicBomb.burningTimer = ultimateData.burningGround.duration;
+                            console.log('🔥 Burning ground started');
+                            
+                            const burningInterval = setInterval(() => {
+                                const bomb = player.ultimateData.seismicBomb;
+                                if (!bomb || !bomb.active) {
+                                    clearInterval(burningInterval);
+                                    return;
                                 }
                                 
-                                const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage), '#ffcc00');
-                                damageText.fontSize = 24;
-                                damageText.life = 90;
-                                entities.texts.push(damageText);
-                            }
-                        });
-                        
-                        entities.particles.push(new Shockwave(bombX, bombY, ultimateData.shockwave2.radius, '#ffaa00'));
-                        state.shake = 12;
-                    }, ultimateData.shockwave2.delay);
-                    
-                    // BURNING GROUND (starts after explosion, lasts 3s)
-                    bomb.phase = 'burning';
-                    bomb.burningX = bombX;
-                    bomb.burningY = bombY;
-                    bomb.burningTimer = ultimateData.burningGround.duration;
-                    
-                    const burningInterval = setInterval(() => {
-                        if (!player.ultimateData.seismicBomb || !player.ultimateData.seismicBomb.active) {
-                            clearInterval(burningInterval);
-                            return;
-                        }
-                        
-                        bomb.burningTimer -= 1000; // Tick every second
-                        
-                        // Burning damage
-                        entities.enemies.forEach(e => {
-                            if (e.hp <= 0) return;
-                            
-                            const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
-                            
-                            if (dist < ultimateData.burningGround.radius) {
-                                let damage = e.maxHp * (ultimateData.burningGround.damagePerSecond / 100);
+                                bomb.burningTimer -= 1000;
                                 
-                                if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
-                                else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
-                                else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                // Burning damage every second
+                                entities.enemies.forEach(e => {
+                                    if (e.hp <= 0) return;
+                                    const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
+                                    
+                                    if (dist < ultimateData.burningGround.radius) {
+                                        let damage = e.maxHp * (ultimateData.burningGround.damagePerSecond / 100);
+                                        
+                                        if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
+                                        else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
+                                        else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                        
+                                        e.takeDamage(damage, '#ff5722', false, 'normal');
+                                        
+                                        const damageText = new FloatingText(
+                                            e.x + (Math.random() - 0.5) * 20,
+                                            e.y - 10,
+                                            Math.floor(damage),
+                                            '#ff5722'
+                                        );
+                                        damageText.fontSize = 20;
+                                        damageText.life = 60;
+                                        entities.texts.push(damageText);
+                                    }
+                                });
                                 
-                                // Use takeDamage to respect boss invulnerability and proper death handling
-                                e.takeDamage(damage, '#ff5722', false, 'normal');
-                                
-                                const damageText = new FloatingText(
-                                    e.x + (Math.random() - 0.5) * 20,
-                                    e.y - 10,
-                                    Math.floor(damage),
-                                    '#ff5722'
-                                );
-                                damageText.fontSize = 20;
-                                damageText.life = 60;
-                                entities.texts.push(damageText);
-                            }
-                        });
-                        
-                        if (bomb.burningTimer <= 0) {
-                            clearInterval(burningInterval);
-                            bomb.active = false;
-                            player.ultimateActive = false;
-                            
-                            // Pan camera back to player
-                            panCameraBackToPlayer();
-                            
-                            // Check for queued levelup
-                            checkQueuedUpgrades();
-                        }
-                    }, 1000); // Tick every second
-                }
-            }, 16);
+                                // Burning complete - cleanup and camera return
+                                if (bomb.burningTimer <= 0) {
+                                    clearInterval(burningInterval);
+                                    console.log('✅ Burning ground complete, returning camera');
+                                    
+                                    if (player.ultimateData.seismicBomb) {
+                                        player.ultimateData.seismicBomb.active = false;
+                                    }
+                                    player.ultimateActive = false;
+                                    
+                                    // SMOOTH camera return to player (0.5s)
+                                    const returnStartCamX = state.camera.x;
+                                    const returnStartCamY = state.camera.y;
+                                    const returnTargetCamX = width/2 - player.x * state.zoom;
+                                    const returnTargetCamY = height/2 - player.y * state.zoom;
+                                    const returnStartTime = Date.now();
+                                    
+                                    state.lockedWorldX = undefined;
+                                    state.lockedWorldY = undefined;
+                                    
+                                    const returnInterval = setInterval(() => {
+                                        const elapsed = Date.now() - returnStartTime;
+                                        const progress = Math.min(1, elapsed / panDuration);
+                                        const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+                                        
+                                        state.camera.x = returnStartCamX + (returnTargetCamX - returnStartCamX) * eased;
+                                        state.camera.y = returnStartCamY + (returnTargetCamY - returnStartCamY) * eased;
+                                        
+                                        if (progress >= 1) {
+                                            clearInterval(returnInterval);
+                                            state.cameraLocked = false;
+                                            console.log('✅ Seismic Bomb complete, camera returned');
+                                            checkQueuedUpgrades();
+                                        }
+                                    }, 16);
+                                }
+                            }, 1000);
+                        }, ultimateData.shockwave2.delay + 100); // Start burning shortly after shockwave 2
+                    }
+                }, 16);
+            }, panDuration);
         }
         
         // PHOENIX PROTOCOL: Player-centered expanding pulses
@@ -8603,8 +8599,7 @@
             const pulseInfo = ultimateData.pulseData[data.pulseCount];
             console.log(`🔥 Phoenix pulse ${data.pulseCount + 1}/${data.totalPulses}: ${pulseInfo.radius}px radius, ${pulseInfo.damage}% damage`);
             
-            // Screen shake (increases with pulse number)
-            state.shake = 12 + (data.pulseCount * 3);
+            // Camera shake removed
             
             // Visual explosion
             createExplosion(data.phoenixX, data.phoenixY, ultimateData.color, 30 + (data.pulseCount * 10));
@@ -8614,8 +8609,7 @@
             
             // Final pulse extra effects
             if (data.pulseCount === data.totalPulses - 1) {
-                // Massive screen flash
-                state.shake = 35;
+                // Massive flash (no shake)
                 createExplosion(data.phoenixX, data.phoenixY, '#ffffff', 100);
                 
                 // Secondary explosion for impact (stored for next frame)
@@ -8732,7 +8726,7 @@
             };
             
             // Visual feedback - screen flash
-            state.shake = 20;
+            // Camera shake removed
             createExplosion(player.x, player.y, ultimateData.color, 50);
             
             console.log('⚡ Adrenaline Surge: 3x speed, 3x fire rate, invulnerable for 4 seconds');
@@ -8878,7 +8872,7 @@
                 }
                 else if (type === 'drone') { 
                     this.tier = 'basic'; // Always hackable
-                    this.speed = 0.57 * speedMult; this.hp = (20 + (state.level*5)) * 1.65 * scaling; this.radius = 12; this.color = '#ff3860'; this.xp = 2; this.dmg = (8 + state.level * 1.5) * scaling * damageBonus; 
+                    this.speed = 0.57 * speedMult; this.hp = (20 + (state.level*5)) * 1.65 * scaling; this.radius = 12; this.color = '#ff3860'; this.xp = 2; this.dmg = (8 + state.level * 1.0) * scaling * damageBonus; // Reduced from 1.5 to 1.0 per level to tone down late game damage
                 }
                 else if (type === 'tank') { 
                     this.tier = 'elite'; // Hackable with mastery
@@ -9724,6 +9718,11 @@
                         
                         this.takeDamage(dmg, '#00cc44', false, 'dot', this.bioState.sourceWeapon, 'bio');
                         if(seededRandom()<0.3) entities.particles.push(new Particle(this.x, this.y, '#00cc44', 0.3));
+                        
+                        // Bio armor reduction: Each tick reduces armor by 2% (5s duration with ~12-16 ticks = 24-32% total reduction)
+                        if (this.armor && this.armor > 0) {
+                            this.armor = Math.max(0, this.armor * 0.98); // 2% reduction per tick
+                        }
                         
                         // Bioshock: Every 3rd bio tick triggers volt chain
                         if (!this.bioState.tickCount) this.bioState.tickCount = 0;
@@ -11054,7 +11053,7 @@
                                 if (nearestEnemy.isNexusPrime) {
                                     hackDamage *= 0.25; // 75% reduction for final boss
                                 } else if (nearestEnemy.isChampion) {
-                                    hackDamage *= 0.35; // 65% reduction for titans (was 0.6)
+                                    hackDamage *= 0.15; // 85% reduction for titans (was 0.35) - prevents melting
                                 }
                                 
                                 nearestEnemy.takeDamage(hackDamage, '#00ffff', false, 'normal');
@@ -11075,10 +11074,10 @@
             executeSlamHit(distToPlayer) {
                 const slamRadii = [95, 145, 190]; // Small, medium, large (slightly increased from 90, 135, 180)
                 const currentRadius = slamRadii[this.slamHitCount];
-                const shakeIntensity = [10, 13, 18]; // Increasing screen shake
+                const shakeIntensity = [3, 5, 7]; // Subtle shake: 3, 5, 7 (was 10, 13, 18 - too intense)
                 
-                // SCREEN SHAKE
-                state.shake = shakeIntensity[this.slamHitCount];
+                // Subtle camera shake for impact feedback
+                addCameraShake(shakeIntensity[this.slamHitCount]);
                 
                 // Damage all enemies in radius
                 entities.enemies.forEach(e => {
@@ -11092,9 +11091,9 @@
                 // Damage player
                 if (distToPlayer < currentRadius) {
                     player.takeHit(this.dmg, 'Champion Ground Slam', 'TITAN');
-                    // Knockback (stronger on final hit)
+                    // Knockback (reduced from 25/40/55 to 8/12/16 - much more manageable)
                     const angle = Math.atan2(player.y - this.y, player.x - this.x);
-                    const knockbackDist = 25 + (this.slamHitCount * 15); // 25, 40, 55
+                    const knockbackDist = 8 + (this.slamHitCount * 4); // 8, 12, 16 (was 25, 40, 55)
                     player.x += Math.cos(angle) * knockbackDist;
                     player.y += Math.sin(angle) * knockbackDist;
                 }
@@ -12237,10 +12236,14 @@
                                 });
                                 
                                 // Deal 50% damage to all OTHER enemies in the field area (not the main target)
+                                // OPTIMIZATION: Only check enemies within field radius (avoid full loop)
+                                const fieldRadiusSq = fieldRadius * fieldRadius;
                                 entities.enemies.forEach(enemy => {
                                     if (enemy !== e && enemy.hp > 0) { // Already excludes main target
-                                        const enemyDist = Math.sqrt((enemy.x - this.x)**2 + (enemy.y - this.y)**2);
-                                        if (enemyDist < fieldRadius) {
+                                        const dx = enemy.x - this.x;
+                                        const dy = enemy.y - this.y;
+                                        const distSq = dx * dx + dy * dy;
+                                        if (distSq < fieldRadiusSq) { // Use squared distance for speed
                                             player.dealElementalDamage(enemy, this.damage * 0.5, 'emp', '#a855f7');
                                         }
                                     }
@@ -13324,30 +13327,36 @@
                     }
                     if (this.type === 'magnet') { activateMagnet(); }
                     if (this.type === 'nexus_core') {
-                        // Collect Nexus Core - increment counter with Ascension multiplier
-                        const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
-                        
-                        // Calculate cores to award based on Ascension level
-                        let coresToAward = 1; // Base: 1 core
-                        if (state.activeAscension > 0) {
-                            const ascensionData = {
-                                1: 2.0, // Ascension 1: +100% cores (2x)
-                                2: 3.0, // Ascension 2: +200% cores (3x)
-                                3: 4.0, // Ascension 3: +300% cores (4x)
-                                4: 5.0, // Ascension 4: +400% cores (5x)
-                                5: 6.0  // Ascension 5: +500% cores (6x)
-                            };
-                            coresToAward = Math.floor(ascensionData[state.activeAscension] || 1);
-                            console.log(`🔥 Ascension ${state.activeAscension}: ${coresToAward}x cores awarded!`);
+                        // TEST MODE: Don't save cores in test mode (would be cheating)
+                        if (testModeEnabled) {
+                            console.log('🧪 TEST MODE: Nexus Core collected but NOT saved');
+                            createExplosion(player.x, player.y, '#ff00ff', 30);
+                        } else {
+                            // NORMAL MODE: Collect Nexus Core - increment counter with Ascension multiplier
+                            const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+                            
+                            // Calculate cores to award based on Ascension level
+                            let coresToAward = 1; // Base: 1 core
+                            if (state.activeAscension > 0) {
+                                const ascensionData = {
+                                    1: 2.0, // Ascension 1: +100% cores (2x)
+                                    2: 3.0, // Ascension 2: +200% cores (3x)
+                                    3: 4.0, // Ascension 3: +300% cores (4x)
+                                    4: 5.0, // Ascension 4: +400% cores (5x)
+                                    5: 6.0  // Ascension 5: +500% cores (6x)
+                                };
+                                coresToAward = Math.floor(ascensionData[state.activeAscension] || 1);
+                                console.log(`🔥 Ascension ${state.activeAscension}: ${coresToAward}x cores awarded!`);
+                            }
+                            
+                            localStorage.setItem('neonrogue_nexusCores', currentCores + coresToAward);
+                            createExplosion(player.x, player.y, '#ff00ff', 30);
+                            
+                            console.log(`💎 Nexus Core(s) collected! +${coresToAward} cores`);
+                            console.log('   pendingUltimateSelection:', state.pendingUltimateSelection);
                         }
                         
-                        localStorage.setItem('neonrogue_nexusCores', currentCores + coresToAward);
-                        createExplosion(player.x, player.y, '#ff00ff', 30);
-                        
-                        console.log(`💎 Nexus Core(s) collected! +${coresToAward} cores`);
-                        console.log('   pendingUltimateSelection:', state.pendingUltimateSelection);
-                        
-                        // ULTIMATE SELECTION: Queue it instead of showing immediately
+                        // ULTIMATE SELECTION: Queue it (in both test and normal mode)
                         if (state.pendingUltimateSelection) {
                             console.log('✅ Queuing ultimate selection...');
                             state.pendingUltimateSelection = false;
@@ -13366,10 +13375,16 @@
                     }
                     if (this.type === 'singularity') {
                         // Collect Quantum Singularity - trigger victory!
-                        const currentSingularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
-                        localStorage.setItem('neonrogue_singularities', currentSingularities + 1);
+                        if (!testModeEnabled) {
+                            // Only save in normal mode
+                            const currentSingularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
+                            localStorage.setItem('neonrogue_singularities', currentSingularities + 1);
+                            console.log(`🌌 Singularity collected! Total: ${currentSingularities + 1}`);
+                        } else {
+                            console.log('🧪 TEST MODE: Singularity collected but NOT saved');
+                        }
                         createExplosion(player.x, player.y, '#ff00ff', 50);
-                        state.shake = 20;
+                        // Camera shake removed
                         
                         // Trigger victory after brief delay
                         setTimeout(() => {
@@ -13871,6 +13886,8 @@
             state.upgradeQueue = []; // Reset upgrade queue 
             state.bossActive = false; state.bossWave = 0; state.pendingSwap = null;
             state.bossTimer = 0; state.gameTime = 0; state.spawnTimer = 0;
+            state.finalBossActive = false; // Reset final boss flag
+            state.finalBossTriggered = false; // Reset final boss trigger
             state.saveCharges = 3; state.savedUpgrade = null;
             state.levelUpQueue = []; // Track level-up types to prevent reroll bugs
             state.weaponStats = {}; // Reset weapon stats tracking
@@ -14199,25 +14216,24 @@
         }
 
         // MULTISTRIKE SYSTEM
-        // Base multistrike: Simple one extra cast, no chaining
-        // Cascade mod: Doubles chance + enables chaining with 50% decay
-        function checkMultistrike(fireFunc, damageMultiplier = 1.0, depth = 0, maxDepth = 5) {
-            // Base multistrike (no cascade) - just one extra cast
-            if (player.activeMod !== 'cascade') {
-                if (depth === 0 && seededRandom() < player.multicast) {
-                    setTimeout(() => fireFunc(damageMultiplier, 1), 100);
-                }
-                return;
-            }
+        // Multistrike system:
+        // - Initial trigger: baseChance (from augment)
+        // - Cascade Multistrike augment adds a chance for 1 additional chain (15/30/50% depending on tier)
+        // - Max 2 total strikes (initial + 1 chain) to avoid performance issues
+        function checkMultistrike(fireFunc, damageMultiplier = 1.0, depth = 0) {
+            // Safety: Never go beyond depth 1 (initial trigger + 1 chain max)
+            if (depth >= 1) return;
             
-            // Cascade mod: 25% boost + chaining with 50% decay
-            if (depth >= maxDepth) return; // Max chain depth
-            
-            const baseChance = player.multicast * 1.25; // Cascade gives 25% boost (reduced from 2x)
-            const decayedChance = baseChance * Math.pow(0.5, depth); // 50% decay per level
-            
-            if (seededRandom() < decayedChance) {
-                setTimeout(() => fireFunc(damageMultiplier, depth + 1), 100);
+            // Initial multistrike trigger
+            if (depth === 0 && player.multistrikeUnlocked && seededRandom() < player.multicast) {
+                setTimeout(() => {
+                    fireFunc(damageMultiplier, 1);
+                    
+                    // Cascade chain: If we have cascade, try to chain one more time
+                    if (player.cascadeChainChance && seededRandom() < player.cascadeChainChance) {
+                        setTimeout(() => fireFunc(damageMultiplier, 2), 150); // Increased from 100ms
+                    }
+                }, 150); // Increased from 100ms
             }
         }
 
@@ -14791,22 +14807,34 @@
         // ===== NEXUS PRIME FINAL BOSS SYSTEM =====
         
         function triggerNexusPrime() {
-            // IMMEDIATELY capture and lock player position to prevent any drift
-            const spawnX = player.x;
-            const spawnY = player.y;
+            // Spawn boss at CENTER OF SCREEN in world coordinates
+            // Camera centers on player, so we need to calculate where screen center is in world space
+            const screenCenterWorldX = player.x;
+            const screenCenterWorldY = player.y;
             
-            console.log(`🎯 Triggering Nexus Prime at player position: (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)})`);
+            // Actually, the player IS at screen center because camera follows player
+            // So player position IS correct. The issue must be elsewhere.
+            const spawnX = screenCenterWorldX;
+            const spawnY = screenCenterWorldY;
+            
+            console.log(`🎯 ========== NEXUS PRIME SPAWN DEBUG ==========`);
+            console.log(`🎯 Player position at trigger: (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)})`);
+            console.log(`🎯 Player velocity: vx=${player.vx.toFixed(2)}, vy=${player.vy.toFixed(2)}`);
+            console.log(`🎯 Camera position: x=${state.camera.x.toFixed(2)}, y=${state.camera.y.toFixed(2)}`);
+            console.log(`🎯 Current zoom: ${state.zoom.toFixed(2)}`);
             
             // IMMEDIATELY spawn boss to prevent player drift during delays
             spawnNexusPrime(spawnX, spawnY);
             
             // Clear ALL enemies IMMEDIATELY (except the boss we just spawned and its shields)
             // This prevents drones from targeting invisible/offscreen enemies
+            const enemiesBeforeClear = entities.enemies.length;
             entities.enemies = entities.enemies.filter(e => 
                 e.isNexusPrime || e.isBossTurret || e.isBossShield
             );
             
-            console.log(`✅ Cleared enemies, remaining count: ${entities.enemies.length} (should be boss + 4 shields = 5)`);
+            console.log(`✅ Cleared ${enemiesBeforeClear} enemies, remaining: ${entities.enemies.length} (should be boss + 4 shields = 5)`);
+            console.log(`🎯 Boss entities: ${entities.enemies.filter(e => e.isNexusPrime).length} core, ${entities.enemies.filter(e => e.isBossShield).length} shields`);
             
             // Make enemies retreat (visual effect only - they're already cleared)
             // This section is now just cosmetic since we already filtered
@@ -14838,12 +14866,15 @@
             const bossY = spawnY !== undefined ? spawnY : player.y;
             
             const finalBossX = bossX;
-            const finalBossY = bossY + 200; // Spawn 200 units below the base position
+            const finalBossY = bossY + 200; // Spawn 200 units SOUTH (positive Y = down in world space)
             
+            console.log(`🔵 ========== SPAWN NEXUS PRIME ==========`);
             console.log(`🔵 spawnNexusPrime called with: (${spawnX}, ${spawnY})`);
-            console.log(`🔵 Boss will spawn at: (${finalBossX.toFixed(2)}, ${finalBossY.toFixed(2)})`);
-            console.log(`🔵 Player current position: (${player.x.toFixed(2)}, ${player.y.toFixed(2)})`);
-            
+            console.log(`🔵 Calculated bossX: ${bossX.toFixed(2)}, bossY: ${bossY.toFixed(2)}`);
+            console.log(`🔵 Final boss position: (${finalBossX.toFixed(2)}, ${finalBossY.toFixed(2)})`);
+            console.log(`🔵 Player CURRENT position: (${player.x.toFixed(2)}, ${player.y.toFixed(2)})`);
+            console.log(`🔵 Distance from player: ${Math.sqrt((finalBossX - player.x)**2 + (finalBossY - player.y)**2).toFixed(2)}px`);
+            console.log(`🔵 ========================================`);            
             // Gradually zoom out camera for boss fight
             state.targetZoom = 0.60; // Zoom out from 0.70 to 0.60
             
@@ -14913,6 +14944,7 @@
             };
             
             // Create 4 shield generators as targetable entities
+            console.log(`🛡️ Creating ${4} shields around boss at (${boss.x.toFixed(2)}, ${boss.y.toFixed(2)})`);
             for (let i = 0; i < 4; i++) {
                 const shield = {
                     index: i,
@@ -14967,13 +14999,14 @@
                 boss.shields.push(shield);
                 // Add to entities so weapons can target it
                 entities.enemies.push(shield);
+                console.log(`🛡️ Shield ${i} created at (${shield.x.toFixed(2)}, ${shield.y.toFixed(2)}), distance from player: ${Math.sqrt((shield.x - player.x)**2 + (shield.y - player.y)**2).toFixed(2)}px`);
             }
             
             state.finalBoss = boss;
             state.finalBossActive = true;
             state.bossActive = true;
             entities.enemies.push(boss);
-            state.shake = 30;
+            // Camera shake removed
             
             console.log('✅ Boss added to entities.enemies, count:', entities.enemies.length);
             console.log('✅ Boss final position:', boss.x.toFixed(2), boss.y.toFixed(2));
@@ -15663,7 +15696,9 @@
             const lerpFactor = 1 - Math.pow(0.85, dt/16); // Smooth follow that works at any framerate
             
             // Only update camera if not manually controlled by ultimate
-            if (!state.cameraLocked) {
+            if (state.manualCameraControl) {
+                // Do nothing - camera is being controlled by manual pan interval
+            } else if (!state.cameraLocked) {
                 state.camera.x += (tx - state.camera.x) * lerpFactor; 
                 state.camera.y += (ty - state.camera.y) * lerpFactor;
             } else if (state.ultimateCameraTarget) {
@@ -15684,7 +15719,7 @@
                 // Fixed camera position for AOE ultimates (Event Horizon, Seismic Bomb)
                 // Continuously enforce the locked world position
                 state.camera.x = width/2 - state.lockedWorldX * state.zoom;
-                state.camera.y = width/2 - state.lockedWorldY * state.zoom;
+                state.camera.y = height/2 - state.lockedWorldY * state.zoom;
             }
             // else: camera stays at whatever position it's at (shouldn't happen)
             
@@ -16822,47 +16857,40 @@
                         
                         // First explosion - massive purple burst
                         createExplosion(deathX, deathY, '#ff00ff', 100);
-                        state.shake = 35;
+                        // Camera shake removed
                         
                         // Second explosion - cyan/teal
                         setTimeout(() => {
                             createExplosion(deathX, deathY, '#00d1b2', 90);
-                            state.shake = 30;
                         }, 400);
                         
                         // Third explosion - orange/red
                         setTimeout(() => {
                             createExplosion(deathX, deathY, '#ff5722', 80);
-                            state.shake = 28;
                         }, 800);
                         
                         // Fourth explosion - yellow
                         setTimeout(() => {
                             createExplosion(deathX, deathY, '#ffeb3b', 70);
-                            state.shake = 25;
                         }, 1200);
                         
                         // Fifth explosion - blue
                         setTimeout(() => {
                             createExplosion(deathX, deathY, '#00e5ff', 85);
-                            state.shake = 30;
                         }, 1600);
                         
                         // Sixth explosion - green
                         setTimeout(() => {
                             createExplosion(deathX, deathY, '#39ff14', 75);
-                            state.shake = 26;
                         }, 2000);
                         
                         // Final explosion - MASSIVE white supernova
                         setTimeout(() => {
                             createExplosion(deathX, deathY, '#ffffff', 200);
-                            state.shake = 50;
                             
                             // Secondary white explosion for extra impact
                             setTimeout(() => {
                                 createExplosion(deathX, deathY, '#ff00ff', 150);
-                                state.shake = 40;
                             }, 300);
                             
                             // Clear all boss entities
@@ -17563,215 +17591,243 @@
             // SEISMIC BOMB RENDERING - Massive nuclear-style explosion
             if (player.ultimateData.seismicBomb && player.ultimateData.seismicBomb.active) {
                 const bomb = player.ultimateData.seismicBomb;
-                const time = state.frameCount * 0.1;
+                const time = Date.now() / 100; // Use real time for smooth animation
                 
                 if (bomb.phase === 'travel') {
-                    // Traveling bomb projectile with ominous trail
-                    const pulseSize = 15 + Math.sin(time * 2) * 3;
+                    // Glowing projectile traveling to target
+                    const pulseSize = 20 + Math.sin(time * 3) * 5;
                     
-                    // Outer warning glow
-                    const warningGradient = ctx.createRadialGradient(bomb.x, bomb.y, 0, bomb.x, bomb.y, pulseSize * 2);
-                    warningGradient.addColorStop(0, 'rgba(255, 150, 0, 0.8)');
-                    warningGradient.addColorStop(0.5, 'rgba(255, 80, 0, 0.4)');
-                    warningGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                    // Outer glow - REDUCED OPACITY
+                    const glowGradient = ctx.createRadialGradient(bomb.x, bomb.y, 0, bomb.x, bomb.y, pulseSize * 3);
+                    glowGradient.addColorStop(0, 'rgba(255, 200, 0, 0.5)'); // Reduced from 0.9
+                    glowGradient.addColorStop(0.4, 'rgba(255, 120, 0, 0.3)'); // Reduced from 0.6
+                    glowGradient.addColorStop(0.7, 'rgba(255, 60, 0, 0.15)'); // Reduced from 0.3
+                    glowGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
                     
-                    ctx.fillStyle = warningGradient;
-                    ctx.shadowBlur = 30;
+                    ctx.fillStyle = glowGradient;
+                    ctx.shadowBlur = 20; // Reduced from 40
                     ctx.shadowColor = '#ff6600';
                     ctx.beginPath();
-                    ctx.arc(bomb.x, bomb.y, pulseSize * 2, 0, Math.PI * 2);
+                    ctx.arc(bomb.x, bomb.y, pulseSize * 3, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Core bomb
-                    ctx.shadowBlur = 25;
-                    ctx.shadowColor = '#ff3300';
-                    ctx.fillStyle = '#ff6600';
+                    // Core
+                    ctx.fillStyle = '#ffaa00';
+                    ctx.shadowBlur = 15; // Reduced from 30
+                    ctx.shadowColor = '#ffffff';
                     ctx.beginPath();
                     ctx.arc(bomb.x, bomb.y, pulseSize, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Bright core
+                    // Bright center - SMALLER
                     ctx.fillStyle = '#ffffff';
+                    ctx.shadowBlur = 10; // Reduced from 20
                     ctx.beginPath();
-                    ctx.arc(bomb.x, bomb.y, pulseSize * 0.5, 0, Math.PI * 2);
+                    ctx.arc(bomb.x, bomb.y, pulseSize * 0.3, 0, Math.PI * 2); // Reduced from 0.4
                     ctx.fill();
                     
-                    // Energy trail from player
-                    const trailGradient = ctx.createLinearGradient(player.x, player.y, bomb.x, bomb.y);
-                    trailGradient.addColorStop(0, 'rgba(255, 102, 0, 0)');
-                    trailGradient.addColorStop(0.3, 'rgba(255, 102, 0, 0.3)');
-                    trailGradient.addColorStop(1, 'rgba(255, 102, 0, 0.6)');
-                    
-                    ctx.strokeStyle = trailGradient;
+                    // Trail from player - MUCH DIMMER
+                    ctx.strokeStyle = 'rgba(255, 150, 0, 0.2)'; // Reduced from 0.4
                     ctx.lineWidth = 15;
-                    ctx.shadowBlur = 20;
+                    ctx.shadowBlur = 15; // Reduced from 30
+                    ctx.shadowColor = '#ff6600';
                     ctx.beginPath();
                     ctx.moveTo(player.x, player.y);
                     ctx.lineTo(bomb.x, bomb.y);
                     ctx.stroke();
                     
-                    // Sparks along trail
-                    for (let i = 0; i < 8; i++) {
-                        const sparkProgress = i / 8;
-                        const sx = player.x + (bomb.x - player.x) * sparkProgress;
-                        const sy = player.y + (bomb.y - player.y) * sparkProgress;
-                        const sparkSize = 3 + Math.sin(time * 3 + i) * 2;
-                        
-                        ctx.fillStyle = `rgba(255, ${150 + Math.sin(time * 2 + i) * 105}, 0, ${0.8})`;
-                        ctx.shadowBlur = 10;
-                        ctx.beginPath();
-                        ctx.arc(sx, sy, sparkSize, 0, Math.PI * 2);
-                        ctx.fill();
-                    }
-                    
                     ctx.shadowBlur = 0;
                     
                 } else if (bomb.phase === 'explode') {
-                    // Initial nuclear detonation - massive flash
-                    const explosionSize = 200 + Math.sin(time * 5) * 30;
+                    // MASSIVE BLAST - REDUCED BRIGHTNESS
+                    const blastSize = 220 + Math.sin(time * 8) * 40;
                     
-                    // Blinding white core
-                    const coreGradient = ctx.createRadialGradient(bomb.targetX, bomb.targetY, 0, bomb.targetX, bomb.targetY, explosionSize * 0.4);
-                    coreGradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-                    coreGradient.addColorStop(0.6, 'rgba(255, 255, 200, 0.9)');
-                    coreGradient.addColorStop(1, 'rgba(255, 200, 100, 0)');
-                    
-                    ctx.fillStyle = coreGradient;
-                    ctx.shadowBlur = 60;
-                    ctx.shadowColor = '#ffffff';
+                    // White core - MUCH LESS BLINDING
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'; // Reduced from full white
+                    ctx.shadowBlur = 30; // Reduced from 80
+                    ctx.shadowColor = 'rgba(255, 255, 255, 0.3)';
                     ctx.beginPath();
-                    ctx.arc(bomb.targetX, bomb.targetY, explosionSize * 0.4, 0, Math.PI * 2);
+                    ctx.arc(bomb.targetX, bomb.targetY, blastSize * 0.3, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Fireball
-                    const fireGradient = ctx.createRadialGradient(bomb.targetX, bomb.targetY, 0, bomb.targetX, bomb.targetY, explosionSize);
-                    fireGradient.addColorStop(0, 'rgba(255, 255, 150, 0.8)');
-                    fireGradient.addColorStop(0.3, 'rgba(255, 150, 0, 0.7)');
-                    fireGradient.addColorStop(0.6, 'rgba(255, 80, 0, 0.5)');
-                    fireGradient.addColorStop(1, 'rgba(150, 0, 0, 0)');
+                    // Yellow-orange fireball - REDUCED OPACITY
+                    const fireGradient = ctx.createRadialGradient(
+                        bomb.targetX, bomb.targetY, 0,
+                        bomb.targetX, bomb.targetY, blastSize
+                    );
+                    fireGradient.addColorStop(0, 'rgba(255, 255, 200, 0.5)'); // Reduced from 1
+                    fireGradient.addColorStop(0.2, 'rgba(255, 220, 100, 0.4)'); // Reduced from 0.9
+                    fireGradient.addColorStop(0.5, 'rgba(255, 150, 0, 0.35)'); // Reduced from 0.7
+                    fireGradient.addColorStop(0.8, 'rgba(255, 80, 0, 0.2)'); // Reduced from 0.4
+                    fireGradient.addColorStop(1, 'rgba(200, 0, 0, 0)');
                     
                     ctx.fillStyle = fireGradient;
-                    ctx.shadowBlur = 50;
-                    ctx.shadowColor = '#ff6600';
+                    ctx.shadowBlur = 25; // Reduced from 60
+                    ctx.shadowColor = '#ff8800';
                     ctx.beginPath();
-                    ctx.arc(bomb.targetX, bomb.targetY, explosionSize, 0, Math.PI * 2);
+                    ctx.arc(bomb.targetX, bomb.targetY, blastSize, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Shockwave rings
-                    for (let i = 0; i < 4; i++) {
-                        const ringSize = explosionSize + (i * 40) + Math.sin(time * 3 + i) * 15;
-                        const ringAlpha = 0.6 - (i * 0.12);
+                    // Expanding rings - THINNER AND DIMMER
+                    for (let i = 0; i < 6; i++) {
+                        const ringSize = blastSize + (i * 60) + Math.sin(time * 5 + i) * 20;
+                        const ringAlpha = Math.max(0, 0.35 - (i * 0.05)); // Reduced from 0.7
                         
-                        ctx.strokeStyle = `rgba(255, ${200 - i * 30}, ${100 - i * 20}, ${ringAlpha})`;
-                        ctx.lineWidth = 6 - i;
-                        ctx.shadowBlur = 25;
-                        ctx.shadowColor = '#ff8800';
+                        ctx.strokeStyle = `rgba(255, ${220 - i * 30}, ${100 - i * 15}, ${ringAlpha})`;
+                        ctx.lineWidth = 5 - (i * 0.5); // Reduced from 10 - i
+                        ctx.shadowBlur = 15; // Reduced from 35
+                        ctx.shadowColor = '#ff6600';
                         ctx.beginPath();
                         ctx.arc(bomb.targetX, bomb.targetY, ringSize, 0, Math.PI * 2);
                         ctx.stroke();
                     }
                     
-                } else if (bomb.phase === 'shockwave1' || bomb.phase === 'shockwave2') {
-                    // Expanding shockwave with heat distortion
-                    const shockwaveSize = bomb.phase === 'shockwave1' ? 250 : 300;
-                    const baseSize = shockwaveSize + Math.sin(time * 4) * 20;
+                    ctx.shadowBlur = 0;
                     
-                    // Multiple pressure waves
-                    for (let i = 0; i < 5; i++) {
-                        const waveSize = baseSize + (i * 50);
-                        const waveAlpha = 0.5 - (i * 0.08);
+                } else if (bomb.phase === 'shockwave1') {
+                    // FIRST SHOCKWAVE - REDUCED OPACITY
+                    const baseSize = 280;
+                    
+                    // Central glow - DIMMER
+                    const glowGradient = ctx.createRadialGradient(
+                        bomb.targetX, bomb.targetY, 0,
+                        bomb.targetX, bomb.targetY, baseSize * 0.6
+                    );
+                    glowGradient.addColorStop(0, 'rgba(255, 200, 100, 0.3)'); // Reduced from 0.7
+                    glowGradient.addColorStop(0.5, 'rgba(255, 150, 50, 0.2)'); // Reduced from 0.4
+                    glowGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+                    
+                    ctx.fillStyle = glowGradient;
+                    ctx.beginPath();
+                    ctx.arc(bomb.targetX, bomb.targetY, baseSize * 0.6, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    // Expanding pressure waves - THINNER AND DIMMER
+                    for (let i = 0; i < 8; i++) {
+                        const waveSize = baseSize * 0.4 + (i * 40) + Math.sin(time * 4 + i) * 15;
+                        const waveAlpha = Math.max(0, 0.4 - (i * 0.045)); // Reduced from 0.8
                         
-                        ctx.strokeStyle = `rgba(255, ${150 - i * 20}, 0, ${waveAlpha})`;
-                        ctx.lineWidth = 8 - i;
-                        ctx.shadowBlur = 30;
+                        ctx.strokeStyle = `rgba(255, ${180 - i * 20}, 0, ${waveAlpha})`;
+                        ctx.lineWidth = 6 - (i * 0.5); // Reduced from 12 - i
+                        ctx.shadowBlur = 12; // Reduced from 25
                         ctx.shadowColor = '#ff6600';
                         ctx.beginPath();
                         ctx.arc(bomb.targetX, bomb.targetY, waveSize, 0, Math.PI * 2);
                         ctx.stroke();
                     }
                     
-                    // Heat shimmer effect
-                    const shimmerGradient = ctx.createRadialGradient(
-                        bomb.targetX, bomb.targetY, 0,
-                        bomb.targetX, bomb.targetY, baseSize * 0.8
-                    );
-                    shimmerGradient.addColorStop(0, 'rgba(255, 200, 100, 0.4)');
-                    shimmerGradient.addColorStop(0.6, 'rgba(255, 150, 50, 0.2)');
-                    shimmerGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
+                    ctx.shadowBlur = 0;
                     
-                    ctx.fillStyle = shimmerGradient;
+                } else if (bomb.phase === 'shockwave2') {
+                    // SECOND SHOCKWAVE - EVEN DIMMER
+                    const baseSize = 400;
+                    
+                    // Fading central glow - VERY DIM
+                    const glowGradient = ctx.createRadialGradient(
+                        bomb.targetX, bomb.targetY, 0,
+                        bomb.targetX, bomb.targetY, baseSize * 0.5
+                    );
+                    glowGradient.addColorStop(0, 'rgba(255, 180, 80, 0.25)'); // Reduced from 0.5
+                    glowGradient.addColorStop(0.6, 'rgba(255, 120, 40, 0.15)'); // Reduced from 0.3
+                    glowGradient.addColorStop(1, 'rgba(255, 80, 0, 0)');
+                    
+                    ctx.fillStyle = glowGradient;
                     ctx.beginPath();
-                    ctx.arc(bomb.targetX, bomb.targetY, baseSize * 0.8, 0, Math.PI * 2);
+                    ctx.arc(bomb.targetX, bomb.targetY, baseSize * 0.5, 0, Math.PI * 2);
                     ctx.fill();
+                    
+                    // Wider pressure waves - VERY THIN AND DIM
+                    for (let i = 0; i < 10; i++) {
+                        const waveSize = baseSize * 0.3 + (i * 50) + Math.sin(time * 3 + i) * 20;
+                        const waveAlpha = Math.max(0, 0.35 - (i * 0.035)); // Reduced from 0.7
+                        
+                        ctx.strokeStyle = `rgba(255, ${160 - i * 15}, 0, ${waveAlpha})`;
+                        ctx.lineWidth = 5 - (i * 0.4); // Reduced from 10
+                        ctx.shadowBlur = 10; // Reduced from 20
+                        ctx.shadowColor = '#ff8800';
+                        ctx.beginPath();
+                        ctx.arc(bomb.targetX, bomb.targetY, waveSize, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
                     
                     ctx.shadowBlur = 0;
                     
-                } else if (bomb.phase === 'burning' && bomb.burningTimer > 0) {
-                    // Intense burning ground with lava-like effect
+                } else if (bomb.phase === 'burning') {
+                    // BURNING GROUND - MUCH LESS BRIGHT
                     const radius = ULTIMATES.seismic_bomb.burningGround.radius;
-                    const alpha = bomb.burningTimer / ULTIMATES.seismic_bomb.burningGround.duration;
-                    const pulse = Math.sin(time * 2) * 0.2;
+                    const timeLeft = bomb.burningTimer || 0;
+                    const totalDuration = ULTIMATES.seismic_bomb.burningGround.duration;
+                    const alpha = Math.max(0, timeLeft / totalDuration) * 0.6; // Scale down opacity by 0.6
                     
-                    // Molten ground gradient
+                    // Molten ground base - DIMMER
                     const lavaGradient = ctx.createRadialGradient(
                         bomb.burningX, bomb.burningY, 0,
                         bomb.burningX, bomb.burningY, radius
                     );
-                    lavaGradient.addColorStop(0, `rgba(255, 255, 100, ${(alpha * 0.7 + pulse)})`);
-                    lavaGradient.addColorStop(0.3, `rgba(255, 150, 0, ${alpha * 0.6})`);
-                    lavaGradient.addColorStop(0.6, `rgba(255, 80, 0, ${alpha * 0.4})`);
+                    const pulse = Math.sin(time * 2) * 0.1; // Reduced from 0.15
+                    lavaGradient.addColorStop(0, `rgba(255, 255, 100, ${Math.min(0.5, alpha * 0.9 + pulse)})`); // Capped at 0.5
+                    lavaGradient.addColorStop(0.3, `rgba(255, 180, 0, ${alpha * 0.5})`); // Reduced from 0.7
+                    lavaGradient.addColorStop(0.6, `rgba(255, 100, 0, ${alpha * 0.35})`); // Reduced from 0.5
+                    lavaGradient.addColorStop(0.85, `rgba(200, 60, 0, ${alpha * 0.2})`); // Reduced from 0.3
                     lavaGradient.addColorStop(1, 'rgba(150, 0, 0, 0)');
                     
                     ctx.fillStyle = lavaGradient;
-                    ctx.shadowBlur = 40;
+                    ctx.shadowBlur = 25; // Reduced from 50
                     ctx.shadowColor = '#ff6600';
                     ctx.beginPath();
                     ctx.arc(bomb.burningX, bomb.burningY, radius, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Heat waves rising
-                    for (let i = 0; i < 12; i++) {
-                        const angle = (i / 12) * Math.PI * 2 + time * 0.5;
-                        const waveRadius = radius * 0.6 + Math.sin(time * 2 + i) * 30;
-                        const wx = bomb.burningX + Math.cos(angle) * waveRadius;
-                        const wy = bomb.burningY + Math.sin(angle) * waveRadius;
+                    // Rising heat bubbles - FEWER AND DIMMER
+                    for (let i = 0; i < 10; i++) { // Reduced from 16
+                        const angle = (i / 10) * Math.PI * 2 + time * 0.3;
+                        const dist = radius * (0.3 + Math.sin(time * 1.5 + i) * 0.25);
+                        const bx = bomb.burningX + Math.cos(angle) * dist;
+                        const by = bomb.burningY + Math.sin(angle) * dist;
+                        const bubbleSize = 12 + Math.sin(time * 3 + i) * 5; // Smaller
                         
-                        const heatGradient = ctx.createRadialGradient(wx, wy, 0, wx, wy, 20);
-                        heatGradient.addColorStop(0, `rgba(255, 200, 0, ${alpha * 0.6})`);
-                        heatGradient.addColorStop(0.5, `rgba(255, 100, 0, ${alpha * 0.3})`);
-                        heatGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
+                        const bubbleGradient = ctx.createRadialGradient(bx, by, 0, bx, by, bubbleSize);
+                        bubbleGradient.addColorStop(0, `rgba(255, 255, 150, ${alpha * 0.4})`); // Reduced from 0.8
+                        bubbleGradient.addColorStop(0.5, `rgba(255, 150, 0, ${alpha * 0.25})`); // Reduced from 0.5
+                        bubbleGradient.addColorStop(1, 'rgba(255, 0, 0, 0)');
                         
-                        ctx.fillStyle = heatGradient;
+                        ctx.fillStyle = bubbleGradient;
+                        ctx.shadowBlur = 8; // Reduced from 15
+                        ctx.shadowColor = '#ff6600';
                         ctx.beginPath();
-                        ctx.arc(wx, wy, 15 + Math.sin(time * 3 + i) * 5, 0, Math.PI * 2);
+                        ctx.arc(bx, by, bubbleSize, 0, Math.PI * 2);
                         ctx.fill();
                     }
                     
-                    // Ember particles
-                    for (let i = 0; i < 20; i++) {
-                        const emberAngle = (i / 20) * Math.PI * 2 + time * 0.3;
-                        const emberDist = radius * (0.4 + Math.sin(time * 1.5 + i) * 0.3);
+                    // Floating embers - FEWER AND SMALLER
+                    for (let i = 0; i < 15; i++) { // Reduced from 25
+                        const emberAngle = (i / 15) * Math.PI * 2 + time * 0.4;
+                        const emberDist = radius * (0.5 + Math.sin(time + i) * 0.3);
                         const ex = bomb.burningX + Math.cos(emberAngle) * emberDist;
-                        const ey = bomb.burningY + Math.sin(emberAngle) * emberDist;
-                        const emberSize = 3 + Math.sin(time * 4 + i) * 2;
+                        const ey = bomb.burningY + Math.sin(emberAngle) * emberDist - Math.abs(Math.sin(time * 2 + i)) * 20;
+                        const emberSize = 1.5 + Math.sin(time * 4 + i) * 1; // Smaller
                         
-                        ctx.fillStyle = `rgba(255, ${150 + Math.sin(time * 3 + i) * 105}, 0, ${alpha * 0.9})`;
-                        ctx.shadowBlur = 10;
-                        ctx.shadowColor = '#ff6600';
+                        ctx.fillStyle = `rgba(255, ${180 + Math.sin(time * 3 + i) * 75}, 0, ${alpha * 0.6})`; // Reduced from 0.9
+                        ctx.shadowBlur = 5; // Reduced from 8
+                        ctx.shadowColor = '#ffaa00';
                         ctx.beginPath();
                         ctx.arc(ex, ey, emberSize, 0, Math.PI * 2);
                         ctx.fill();
                     }
                     
-                    // Pulsing core
-                    const coreSize = 30 + Math.sin(time * 3) * 10;
-                    const coreGradient = ctx.createRadialGradient(bomb.burningX, bomb.burningY, 0, bomb.burningX, bomb.burningY, coreSize);
-                    coreGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.9})`);
-                    coreGradient.addColorStop(0.5, `rgba(255, 200, 0, ${alpha * 0.6})`);
+                    // Bright pulsing core - MUCH SMALLER AND DIMMER
+                    const coreSize = 25 + Math.sin(time * 3) * 8; // Reduced from 40 + 12
+                    const coreGradient = ctx.createRadialGradient(
+                        bomb.burningX, bomb.burningY, 0,
+                        bomb.burningX, bomb.burningY, coreSize
+                    );
+                    coreGradient.addColorStop(0, `rgba(255, 255, 255, ${alpha * 0.5})`); // Reduced from alpha
+                    coreGradient.addColorStop(0.4, `rgba(255, 220, 100, ${alpha * 0.4})`); // Reduced from 0.8
+                    coreGradient.addColorStop(0.7, `rgba(255, 150, 0, ${alpha * 0.25})`); // Reduced from 0.5
                     coreGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
                     
                     ctx.fillStyle = coreGradient;
-                    ctx.shadowBlur = 30;
+                    ctx.shadowBlur = 20; // Reduced from 40
                     ctx.shadowColor = '#ffffff';
                     ctx.beginPath();
                     ctx.arc(bomb.burningX, bomb.burningY, coreSize, 0, Math.PI * 2);
@@ -18929,9 +18985,7 @@
                                 }
                             });
                             
-                            // Activate aura around player (only once)
-                            player.surgeAuraTimer = 60; // 1 second aura (60 frames at 60fps)
-                            player.surgeAuraElement = p.element;
+                            // NO AURA - removed for clean gameplay
                             
                             // Track hits for CATALYST ship resonance burst
                             if (player.selectedShip === 'CATALYST') {
@@ -18997,8 +19051,9 @@
             if (state.level < 5) nextCurve = 8 + (state.level * 6); // 14, 20, 26, 32 (was 20, 30, 40, 50)
             else if (state.level < 10) nextCurve = 10 + (state.level * 10); // 60, 70, 80, 90, 100
             else if (state.level < 30) nextCurve = 110 + ((state.level - 10) * 15); // Linear through level 30
-            else if (state.level < 40) nextCurve = 410 + ((state.level - 30) * 25); // +25 per level: 30-39
-            else nextCurve = 660 + ((state.level - 40) * 18); // Reduced scaling 40-50: +18 per level (was +25) 
+            else if (state.level < 35) nextCurve = 410 + ((state.level - 30) * 20); // +20 per level: 30-34 (smoother transition)
+            else if (state.level < 45) nextCurve = 510 + ((state.level - 35) * 12); // +12 per level: 35-44 (was +15, reduced to make less grindy)
+            else nextCurve = 630 + ((state.level - 45) * 8); // Final stretch 45-50: +8 per level (was +12, gentle finish) 
 
 
             if(state.xp >= state.xpToNext && state.level < 50) { // Cap at level 50
@@ -19576,11 +19631,18 @@
                 } else {
                     // Standardized format: [Stat]: +X%
                     if (opt.id === 'hp') {
-                        let hpGain = 25 * mult; // Base HP gain
-                        // ASCENSION 1: FRAGILE HULL - show reduced HP value
-                        if (state.activeAscension === 1) {
-                            hpGain = Math.floor(hpGain * 0.75); // -25% HP from upgrades
+                        let hpGain = Math.floor(25 * mult); // Base HP gain - round to match actual application
+                        
+                        // Apply Fortified Hull bonus to display
+                        if (player.fortifiedHullUpgradeBonus) {
+                            hpGain = Math.floor(hpGain * (1 + player.fortifiedHullUpgradeBonus));
                         }
+                        
+                        // ASCENSION 1+: FRAGILE HULL - show reduced HP value
+                        if (player.fragileHullPenalty) {
+                            hpGain = Math.floor(hpGain * player.fragileHullPenalty);
+                        }
+                        
                         desc = `Max HP: +${hpGain} & Heal`;
                     }
                     else if (opt.id === 'luck') {
@@ -19925,7 +19987,7 @@
             }
             
             if(id==='hp') { 
-                let hpGain = 25*mult; // Base: 25 HP per upgrade (increased from 20)
+                let hpGain = Math.floor(25*mult); // Base: 25 HP per upgrade - round immediately to avoid decimals
                 
                 // FORTIFIED HULL AUGMENT: Increase HP upgrade effectiveness
                 if (player.fortifiedHullUpgradeBonus) {
@@ -20026,8 +20088,9 @@
                 // Show/hide 3rd and 4th orb based on ship and augments
                 if (player.selectedShip === 'VANGUARD') {
                     orb3.style.display = 'inline-block';
-                    // Show 4th orb only if player has Shield Capacitor Tier 3 (shield4 exists)
-                    if (player.shield4 !== undefined) {
+                    // Show 4th orb ONLY if Shield Capacitor Tier 3 is equipped (shield4 = 100)
+                    // shield4 will be 0 by default, only 100 if augment is equipped
+                    if (player.shield4 === 100 || player.shield4RechargeTimer > 0) {
                         orb4.style.display = 'inline-block';
                     } else {
                         orb4.style.display = 'none';
@@ -20578,6 +20641,33 @@
         };
         
         function showVictory() {
+            // TEST MODE: Don't save any progress
+            if (testModeEnabled) {
+                console.log('🧪 TEST MODE: Victory achieved but NOT saving progress');
+                state.screen = 'gameover';
+                
+                // Change title to VICTORY
+                const gameoverTitle = document.querySelector('#gameover-screen h2');
+                if (gameoverTitle) {
+                    gameoverTitle.textContent = 'VICTORY (TEST MODE - NOT SAVED)';
+                    gameoverTitle.className = 'text-4xl text-yellow-400 font-black mb-1 drop-shadow-[0_0_20px_rgba(234,179,8,0.5)]';
+                }
+                
+                // Hide level display for victory
+                document.getElementById('final-level').parentElement.style.display = 'none';
+                
+                // Set score and time
+                document.getElementById('final-score').innerText = formatScore(state.score);
+                const t = Math.floor((state.gameTime)/1000);
+                const mins = Math.floor(t/60).toString().padStart(2, '0');
+                const secs = (t%60).toString().padStart(2, '0');
+                document.getElementById('final-time').innerText = `${mins}:${secs}`;
+                
+                document.getElementById('gameover-screen').classList.add('active');
+                return; // Skip all saving logic
+            }
+            
+            // NORMAL MODE: Save progress
             // Check if this is the first victory
             const hasBeatenBoss = localStorage.getItem('neonrogue_hasBeatenBoss');
             const isFirstVictory = !hasBeatenBoss || hasBeatenBoss === 'false';
@@ -20983,6 +21073,7 @@
             weaponLevel: 10,
             ultimate: 'random',
             ultimateCharge: 90,
+            instantUltRecharge: false, // Instant ultimate recharge (3s after use)
             godMode: true
         };
         
@@ -21069,6 +21160,7 @@
                 document.getElementById('test-ultimate-select').value = testModeSettings.ultimate;
                 document.getElementById('test-ult-charge-slider').value = testModeSettings.ultimateCharge;
                 document.getElementById('test-ult-charge-value').textContent = testModeSettings.ultimateCharge + '%';
+                document.getElementById('test-instant-ult').checked = testModeSettings.instantUltRecharge;
                 document.getElementById('test-god-mode').checked = testModeSettings.godMode;
                 
                 // Load weapons and elements
@@ -21133,6 +21225,7 @@
                 testModeSettings.weaponLevel = parseInt(document.getElementById('test-weapon-level-slider').value);
                 testModeSettings.ultimate = document.getElementById('test-ultimate-select').value;
                 testModeSettings.ultimateCharge = parseInt(document.getElementById('test-ult-charge-slider').value);
+                testModeSettings.instantUltRecharge = document.getElementById('test-instant-ult').checked;
                 testModeSettings.godMode = document.getElementById('test-god-mode').checked;
                 
                 // Save weapons and elements
@@ -21159,6 +21252,7 @@
                 testModeSettings.weaponLevel = 10;
                 testModeSettings.ultimate = 'random';
                 testModeSettings.ultimateCharge = 90;
+                testModeSettings.instantUltRecharge = false;
                 testModeSettings.godMode = true;
                 
                 // Update UI
@@ -21170,6 +21264,7 @@
                 document.getElementById('test-ultimate-select').value = 'random';
                 document.getElementById('test-ult-charge-slider').value = 90;
                 document.getElementById('test-ult-charge-value').textContent = '90%';
+                document.getElementById('test-instant-ult').checked = false;
                 document.getElementById('test-god-mode').checked = true;
                 
                 for (let i = 1; i <= 4; i++) {
@@ -21612,7 +21707,7 @@
                                     class="${canAfford ? 'bg-purple-600 hover:bg-purple-500' : 'bg-gray-700 cursor-not-allowed'} text-white text-xs font-bold py-1.5 px-4 rounded whitespace-nowrap transition-all"
                                     ${!canAfford ? 'disabled' : ''}
                                 >
-                                    ${canAfford ? 'UNLOCK' : 'LOCKED'}
+                                    ${canAfford ? (currentTier > 0 ? 'UPGRADE' : 'UNLOCK') : 'LOCKED'}
                                 </button>
                             ` : `
                                 <div class="text-teal-400 text-xl">
@@ -21718,7 +21813,7 @@
             // Refresh displays
             updateLabCurrency();
             renderAugmentBrowse(currentBrowseFilter);
-            renderAugmentLoadout();
+            // Note: Loadout display updates automatically when augment selector is opened
         };
         
         // Track current browse filter
@@ -22331,6 +22426,64 @@
         checkShipUnlocks();
         updateShipDisplay();
         
+        // Ship Details Modal
+        const shipDetailsBtn = document.getElementById('ship-details-btn');
+        const shipDetailsModal = document.getElementById('ship-details-modal');
+        const closeDetailsBtn = document.getElementById('close-details-btn');
+        
+        if (shipDetailsBtn) {
+            shipDetailsBtn.addEventListener('click', () => {
+                const ship = ships[currentShipIndex];
+                if (ship.locked) return; // Don't show details for locked ships
+                
+                document.getElementById('modal-ship-name').textContent = ship.name;
+                
+                // Build detailed stats
+                let shieldCount = 2;
+                if (ship.name === 'DISRUPTOR') shieldCount = 1;
+                else if (ship.name === 'VANGUARD') shieldCount = 3;
+                else if (ship.name === 'CATALYST') shieldCount = 2;
+                else if (ship.name === 'REAPER') shieldCount = 0;
+                
+                const details = `
+                    <div class="mb-4">
+                        <h4 class="text-teal-400 font-bold mb-2">SHIP STATS</h4>
+                        <div class="font-mono text-xs space-y-1">
+                            <div>Max HP: <span class="text-white">${ship.hp}</span></div>
+                            <div>Base Damage: <span class="text-white">${ship.dmg}</span></div>
+                            <div>Movement Speed: <span class="text-white">${ship.spd}</span></div>
+                            <div>Shield Charges: <span class="text-white">${shieldCount}${shieldCount === 0 ? ' (No shields)' : ''}</span></div>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 class="text-teal-400 font-bold mb-2">STARTING WEAPON</h4>
+                        <div class="mb-2 font-bold text-white">${ship.weapon}</div>
+                        <div class="text-xs text-gray-400 leading-relaxed space-y-2">
+                            ${(ship.weaponDetails || ship.weaponDesc || '').split('\n\n').map(p => `<p>${p}</p>`).join('')}
+                        </div>
+                    </div>
+                `;
+                
+                document.getElementById('modal-ship-details').innerHTML = details;
+                shipDetailsModal.style.display = 'flex';
+            });
+        }
+        
+        if (closeDetailsBtn) {
+            closeDetailsBtn.addEventListener('click', () => {
+                shipDetailsModal.style.display = 'none';
+            });
+        }
+        
+        // Close modal when clicking outside
+        if (shipDetailsModal) {
+            shipDetailsModal.addEventListener('click', (e) => {
+                if (e.target === shipDetailsModal) {
+                    shipDetailsModal.style.display = 'none';
+                }
+            });
+        }
+        
         const shipPrevBtn = document.getElementById('ship-prev');
         const shipNextBtn = document.getElementById('ship-next');
         
@@ -22374,6 +22527,13 @@
         
         // Auto-save stats after each run (you can call this from game over)
         function updateMetaStats() {
+            // TEST MODE: Don't save any stats
+            if (testModeEnabled) {
+                console.log('🧪 TEST MODE: Stats NOT saved');
+                return;
+            }
+            
+            // NORMAL MODE: Save stats
             // Increment total runs
             const totalRuns = parseInt(localStorage.getItem('neonrogue_totalRuns') || '0') + 1;
             localStorage.setItem('neonrogue_totalRuns', totalRuns);
