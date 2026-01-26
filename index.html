@@ -3400,23 +3400,39 @@
                         const cannonY = this.y + Math.sin(offsetAngle) * formationRadius;
                         
                         // Find closest enemy to THIS cannon's position
+                        // PRIORITY: Boss shields first (if any exist), then closest enemy
                         let target = null;
                         let minDist = this.range * this.weaponStats.ion.area;
                         
-                        // DEBUG: Check if shields are visible
-                        const allShields = entities.enemies.filter(e => e.isBossShield);
-                        const shieldsInRange = allShields.filter(e => e.hp > 0);
+                        // Check for boss shields first (highest priority)
+                        const activeShields = entities.enemies.filter(e => 
+                            e.isBossShield && e.hp > 0 && (!e.spawnInvuln || e.spawnInvuln <= 0)
+                        );
                         
-                        entities.enemies.forEach(e => {
-                            if (e.hp <= 0) return;
-                            const dx = e.x - cannonX;
-                            const dy = e.y - cannonY;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
-                            if (dist < minDist) {
-                                minDist = dist;
-                                target = e;
-                            }
-                        });
+                        if (activeShields.length > 0) {
+                            // Target closest shield
+                            activeShields.forEach(shield => {
+                                const dx = shield.x - cannonX;
+                                const dy = shield.y - cannonY;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    target = shield;
+                                }
+                            });
+                        } else {
+                            // No shields - target closest enemy (including boss core)
+                            entities.enemies.forEach(e => {
+                                if (e.hp <= 0) return;
+                                const dx = e.x - cannonX;
+                                const dy = e.y - cannonY;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    target = e;
+                                }
+                            });
+                        }
                         
                         if (target) {
                             const shootFn = (tgt, cascadeBonus = 1.0) => {
@@ -4908,8 +4924,8 @@
                         if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active) || drone.target.fleeing) {
                             // Priority targeting influenced by proximity to player
                             const priorityOrder = (enemy) => {
-                                // Boss shields are HIGHEST priority (only when active)
-                                if (enemy.isBossShield && enemy.hp > 0) return 10;
+                                // Boss shields are HIGHEST priority (only when active and vulnerable)
+                                if (enemy.isBossShield && enemy.hp > 0 && (!enemy.spawnInvuln || enemy.spawnInvuln <= 0)) return 10;
                                 
                                 // Final boss (Nexus Prime) is SECOND HIGHEST priority (after shields down)
                                 if (enemy.isNexusPrime) return 9;
@@ -8729,6 +8745,18 @@
                 }
             });
             
+            // CRITICAL: Check if Phoenix Protocol destroyed all boss shields
+            if (state.finalBoss && state.finalBoss.shields) {
+                const activeShields = state.finalBoss.shields.filter(s => s.hp > 0).length;
+                if (activeShields === 0 && !state.finalBoss.coreVulnerable) {
+                    console.log('🔥 Phoenix Protocol destroyed all shields - Core now vulnerable!');
+                    state.finalBoss.coreVulnerable = true;
+                    state.finalBoss.shieldsActive = false;
+                    state.finalBoss.vulnerabilityTimer = 900; // 15 seconds
+                    state.finalBoss.isRegeneratingShields = false; // Cancel any regeneration
+                }
+            }
+            
             data.pulseCount++;
             
             // Schedule next pulse or finish
@@ -8802,15 +8830,19 @@
             constructor(type) {
                 this.id = nextEnemyId++; // Assign unique ID
                 
-                // FIXED: Spawn enemies off-screen with proper margin
-                // Calculate screen bounds with buffer
-                const screenBuffer = 20; // Minimal margin - just enough to hide enemy sprite
-                const spawnDist = Math.max(width, height) / state.zoom / 2 + screenBuffer;
+                // FIXED: Spawn enemies off-screen using world coordinates
+                // Calculate visible world area (canvas size / zoom)
+                const visibleWorldWidth = width / state.zoom;
+                const visibleWorldHeight = height / state.zoom;
+                
+                // Spawn distance = half the diagonal of visible area + buffer
+                const screenBuffer = 50; // Buffer to ensure fully offscreen
+                const spawnDist = Math.sqrt(visibleWorldWidth**2 + visibleWorldHeight**2) / 2 + screenBuffer;
                 
                 // Random angle around player
                 const angle = seededRandom() * Math.PI * 2;
                 
-                // Spawn at minimum distance to be off-screen
+                // Spawn at minimum distance to be off-screen in world space
                 this.x = player.x + Math.cos(angle) * spawnDist;
                 this.y = player.y + Math.sin(angle) * spawnDist;
                 
@@ -9112,7 +9144,8 @@
                     // Debug logging - show for first 50 hits or occasionally
                     if (!this.armorLogCount) this.armorLogCount = 0;
                     if (this.armorLogCount < 50 || Math.random() < 0.05) {
-                        console.log(`🛡️ Armor: ${this.armor.toFixed(1)} → Effective: ${effectiveArmor.toFixed(1)} (pierce: ${((player.armorPiercing || 0) * 100).toFixed(0)}%) → Reduction: ${(armorReduction * 100).toFixed(1)}% → Final Damage: ${amt.toFixed(1)}`);
+                        // Calculate damage reduction from armor
+                        const armorReduction = effectiveArmor / (effectiveArmor + 100);
                         this.armorLogCount++;
                     }
                 }
@@ -12670,19 +12703,20 @@
                         const chargeSize = 15 * chargeProgress * (1 + this.railLevel * 0.2);
                         const chargeAlpha = chargeProgress * 0.8;
                         
-                        // Imploding energy ring
+                        // Imploding energy ring (clamp radius to prevent negative)
+                        const ringRadius = Math.max(1, 30 - chargeSize);
                         ctx.strokeStyle = `rgba(100, 200, 255, ${chargeAlpha})`;
                         ctx.lineWidth = 3;
                         ctx.shadowBlur = 20;
                         ctx.shadowColor = '#3c8cff';
                         ctx.beginPath();
-                        ctx.arc(this.origX, this.origY, 30 - chargeSize, 0, Math.PI * 2);
+                        ctx.arc(this.origX, this.origY, ringRadius, 0, Math.PI * 2);
                         ctx.stroke();
                         
-                        // Inner particles converging
+                        // Inner particles converging (also clamp dist)
                         for (let i = 0; i < 8; i++) {
                             const angle = (i / 8) * Math.PI * 2;
-                            const dist = (30 - chargeSize) * 0.8;
+                            const dist = Math.max(1, ringRadius * 0.8);
                             const px = this.origX + Math.cos(angle) * dist;
                             const py = this.origY + Math.sin(angle) * dist;
                             
@@ -14926,6 +14960,11 @@
             
             // CLEAR ALL PICKUPS (XP, health, magnets)
             const pickupsBeforeClear = entities.pickups.length;
+            console.log(`📦 Pickup types before clear:`, entities.pickups.map(p => p.type));
+            console.log(`📦 Pickup count by type:`, entities.pickups.reduce((acc, p) => {
+                acc[p.type] = (acc[p.type] || 0) + 1;
+                return acc;
+            }, {}));
             entities.pickups = [];
             console.log(`✨ Cleared ${pickupsBeforeClear} pickups from map`);
             
@@ -16247,10 +16286,16 @@
                     // Fade out
                     e.fleeingOpacity = Math.max(0, e.fleeingTimer / 180);
                     
-                    // Check if offscreen or timer expired
+                    // Check if offscreen (using world coordinates relative to camera)
+                    const cameraLeft = state.camera.x;
+                    const cameraRight = state.camera.x + (width / state.zoom);
+                    const cameraTop = state.camera.y;
+                    const cameraBottom = state.camera.y + (height / state.zoom);
+                    const margin = 300; // Large margin so they flee far offscreen
+                    
                     const isOffscreen = (
-                        e.x < -200 || e.x > width + 200 ||
-                        e.y < -200 || e.y > height + 200
+                        e.x < cameraLeft - margin || e.x > cameraRight + margin ||
+                        e.y < cameraTop - margin || e.y > cameraBottom + margin
                     );
                     
                     if (isOffscreen || e.fleeingTimer <= 0) {
@@ -16495,28 +16540,8 @@
                         e.vy = 0;
                     }
                     
-                    // Keep boss on screen with padding
-                    const minX = 100;
-                    const maxX = 500;
-                    const minY = 100;
-                    const maxY = 500;
-                    
-                    if (e.x < minX) {
-                        e.x = minX;
-                        e.vx = Math.abs(e.vx) * 0.5; // Bounce back gently
-                    }
-                    if (e.x > maxX) {
-                        e.x = maxX;
-                        e.vx = -Math.abs(e.vx) * 0.5;
-                    }
-                    if (e.y < minY) {
-                        e.y = minY;
-                        e.vy = Math.abs(e.vy) * 0.5;
-                    }
-                    if (e.y > maxY) {
-                        e.y = maxY;
-                        e.vy = -Math.abs(e.vy) * 0.5;
-                    }
+                    // Boss movement updates are done above - no clamping needed
+                    // (Boss stays near player naturally via drift mechanics)
                     
                     e.coreRotation += 0.02 * (scaledDt/16);
                     
@@ -19425,11 +19450,13 @@
                 if (state.level === 50 && !state.finalBossTriggered) {
                     console.log('⚡ Level 50 hit - triggering NEXUS PRIME immediately (NO LEVEL-UP)');
                     state.finalBossTriggered = true;
+                    state.finalBossActive = true; // Set IMMEDIATELY to stop spawns
                     
                     // Clear all XP gems from screen
                     entities.pickups = entities.pickups.filter(p => p.type !== 'xp');
+                    console.log(`🧹 Cleared XP pickups, remaining: ${entities.pickups.length}`);
                     
-                    // Trigger boss spawn
+                    // Trigger boss spawn (this will clear remaining pickups)
                     triggerNexusPrime();
                     
                     // Don't queue any level-up for level 50 - boss fight starts immediately
@@ -21006,6 +21033,10 @@
         };
         
         function showVictory() {
+            // CRITICAL: Save weaponStats immediately before anything else can reset it
+            const savedWeaponStats = JSON.parse(JSON.stringify(state.weaponStats || {}));
+            console.log('💾 Saved weaponStats for victory screen:', savedWeaponStats);
+            
             // TEST MODE: Don't save any progress
             if (testModeEnabled) {
                 console.log('🧪 TEST MODE: Victory achieved but NOT saving progress');
@@ -21152,11 +21183,11 @@
                 'drones': 'Combat Drones'
             };
             
-            console.log('🎉 Victory weaponStats:', state.weaponStats);
-            console.log('🎉 Victory weaponStats keys:', Object.keys(state.weaponStats));
+            console.log('🎉 Victory weaponStats:', savedWeaponStats);
+            console.log('🎉 Victory weaponStats keys:', Object.keys(savedWeaponStats));
             
             // Filter to only actual weapons and sort by damage
-            const weaponArray = Object.entries(state.weaponStats || {})
+            const weaponArray = Object.entries(savedWeaponStats || {})
                 .filter(([weapon, stats]) => weaponNames[weapon]) // Only known weapons
                 .map(([weapon, stats]) => ({ weapon, ...stats }))
                 .sort((a, b) => (b.damage || 0) - (a.damage || 0));
