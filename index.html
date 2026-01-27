@@ -1942,7 +1942,6 @@
                     this.shield4 = 0; // Only Vanguard uses shield4 with augment
                 }
                 
-                console.log(`🛡️ Shields initialized for ${this.selectedShip}: s1=${this.shield1}, s2=${this.shield2}, s3=${this.shield3}`);
                 
                 // Apply Ascension modifiers
                 this.applyAscensionModifiers();
@@ -2097,7 +2096,6 @@
                     
                     // Weakened Shields: +50% shield recharge delay
                     this.shieldRechargeDelay = Math.floor(this.shieldRechargeDelay * 1.5);
-                    console.log(`🛡️ Weakened Shields: Recharge delay increased to ${this.shieldRechargeDelay} frames`);
                     
                     // Energy Leak: Ultimate charges 20% slower
                     this.energyLeakPenalty = 0.80; // Stored for ultimate charge calculations
@@ -2122,7 +2120,6 @@
                     
                     // Leaky Shields: Shields only block 50% of damage
                     this.leakyShields = true;
-                    console.log(`🌊 Leaky Shields: Shields only block 50% damage`);
                     
                     // Compressed Field: -15% area and area upgrades
                     this.compressedFieldPenalty = 0.85; // Stored for area calculations
@@ -2386,7 +2383,6 @@
                     // Leaky Shields: Calculate damage that goes through
                     if (this.leakyShields) {
                         leakyDamage = amount * 0.5; // 50% of damage leaks through
-                        console.log(`🌊 Leaky Shields: ${leakyDamage.toFixed(1)} damage leaks through shield`);
                     }
                     
                     // Deplete shield4 (rightmost, Vanguard with Shield Capacitor only) first if it's full and not charging
@@ -3941,7 +3937,7 @@
                     if (this.railgunTimer <= 0) {
                         const fireRailgun = (damageBonus = 1.0, depth = 0) => {
                             // Find dense enemy clusters to target
-                            const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
+                            const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 500; // Railgun has longer range
                             
                             // Find enemies in visible range
@@ -4001,7 +3997,7 @@
                     this.flakTimer -= (dt/16) * fireRateMult;
                     if (this.flakTimer <= 0) {
                         // Find dense enemy clusters to target
-                        const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
+                        const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                         const maxSearchRadius = 450;
                         
                         // Find enemies in visible range
@@ -4311,7 +4307,7 @@
                         
                         const deployMine = (dmgMult = 1.0, depth = 0, angleOffset = 0) => {
                             // Find dense enemy clusters to target
-                            const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
+                            const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 350; // Reduced from 450 to prevent off-screen throws
                             
                             // Find enemies in visible range
@@ -4403,7 +4399,7 @@
                     if (this.gasTimer <= 0) {
                         const lobBarrage = (damageBonus = 1.0) => {
                             // Prioritize enemies within visible range, then find densest cluster
-                            const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
+                            const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 400;
                             
                             const visibleEnemies = entities.enemies.filter(e => {
@@ -5266,7 +5262,7 @@
                     if (this.empTimer <= 0) {
                         const fireEmpPulse = (dmgMult = 1.0) => {
                             // CLUSTER TARGETING - Find densest enemy cluster (like missiles/railgun)
-                            const visibleRadius = Math.min(canvas.width, canvas.height) * 0.4;
+                            const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 500;
                             
                             // Find enemies in visible range first
@@ -6732,7 +6728,6 @@
                     if (!this.pylonsRenderLogFrame) this.pylonsRenderLogFrame = 0;
                     this.pylonsRenderLogFrame++;
                     if (this.pylonsRenderLogFrame >= 300) { // Every 300 frames (~5 seconds at 60fps)
-                        console.log(`⚡ PYLONS RENDER - ${renderTotalTime.toFixed(2)}ms | Beams: ${beamRenderTime.toFixed(2)}ms | Pylons: ${this.pylons.length} | Pairs: ${this.cachedPylonPairs?.length || 0} | Peak: ${this.pylonsRenderPeakTime.toFixed(2)}ms`);
                         this.pylonsRenderLogFrame = 0;
                         this.pylonsRenderPeakTime = 0; // Reset peak after logging
                     }
@@ -8636,7 +8631,6 @@
         
         // PHOENIX PROTOCOL: Player-centered expanding pulses
         function executePhoenixProtocol() {
-            console.log('🔥 Phoenix Protocol activating!');
             
             // Invulnerability for ultimate duration + camera return + 1s buffer
             // 4000ms pulses + 500ms camera + 1000ms buffer = 5500ms = 330 frames
@@ -8679,7 +8673,6 @@
             }
             
             const pulseInfo = ultimateData.pulseData[data.pulseCount];
-            console.log(`🔥 Phoenix pulse ${data.pulseCount + 1}/${data.totalPulses}: ${pulseInfo.radius}px radius, ${pulseInfo.damage}% damage`);
             
             // Camera shake removed
             
@@ -8749,7 +8742,6 @@
             if (state.finalBoss && state.finalBoss.shields) {
                 const activeShields = state.finalBoss.shields.filter(s => s.hp > 0).length;
                 if (activeShields === 0 && !state.finalBoss.coreVulnerable) {
-                    console.log('🔥 Phoenix Protocol destroyed all shields - Core now vulnerable!');
                     state.finalBoss.coreVulnerable = true;
                     state.finalBoss.shieldsActive = false;
                     state.finalBoss.vulnerabilityTimer = 900; // 15 seconds
@@ -8774,7 +8766,6 @@
                 // Unlock player
                 player.phoenixLocked = false;
                 
-                console.log('🔥 Phoenix Protocol pulses complete - burning ground active');
             } else {
                 // Schedule next pulse
                 data.nextPulseTimer = data.pulseInterval;
@@ -9219,12 +9210,10 @@
                 if (sourceId && sourceId !== 'voidwalker' && sourceId !== 'kamikaze') {
                     if (!state.weaponStats[sourceId]) {
                         state.weaponStats[sourceId] = { damage: 0, kills: 0 };
-                        console.log(`📊 Created weaponStats entry for: ${sourceId}`);
                     }
                     state.weaponStats[sourceId].damage += amt;
                     // Log occasionally (1% of the time) to avoid spam
                     if (Math.random() < 0.01) {
-                        console.log(`📊 Tracked ${amt.toFixed(1)} damage to ${sourceId}, total: ${state.weaponStats[sourceId].damage.toFixed(1)}`);
                     }
                 }
                 
@@ -9233,6 +9222,9 @@
                     entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt), displayColor, isCrit, type, sourceId, elementType));
                 }
                 if(this.hp <= 0) {
+                    // FINAL BOSS: No pickups during boss fight
+                    const allowPickups = !(state.finalBossActive && !state.finalBossDefeated);
+                    
                     // REAPER ROUNDS: Heal 1 HP on kill (max 5 HP/sec = 5 kills per second)
                     if (player.hasReaper && player.reaperCooldown <= 0) {
                         player.heal(1, false);
@@ -9332,12 +9324,10 @@
                     if (sourceId && sourceId !== 'voidwalker' && sourceId !== 'kamikaze') {
                         if (!state.weaponStats[sourceId]) {
                             state.weaponStats[sourceId] = { damage: 0, kills: 0 };
-                            console.log(`📊 Created weaponStats entry for kill: ${sourceId}`);
                         }
                         state.weaponStats[sourceId].kills++;
                         // Log every 10th kill to avoid spam
                         if (state.weaponStats[sourceId].kills % 10 === 0) {
-                            console.log(`📊 ${sourceId} reached ${state.weaponStats[sourceId].kills} kills`);
                         }
                     }
                     
@@ -9492,14 +9482,16 @@
                         state.saveCharges++;
                         
                         // NEXUS CORE DROP - 1 per boss kill (auto-magnetizes)
-                        const nexusCore = new Pickup(this.x - 20, this.y, 0, 'nexus_core');
-                        nexusCore.magnetized = true; // Auto-magnetize titan drops
-                        entities.pickups.push(nexusCore);
-                        
-                        // Data Core drop (also auto-magnetizes)
-                        const dataCore = new Pickup(this.x+20, this.y, 0, 'core');
-                        dataCore.magnetized = true; // Auto-magnetize titan drops
-                        entities.pickups.push(dataCore); 
+                        if (allowPickups) {
+                            const nexusCore = new Pickup(this.x - 20, this.y, 0, 'nexus_core');
+                            nexusCore.magnetized = true; // Auto-magnetize titan drops
+                            entities.pickups.push(nexusCore);
+                            
+                            // Data Core drop (also auto-magnetizes)
+                            const dataCore = new Pickup(this.x+20, this.y, 0, 'core');
+                            dataCore.magnetized = true; // Auto-magnetize titan drops
+                            entities.pickups.push(dataCore);
+                        }
                     } else if (this.type === 'splitter') {
                         // SPLITTER: Spawns 3 swarm enemies on death
                         for (let i = 0; i < 3; i++) {
@@ -9515,11 +9507,13 @@
                         createExplosion(this.x, this.y, this.color, 12); // Bigger explosion for split effect
                         
                         // Still drop XP shards for the splitter itself
-                        let shards = 5;
-                        if (this.xp > 0) {
-                            for(let i=0; i<shards; i++) {
-                                const sx = this.x + (seededRandom()-0.5)*20; const sy = this.y + (seededRandom()-0.5)*20;
-                                entities.pickups.push(new Pickup(sx, sy, this.xp / shards, 'xp'));
+                        if (allowPickups) {
+                            let shards = 5;
+                            if (this.xp > 0) {
+                                for(let i=0; i<shards; i++) {
+                                    const sx = this.x + (seededRandom()-0.5)*20; const sy = this.y + (seededRandom()-0.5)*20;
+                                    entities.pickups.push(new Pickup(sx, sy, this.xp / shards, 'xp'));
+                                }
                             }
                         }
                     } else if (this.type === 'voidwalker') {
@@ -9529,7 +9523,7 @@
                         }
                         
                         // Drop XP shards
-                        if (this.xp > 0) {
+                        if (allowPickups && this.xp > 0) {
                             for(let i=0; i<4; i++) {
                                 const sx = this.x + (seededRandom()-0.5)*20; 
                                 const sy = this.y + (seededRandom()-0.5)*20;
@@ -9540,7 +9534,7 @@
                         let shards = 1;
                         if(this.type === 'swarm') shards = 4; 
                         if(this.type === 'tank') shards = 10; 
-                        if (this.xp > 0) {
+                        if (allowPickups && this.xp > 0) {
                             for(let i=0; i<shards; i++) {
                                 const sx = this.x + (seededRandom()-0.5)*20; const sy = this.y + (seededRandom()-0.5)*20;
                                 entities.pickups.push(new Pickup(sx, sy, this.xp / shards, 'xp'));
@@ -9901,9 +9895,7 @@
                                     enemy.x += Math.cos(angle) * knockbackForce;
                                     enemy.y += Math.sin(angle) * knockbackForce;
                                     
-                                    // Keep enemy in bounds
-                                    enemy.x = Math.max(enemy.radius, Math.min(canvas.width - enemy.radius, enemy.x));
-                                    enemy.y = Math.max(enemy.radius, Math.min(canvas.height - enemy.radius, enemy.y));
+                                    // Enemies move in world space - no clamping needed
                                 }
                             });
                             
@@ -14949,36 +14941,34 @@
             const spawnX = screenCenterWorldX;
             const spawnY = screenCenterWorldY;
             
-            console.log(`🎯 ========== NEXUS PRIME SPAWN DEBUG ==========`);
-            console.log(`🎯 Player position at trigger: (${spawnX.toFixed(2)}, ${spawnY.toFixed(2)})`);
             console.log(`🎯 Player velocity: vx=${player.vx.toFixed(2)}, vy=${player.vy.toFixed(2)}`);
-            console.log(`🎯 Camera position: x=${state.camera.x.toFixed(2)}, y=${state.camera.y.toFixed(2)}`);
             console.log(`🎯 Current zoom: ${state.zoom.toFixed(2)}`);
             
-            // IMMEDIATELY spawn boss to prevent player drift during delays
-            spawnNexusPrime(spawnX, spawnY);
+            // CRITICAL: Sync camera to player position IMMEDIATELY
+            // Camera values are screen-space offsets, not world coordinates
+            state.camera.x = width/2 - player.x * state.zoom;
+            state.camera.y = height/2 - player.y * state.zoom;
+            state.cameraLocked = false; // Ensure camera isn't locked from ultimates
+            state.manualCameraControl = false; // Clear any manual control
+            
+            
+            // CRITICAL: Stop enemy spawns immediately
+            state.finalBossActive = true;
             
             // CLEAR ALL PICKUPS (XP, health, magnets)
             const pickupsBeforeClear = entities.pickups.length;
-            console.log(`📦 Pickup types before clear:`, entities.pickups.map(p => p.type));
-            console.log(`📦 Pickup count by type:`, entities.pickups.reduce((acc, p) => {
-                acc[p.type] = (acc[p.type] || 0) + 1;
-                return acc;
-            }, {}));
             entities.pickups = [];
-            console.log(`✨ Cleared ${pickupsBeforeClear} pickups from map`);
             
             // Make enemies FLEE before despawning (cinematic effect)
             const fleeeingEnemies = entities.enemies.filter(e => 
                 !e.isNexusPrime && !e.isBossTurret && !e.isBossShield
             );
             
-            console.log(`👻 ${fleeeingEnemies.length} enemies fleeing from NEXUS PRIME`);
-            
             // Mark enemies as fleeing and set them to run away
+            let markedCount = 0;
             fleeeingEnemies.forEach(e => {
                 e.fleeing = true;
-                e.fleeingTimer = 180; // 3 seconds to flee offscreen
+                e.fleeingTimer = 600; // 10 seconds to flee offscreen (increased from 180)
                 
                 // Calculate direction AWAY from player
                 const dx = e.x - player.x;
@@ -14986,20 +14976,39 @@
                 const dist = Math.sqrt(dx * dx + dy * dy);
                 
                 if (dist > 0) {
-                    // Set velocity to flee away at 3x normal speed
-                    const fleeSpeed = (e.speed || 1) * 3;
+                    // Set velocity to flee away at 6x normal speed (increased for more dramatic effect)
+                    const fleeSpeed = (e.speed || 1) * 6;
                     e.vx = (dx / dist) * fleeSpeed;
                     e.vy = (dy / dist) * fleeSpeed;
                 }
                 
-                // Make enemy semi-transparent to show fear
+                // Keep enemy fully opaque - no fade
                 e.fleeingOpacity = 1.0;
+                markedCount++;
+                
+                // Log first few for debugging
+                if (markedCount <= 3) {
+                    console.log(`   Enemy ${markedCount}: type=${e.type}, pos=(${e.x.toFixed(0)}, ${e.y.toFixed(0)}), fleeing=${e.fleeing}, timer=${e.fleeingTimer}, velocity=(${e.vx.toFixed(2)}, ${e.vy.toFixed(2)})`);
+                }
             });
             
-            console.log(`🎯 Boss entities: ${entities.enemies.filter(e => e.isNexusPrime).length} core, ${entities.enemies.filter(e => e.isBossShield).length} shields`);
             
-            // Show warning AFTER boss is already there (just for drama)
-            showBossWarning();
+            
+            // DRAMATIC SEQUENCE:
+            // 1. Enemies flee (happening now)
+            // 2. Warning appears (1 second delay)
+            // 3. Boss spawns (2.5 seconds after warning starts = 3.5s total)
+            
+            
+            // Step 1: Show warning after 1 second (let enemies flee first)
+            setTimeout(() => {
+                showBossWarning();
+            }, 1000);
+            
+            // Step 2: Spawn boss 2.5 seconds after warning (3.5s total from trigger)
+            setTimeout(() => {
+                spawnNexusPrime(spawnX, spawnY);
+            }, 3500);
         }
         
         function showBossWarning() {
@@ -15027,13 +15036,6 @@
             const finalBossX = bossX;
             const finalBossY = bossY + 200; // Spawn 200 units SOUTH (positive Y = down in world space)
             
-            console.log(`🔵 ========== SPAWN NEXUS PRIME ==========`);
-            console.log(`🔵 spawnNexusPrime called with: (${spawnX}, ${spawnY})`);
-            console.log(`🔵 Calculated bossX: ${bossX.toFixed(2)}, bossY: ${bossY.toFixed(2)}`);
-            console.log(`🔵 Final boss position: (${finalBossX.toFixed(2)}, ${finalBossY.toFixed(2)})`);
-            console.log(`🔵 Player CURRENT position: (${player.x.toFixed(2)}, ${player.y.toFixed(2)})`);
-            console.log(`🔵 Distance from player: ${Math.sqrt((finalBossX - player.x)**2 + (finalBossY - player.y)**2).toFixed(2)}px`);
-            console.log(`🔵 ========================================`);            
             // Gradually zoom out camera for boss fight
             state.targetZoom = 0.60; // Zoom out from 0.70 to 0.60
             
@@ -15107,7 +15109,6 @@
             };
             
             // Create 4 shield generators as targetable entities
-            console.log(`🛡️ Creating ${4} shields around boss at (${boss.x.toFixed(2)}, ${boss.y.toFixed(2)})`);
             for (let i = 0; i < 4; i++) {
                 const shield = {
                     index: i,
@@ -15162,7 +15163,6 @@
                 boss.shields.push(shield);
                 // Add to entities so weapons can target it
                 entities.enemies.push(shield);
-                console.log(`🛡️ Shield ${i} created at (${shield.x.toFixed(2)}, ${shield.y.toFixed(2)}), distance from player: ${Math.sqrt((shield.x - player.x)**2 + (shield.y - player.y)**2).toFixed(2)}px`);
             }
             
             state.finalBoss = boss;
@@ -15173,9 +15173,6 @@
             
             console.log('✅ Boss added to entities.enemies, count:', entities.enemies.length);
             console.log('✅ Boss final position:', boss.x.toFixed(2), boss.y.toFixed(2));
-            console.log('✅ Shield positions:', boss.shields.map(s => `(${s.x.toFixed(2)}, ${s.y.toFixed(2)})`).join(', '));
-            console.log('Boss object:', boss);
-            console.log('Shields:', boss.shields.length);
             
             // Show boss HUD
             document.getElementById('boss-hud').classList.add('active');
@@ -15259,7 +15256,6 @@
             const maxTurrets = 10;
             
             if (currentTurrets >= maxTurrets) {
-                console.log(`⚠️ Turret cap reached (${currentTurrets}/${maxTurrets}) - skipping spawn`);
                 return;
             }
             
@@ -15270,14 +15266,15 @@
                 const angle = (Math.PI * 2 / turretCount) * i + Math.random() * 0.3;
                 const dist = 250 + Math.random() * 100;
                 
-                // Calculate position and clamp to screen bounds with margin
-                let turretX = boss.x + Math.cos(angle) * dist;
-                let turretY = boss.y + Math.sin(angle) * dist;
+                // Calculate position relative to boss (in world coordinates)
+                const turretX = boss.x + Math.cos(angle) * dist;
+                const turretY = boss.y + Math.sin(angle) * dist;
                 
-                // Clamp to screen with 50px margin using actual canvas dimensions
-                const margin = 50;
-                turretX = Math.max(margin, Math.min(width - margin, turretX));
-                turretY = Math.max(margin, Math.min(height - margin, turretY));
+                // SAFETY: Validate coordinates
+                if (isNaN(turretX) || isNaN(turretY) || isNaN(boss.x) || isNaN(boss.y)) {
+                    console.error(`🚨 CANNOT SPAWN TURRET: Invalid coordinates! boss=(${boss.x}, ${boss.y}), turret=(${turretX}, ${turretY})`);
+                    continue; // Skip this turret
+                }
                 
                 const turret = {
                     x: turretX,
@@ -15324,7 +15321,6 @@
                 createExplosion(turret.x, turret.y, '#ff8800', 10);
             }
             
-            console.log(`🔧 Spawned ${turretsToSpawn} turrets (${currentTurrets + turretsToSpawn}/${maxTurrets} total)`);
         }
         
         function executeBossAttack(boss) {
@@ -16071,10 +16067,16 @@
                 console.log(`✅ Rapid spawn deactivated! ${currentEnemyCount} >= ${minimumEnemyTarget}`);
             }
             
-            // During champion fights, spawn at 60% normal rate (reduced from 50%)
-            let spawnInterval = state.bossActive ? 
-                Math.floor((28 - Math.min(13, state.level)) * 1.67) : // 67% slower during champion = 60% rate
-                (28 - Math.min(13, state.level));
+            // Spawn interval in SECONDS (framerate-independent)
+            // Reduced from 0.47-0.25s to 0.40-0.22s for ~15% more spawns
+            let spawnIntervalSeconds = state.bossActive ? 
+                (0.40 - Math.min(0.18, state.level * 0.016)) * 1.67 : // 67% slower during champion
+                (0.40 - Math.min(0.18, state.level * 0.016));
+            
+            // Convert to timer units (dt/16, where dt is in ms)
+            // At 60fps: dt=16.67, so dt/16≈1.04 per frame
+            // To get seconds: multiply by 60 (frames per second)
+            let spawnInterval = spawnIntervalSeconds * 60;
             
             // ASCENSION 3: AGGRESSIVE SWARMS - 15% faster spawns
             if (state.activeAscension === 3) {
@@ -16101,7 +16103,15 @@
 
             // Particle cap removed - handled later in filter (line ~11573) to not interfere with boss attacks
 
-            entities.pickups = entities.pickups.filter(p => { const a=p.update(scaledDt); if(a) p.draw(ctx); return a; });
+            entities.pickups = entities.pickups.filter(p => { 
+                // FINAL BOSS: No pickups allowed during boss fight
+                if (state.finalBossActive && !state.finalBossDefeated) {
+                    return false; // Remove all pickups
+                }
+                const a=p.update(scaledDt); 
+                if(a) p.draw(ctx); 
+                return a; 
+            });
             
             // Check if we have pending upgrades (level ups or ultimate selection)
             if (state.upgradeQueue && state.upgradeQueue.length > 0 && state.screen === 'game' && !player.ultimateActive) {
@@ -16277,33 +16287,63 @@
             entities.enemies = entities.enemies.filter(e => {
                 // FLEEING ENEMIES: Update and despawn when offscreen
                 if (e.fleeing) {
+                    // Track frames for debugging
+                    if (!e.fleeingFrameCount) e.fleeingFrameCount = 0;
+                    e.fleeingFrameCount++;
+                    
                     e.fleeingTimer -= dt / 16;
                     
                     // Continue fleeing movement
                     e.x += e.vx * (dt / 16);
                     e.y += e.vy * (dt / 16);
                     
-                    // Fade out
-                    e.fleeingOpacity = Math.max(0, e.fleeingTimer / 180);
+                    // Keep full opacity - no fade
+                    e.fleeingOpacity = 1.0;
                     
-                    // Check if offscreen (using world coordinates relative to camera)
-                    const cameraLeft = state.camera.x;
-                    const cameraRight = state.camera.x + (width / state.zoom);
-                    const cameraTop = state.camera.y;
-                    const cameraBottom = state.camera.y + (height / state.zoom);
-                    const margin = 300; // Large margin so they flee far offscreen
-                    
-                    const isOffscreen = (
-                        e.x < cameraLeft - margin || e.x > cameraRight + margin ||
-                        e.y < cameraTop - margin || e.y > cameraBottom + margin
-                    );
-                    
-                    if (isOffscreen || e.fleeingTimer <= 0) {
-                        return false; // Despawn
+                    // Log every 30 frames for first enemy to see if it's alive
+                    if (e.fleeingFrameCount === 1 || e.fleeingFrameCount % 30 === 0) {
+                        if (state.fleeingLogCount < 3) {
+                            state.fleeingLogCount++;
+                        }
                     }
                     
-                    // Don't run normal update logic for fleeing enemies
-                    return true;
+                    // GRACE PERIOD: Don't check offscreen for first 2.5 seconds (150 frames)
+                    // This gives enemies time to visibly flee before despawning
+                    if (e.fleeingTimer < 450) { // After 2.5 seconds of fleeing (started at 600)
+                        // Check if offscreen (using world coordinates relative to camera)
+                        const cameraLeft = state.camera.x;
+                        const cameraRight = state.camera.x + (width / state.zoom);
+                        const cameraTop = state.camera.y;
+                        const cameraBottom = state.camera.y + (height / state.zoom);
+                        const margin = 500; // Very large margin so they flee far offscreen
+                        
+                        const isOffscreen = (
+                            e.x < cameraLeft - margin || e.x > cameraRight + margin ||
+                            e.y < cameraTop - margin || e.y > cameraBottom + margin
+                        );
+                        
+                        // Log camera bounds for debugging
+                        if (e.fleeingFrameCount === 150) {
+                            console.log(`📷 Camera bounds: (${cameraLeft.toFixed(0)}, ${cameraTop.toFixed(0)}) to (${cameraRight.toFixed(0)}, ${cameraBottom.toFixed(0)})`);
+                            console.log(`   Enemy at (${e.x.toFixed(0)}, ${e.y.toFixed(0)}), offscreen=${isOffscreen}`);
+                        }
+                        
+                        if (isOffscreen) {
+                            // Log first few despawns
+                            if (state.fleeDespawnCount < 5) {
+                                state.fleeDespawnCount++;
+                            }
+                            return false; // Despawn
+                        }
+                    }
+                    
+                    // Timer expired - despawn regardless
+                    if (e.fleeingTimer <= 0) {
+                        return false;
+                    }
+                    
+                    // Don't run normal update logic for fleeing enemies, but DO continue to draw
+                    // (don't return here - let them fall through to draw code)
                 }
                 
                 // DEFENSIVE: Verify enemy has update method before processing
@@ -16338,13 +16378,12 @@
                         console.log(`⚠️ Removing orphaned ${e.isBossShield ? 'shield' : 'turret'} at (${e.x.toFixed(0)}, ${e.y.toFixed(0)})`);
                         return false;
                     }
-                    // Check if entity is way off-screen (more than 2x screen size from center)
-                    const screenCenterX = width / 2;
-                    const screenCenterY = height / 2;
-                    const distFromCenter = Math.sqrt((e.x - screenCenterX)**2 + (e.y - screenCenterY)**2);
-                    const maxDist = Math.max(width, height) * 2;
-                    if (distFromCenter > maxDist) {
-                        console.log(`⚠️ Removing far off-screen ${e.isBossShield ? 'shield' : 'turret'} at (${e.x.toFixed(0)}, ${e.y.toFixed(0)})`);
+                    // Check if entity is way too far from boss (world coordinates)
+                    const boss = bosses[0];
+                    const distFromBoss = Math.sqrt((e.x - boss.x)**2 + (e.y - boss.y)**2);
+                    const maxDist = 2000; // 2000 world units from boss
+                    if (distFromBoss > maxDist) {
+                        console.log(`⚠️ Removing far off-screen ${e.isBossShield ? 'shield' : 'turret'} at (${e.x.toFixed(0)}, ${e.y.toFixed(0)}), dist from boss: ${distFromBoss.toFixed(0)}`);
                         return false;
                     }
                 }
@@ -16576,7 +16615,6 @@
                     if (!e.coreVulnerable && e.shieldsActive && !e.isRegeneratingShields) {
                         const activeShields = e.shields.filter(s => s.hp > 0).length;
                         if (activeShields === 0) {
-                            console.log('All shields destroyed - Core vulnerable!');
                             e.coreVulnerable = true;
                             e.shieldsActive = false;
                             e.vulnerabilityTimer = 900; // 15 seconds
@@ -16589,11 +16627,9 @@
                         
                         // Log every second
                         if (Math.floor(e.vulnerabilityTimer / 60) !== Math.floor((e.vulnerabilityTimer + scaledDt/16) / 60)) {
-                            console.log(`⏱️ Core vulnerable - ${Math.floor(e.vulnerabilityTimer / 60)}s remaining`);
                         }
                         
                         if (e.vulnerabilityTimer <= 0) {
-                            console.log('===== SHIELDS REGENERATING =====');
                             console.log(`Boss position: x=${e.x}, y=${e.y}`);
                             console.log(`Boss shields array:`, e.shields.map(s => ({hp: s.hp, alive: s.hp > 0})));
                             console.log(`Shields in entities.enemies:`, entities.enemies.filter(en => en.isBossShield).map(s => ({hp: s.hp})));
@@ -16605,13 +16641,11 @@
                             // Remove ALL old shields from both arrays
                             const beforeCount = entities.enemies.length;
                             entities.enemies = entities.enemies.filter(en => !en.isBossShield);
-                            console.log(`Removed ${beforeCount - entities.enemies.length} old shield entities`);
                             
                             // Clear boss shields array
                             e.shields = [];
                             
                             // FORCE RETARGET: Clear ALL targeting systems
-                            console.log('⚠️ Forcing complete retarget - clearing all weapon systems...');
                             
                             let turretsCleared = 0;
                             let dronesCleared = 0;
@@ -16626,7 +16660,6 @@
                                             turretsCleared++;
                                         }
                                     });
-                                    console.log(`✅ Cleared ${turretsCleared} turret targets`);
                                 }
                             } catch (e) {
                                 console.error('❌ Error clearing turret targets:', e);
@@ -16641,7 +16674,6 @@
                                             dronesCleared++;
                                         }
                                     });
-                                    console.log(`✅ Cleared ${dronesCleared} drone targets`);
                                 }
                             } catch (e) {
                                 console.error('❌ Error clearing drone targets:', e);
@@ -16650,7 +16682,6 @@
                             // Note: Projectiles don't need clearing - they're fire-and-forget
                             // and will naturally hit shields due to priority targeting
                             
-                            console.log('✅ All targeting systems cleared!');
                             for (let i = 0; i < 4; i++) {
                                 const shield = {
                                     index: i,
@@ -16707,7 +16738,6 @@
                             // Flag that we need to add shields after filter completes
                             e.needsToAddShields = true;
                             const afterCount = entities.enemies.length;
-                            console.log(`Added 4 new shields. Total enemies: ${beforeCount} → ${afterCount}`);
                             console.log(`✅ Shield check: ${entities.enemies.filter(en => en.isBossShield && en.hp > 0).length} alive shields in entities array`);
                             
                             // DEBUG: Log detailed shield info
@@ -16724,12 +16754,10 @@
                     // Track turret spawn timing but don't spawn yet (will spawn after filter)
                     e.turretSpawnTimer -= scaledDt/16;
                     if (e.turretSpawnTimer <= 0) {
-                        console.log(`⏰ Turret spawn timer triggered! Phase ${e.phase}`);
                         e.needsToSpawnTurrets = true; // Flag for after filter
                         // Keep Phase 2 spawn rate (5s) for Phase 3 and 4 to avoid overwhelming player
                         const spawnRate = [360, 300, 300, 300][e.phase - 1]; // Phase 1: 6s, Phase 2/3/4: 5s
                         e.turretSpawnTimer = spawnRate;
-                        console.log(`Next turret spawn in ${spawnRate/60} seconds`);
                     }
                     
                     // Attack patterns
@@ -17228,7 +17256,16 @@
                 
                 // Separate try-catch for update and draw to identify which fails
                 try {
-                    e.update(scaledDt);
+                    // Fleeing enemies: Don't call update() - manually handle animation
+                    if (e.fleeing) {
+                        // Increment animation tick slower for normal spinning speed
+                        if (e.animTick !== undefined) {
+                            e.animTick += (scaledDt / 16) * 0.3; // 30% of normal speed
+                        }
+                        // Don't call e.update() - it might override position/velocity
+                    } else {
+                        e.update(scaledDt);
+                    }
                 } catch (updateErr) {
                     const errorDetails = {
                         phase: 'UPDATE',
@@ -17267,6 +17304,11 @@
                 try {
                     // Apply opacity for fleeing enemies
                     if (e.fleeing && e.fleeingOpacity !== undefined) {
+                        // Log first few draws
+                        if (!e.drawLogCount) e.drawLogCount = 0;
+                        if (e.drawLogCount < 3) {
+                            e.drawLogCount++;
+                        }
                         ctx.save();
                         ctx.globalAlpha = e.fleeingOpacity;
                         e.draw(ctx);
@@ -17320,8 +17362,25 @@
                 state.finalBoss.shields.forEach(shield => {
                     entities.enemies.push(shield);
                 });
-                console.log(`✅ Added ${state.finalBoss.shields.length} regenerated shields to entities after filter`);
                 state.finalBoss.needsToAddShields = false;
+            }
+            
+            // SAFETY: Ensure shields are always in entities.enemies if they should be
+            if (state.finalBoss && state.finalBoss.shields && state.finalBoss.shieldsActive) {
+                const shieldsInEntities = entities.enemies.filter(e => e.isBossShield);
+                const shieldsInBoss = state.finalBoss.shields.filter(s => s.hp > 0);
+                
+                // If we're missing shields, add them back
+                if (shieldsInBoss.length > shieldsInEntities.length) {
+                    console.error(`🚨 SHIELD DESYNC: Boss has ${shieldsInBoss.length} shields but entities has ${shieldsInEntities.length}! Re-adding missing shields...`);
+                    shieldsInBoss.forEach(shield => {
+                        // Check if shield is already in entities
+                        if (!entities.enemies.some(e => e === shield)) {
+                            entities.enemies.push(shield);
+                            console.log(`  ✅ Re-added missing shield ${shield.index}`);
+                        }
+                    });
+                }
             }
             
             // ⚡ OPTIMIZED PARTICLE SYSTEM - Uses object pooling to reduce GC pressure
@@ -19454,7 +19513,6 @@
                     
                     // Clear all XP gems from screen
                     entities.pickups = entities.pickups.filter(p => p.type !== 'xp');
-                    console.log(`🧹 Cleared XP pickups, remaining: ${entities.pickups.length}`);
                     
                     // Trigger boss spawn (this will clear remaining pickups)
                     triggerNexusPrime();
@@ -21185,10 +21243,15 @@
             
             console.log('🎉 Victory weaponStats:', savedWeaponStats);
             console.log('🎉 Victory weaponStats keys:', Object.keys(savedWeaponStats));
+            console.log('🎉 Victory weaponStats entries:', Object.entries(savedWeaponStats));
             
             // Filter to only actual weapons and sort by damage
             const weaponArray = Object.entries(savedWeaponStats || {})
-                .filter(([weapon, stats]) => weaponNames[weapon]) // Only known weapons
+                .filter(([weapon, stats]) => {
+                    const hasName = weaponNames[weapon];
+                    console.log(`  Checking weapon "${weapon}": hasName=${hasName}, stats=`, stats);
+                    return hasName;
+                })
                 .map(([weapon, stats]) => ({ weapon, ...stats }))
                 .sort((a, b) => (b.damage || 0) - (a.damage || 0));
             
@@ -23029,7 +23092,6 @@
             player.maxHp = 500;
             player.hp = 500;
             console.log('✅ Set to level 50. Boss will trigger on next level-up logic.');
-            console.log('💡 TIP: Trigger manually with: triggerNexusPrime()');
         };
         
         window.godMode = function() {
