@@ -1069,6 +1069,10 @@
                     <span id="stat-level" class="text-yellow-400 font-bold">0</span>
                 </div>
                 <div class="flex justify-between border-b border-gray-700 pb-2">
+                    <span class="text-gray-400">Highest Ascension:</span>
+                    <span id="stat-ascension" class="text-purple-400 font-bold">0</span>
+                </div>
+                <div class="flex justify-between border-b border-gray-700 pb-2">
                     <span class="text-gray-400">Highest Score:</span>
                     <span id="stat-score" class="text-teal-400 font-bold">0</span>
                 </div>
@@ -1465,8 +1469,6 @@
             manualCameraControl: false, // Manual camera pan mode (prevents game loop interference)
             // Ascension System
             activeAscension: 0, // Current ascension level for this run (0 = normal mode)
-            bloodlustTimer: 0, // Timer for Ascension 2 stacking (seconds without damage)
-            bloodlustStacks: 0, // Current bloodlust damage bonus stacks
             playerDead: false // Flag to prevent multiple death triggers
         };
 
@@ -2615,33 +2617,6 @@
                     defensiveScaling = 1.0 - (levelsPast20 * 0.025); // 2.5% reduction per level (max 25%)
                 }
                 
-                // ASCENSION 2: BLOODLUST - Reset stacks on damage taken
-                if (state.activeAscension === 2 && state.bloodlustStacks > 0) {
-                    const lostStacks = state.bloodlustStacks;
-                    state.bloodlustStacks = 0;
-                    state.bloodlustTimer = 0;
-                    
-                    // Visual feedback
-                    entities.texts.push({
-                        x: this.x,
-                        y: this.y - 40,
-                        vx: 0,
-                        vy: -1.5,
-                        text: `BLOODLUST RESET`,
-                        color: '#ff0066',
-                        life: 60,
-                        size: 16,
-                        update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
-                        draw(ctx) {
-                            const alpha = Math.min(1, this.life / 20);
-                            ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
-                            ctx.font = `bold ${this.size}px Arial`;
-                            ctx.textAlign = 'center';
-                            ctx.fillText(this.text, this.x, this.y);
-                        }
-                    });
-                    console.log(`💔 Bloodlust reset! Lost ${lostStacks} stacks.`);
-                }
                 
                 // Calculate effective armor (base armor + adaptive armor stacks)
                 let effectiveArmor = this.armor;
@@ -3043,41 +3018,6 @@
                 
                 if (this.invulnTimer > 0) this.invulnTimer -= dt/16;
                 
-                // ASCENSION 2: BLOODLUST - gain +2% damage per second without taking damage (max 50 stacks = 100%)
-                if (state.activeAscension === 2) {
-                    if (!state.bloodlustTimer) state.bloodlustTimer = 0;
-                    if (!state.bloodlustStacks) state.bloodlustStacks = 0;
-                    
-                    state.bloodlustTimer += dt/16;
-                    
-                    // Gain 1 stack every 60 frames (1 second) without damage
-                    if (state.bloodlustTimer >= 60 && state.bloodlustStacks < 50) {
-                        state.bloodlustStacks++;
-                        state.bloodlustTimer = 0;
-                        
-                        // Visual feedback every 5 stacks
-                        if (state.bloodlustStacks % 5 === 0) {
-                            entities.texts.push({
-                                x: this.x,
-                                y: this.y - 30,
-                                vx: 0,
-                                vy: -1,
-                                text: `BLOODLUST ${state.bloodlustStacks}`,
-                                color: '#ff0066',
-                                life: 45,
-                                size: 14,
-                                update() { this.x += this.vx; this.y += this.vy; this.life--; return this.life > 0; },
-                                draw(ctx) {
-                                    const alpha = Math.min(1, this.life / 20);
-                                    ctx.fillStyle = this.color.replace(')', `, ${alpha})`).replace('rgb', 'rgba');
-                                    ctx.font = `bold ${this.size}px Arial`;
-                                    ctx.textAlign = 'center';
-                                    ctx.fillText(this.text, this.x, this.y);
-                                }
-                            });
-                        }
-                    }
-                }
                 
                 // ADAPTIVE ARMOR AUGMENT: Gain armor per second without taking damage
                 if (this.adaptiveArmorMaxStacks) {
@@ -13427,24 +13367,19 @@
                             // NORMAL MODE: Collect Nexus Core - increment counter with Ascension multiplier
                             const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
                             
-                            // Calculate cores to award based on Ascension level
-                            let coresToAward = 1; // Base: 1 core
-                            if (state.activeAscension > 0) {
-                                const ascensionData = {
-                                    1: 2.0, // Ascension 1: +100% cores (2x)
-                                    2: 3.0, // Ascension 2: +200% cores (3x)
-                                    3: 4.0, // Ascension 3: +300% cores (4x)
-                                    4: 5.0, // Ascension 4: +400% cores (5x)
-                                    5: 6.0  // Ascension 5: +500% cores (6x)
-                                };
-                                coresToAward = Math.floor(ascensionData[state.activeAscension] || 1);
-                                console.log(`🔥 Ascension ${state.activeAscension}: ${coresToAward}x cores awarded!`);
+                            // Calculate cores to award based on Ascension level (using same multiplier as Singularities)
+                            const ascensionLevel = state.activeAscension || 0;
+                            const multiplier = ascensionLevel > 0 ? ASCENSION_DATA[ascensionLevel].coreMultiplier : 1.0;
+                            const coresToAward = Math.floor(multiplier); // 1x, 2x, 3x, 4x, 5x, 6x
+                            
+                            if (ascensionLevel > 0) {
+                                console.log(`🔥 Ascension ${ascensionLevel}: ${coresToAward}x cores awarded!`);
                             }
                             
                             localStorage.setItem('neonrogue_nexusCores', currentCores + coresToAward);
                             createExplosion(player.x, player.y, '#ff00ff', 30);
                             
-                            console.log(`💎 Nexus Core(s) collected! +${coresToAward} cores`);
+                            console.log(`💎 Nexus Core(s) collected! +${coresToAward} cores (total: ${currentCores + coresToAward})`);
                             console.log('   pendingUltimateSelection:', state.pendingUltimateSelection);
                         }
                         
@@ -13470,8 +13405,14 @@
                         if (!testModeEnabled) {
                             // Only save in normal mode
                             const currentSingularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
-                            localStorage.setItem('neonrogue_singularities', currentSingularities + 1);
-                            console.log(`🌌 Singularity collected! Total: ${currentSingularities + 1}`);
+                            
+                            // Get ascension multiplier from ASCENSION_DATA
+                            const ascensionLevel = state.activeAscension || 0;
+                            const multiplier = ascensionLevel > 0 ? ASCENSION_DATA[ascensionLevel].coreMultiplier : 1.0;
+                            const singularitiesToAward = Math.floor(multiplier); // 1x, 2x, 3x, 4x, 5x, 6x
+                            
+                            localStorage.setItem('neonrogue_singularities', currentSingularities + singularitiesToAward);
+                            console.log(`🌌 Singularity collected! Awarded: ${singularitiesToAward} (Ascension ${ascensionLevel} ×${multiplier}), Total: ${currentSingularities + singularitiesToAward}`);
                         } else {
                             console.log('🧪 TEST MODE: Singularity collected but NOT saved');
                         }
@@ -15047,8 +14988,8 @@
                 type: 'nexus_prime',
                 isNexusPrime: true,
                 tier: 'boss', // Mark as boss tier
-                maxHp: 75000, // Reduced from 100000 for better pacing
-                hp: 75000,
+                maxHp: 100000, // Increased for longer fight to experience all phases
+                hp: 100000,
                 radius: 60, // Reduced from 80 to fit screen better
                 phase: 1,
                 coreRotation: 0,
@@ -15812,13 +15753,6 @@
                 targetTimeScale = 0.2; // 20% slow (everything except player)
             }
             
-            // ASCENSION 5: TIME DILATION - slow time to 40% when below 30% HP
-            if (state.activeAscension === 5 && input.active) {
-                const hpPercent = player.hp / player.maxHp;
-                if (hpPercent < 0.3) {
-                    targetTimeScale = 0.4; // 40% slow when low HP
-                }
-            }
             
             state.timeScale += (targetTimeScale - state.timeScale) * 0.1;
             const scaledDt = dt * state.timeScale;
@@ -16042,9 +15976,9 @@
             let minimumEnemyTarget = 0;
             
             if (state.level >= 10 && !state.bossActive && !state.finalBossActive) {
-                // Scale minimum with level
-                minimumEnemyTrigger = 8 + Math.floor((state.level - 10) * 0.5); // 8 at lvl 10, 13 at lvl 20, 18 at lvl 30
-                minimumEnemyTarget = minimumEnemyTrigger + 7; // Always 7 above trigger
+                // Scale minimum with level - increased by 20% for late game
+                minimumEnemyTrigger = 10 + Math.floor((state.level - 10) * 0.6); // 10 at lvl 10, 16 at lvl 20, 22 at lvl 30
+                minimumEnemyTarget = minimumEnemyTrigger + 8; // Always 8 above trigger (was 7)
             }
             
             // Count non-boss enemies
@@ -19496,8 +19430,9 @@
             else if (state.level < 10) nextCurve = 10 + (state.level * 10); // 60, 70, 80, 90, 100
             else if (state.level < 30) nextCurve = 110 + ((state.level - 10) * 15); // Linear through level 30
             else if (state.level < 35) nextCurve = 410 + ((state.level - 30) * 20); // +20 per level: 30-34 (smoother transition)
-            else if (state.level < 45) nextCurve = 510 + ((state.level - 35) * 12); // +12 per level: 35-44 (was +15, reduced to make less grindy)
-            else nextCurve = 630 + ((state.level - 45) * 8); // Final stretch 45-50: +8 per level (was +12, gentle finish) 
+            else if (state.level < 40) nextCurve = 510 + ((state.level - 35) * 15); // +15 per level: 35-39
+            else if (state.level < 45) nextCurve = 585 + ((state.level - 40) * 10); // +10 per level: 40-44 (flatter)
+            else nextCurve = 635 + ((state.level - 45) * 8); // Final stretch 45-50: +8 per level (nearly linear) 
 
 
             if(state.xp >= state.xpToNext && state.level < 50) { // Cap at level 50
@@ -20795,7 +20730,7 @@
                 name: 'Ascension II',
                 debuffs: [
                     { name: 'Power Drain', desc: 'Base damage -20%', icon: 'fa-battery-quarter' },
-                    { name: 'Sluggish Systems', desc: 'Movement speed -15%', icon: 'fa-turtle' }
+                    { name: 'Sluggish Systems', desc: 'Movement speed -15%', icon: 'fa-tachometer-alt' }
                 ],
                 coreMultiplier: 3.0,
                 scoreMultiplier: 3.0
@@ -20804,8 +20739,8 @@
                 name: 'Ascension III',
                 debuffs: [
                     { name: 'Aggressive Swarms', desc: 'Enemies spawn 15% faster', icon: 'fa-users' },
-                    { name: 'Weakened Shields', desc: 'Shield recharge delay +50%', icon: 'fa-shield-virus' },
-                    { name: 'Energy Leak', desc: 'Ultimate charges 20% slower', icon: 'fa-bolt-slash' }
+                    { name: 'Weakened Shields', desc: 'Shield recharge delay +50%', icon: 'fa-shield-alt' },
+                    { name: 'Energy Leak', desc: 'Ultimate charges 20% slower', icon: 'fa-bolt' }
                 ],
                 coreMultiplier: 4.0,
                 scoreMultiplier: 4.0
@@ -20815,8 +20750,8 @@
                 debuffs: [
                     { name: 'Brittle Armor', desc: 'Start with -1 shield charge', icon: 'fa-shield-alt' },
                     { name: 'Overloaded Circuits', desc: 'Weapon fire rate -15%', icon: 'fa-plug' },
-                    { name: 'Leaky Shields', desc: 'Shields only block 50% of damage', icon: 'fa-shield-virus' },
-                    { name: 'Compressed Field', desc: 'Weapon area and area upgrades -15%', icon: 'fa-compress' }
+                    { name: 'Leaky Shields', desc: 'Shields only block 50% of damage', icon: 'fa-shield-alt' },
+                    { name: 'Compressed Field', desc: 'Weapon area and area upgrades -15%', icon: 'fa-compress-arrows-alt' }
                 ],
                 coreMultiplier: 5.0,
                 scoreMultiplier: 5.0
@@ -20825,8 +20760,8 @@
                 name: 'Ascension V',
                 debuffs: [
                     { name: 'Ticking Doom', desc: 'Lose 1 HP per second', icon: 'fa-hourglass-half' },
-                    { name: 'Overcharged Enemies', desc: 'All enemies deal +20% damage', icon: 'fa-radiation' },
-                    { name: 'Accelerated Enemies', desc: 'All enemies move 15% faster', icon: 'fa-running' },
+                    { name: 'Overcharged Enemies', desc: 'All enemies deal +20% damage', icon: 'fa-radiation-alt' },
+                    { name: 'Accelerated Enemies', desc: 'All enemies move 15% faster', icon: 'fa-angle-double-right' },
                     { name: 'Empowered Titans', desc: 'Titan Champions have +25% HP and damage', icon: 'fa-dragon' },
                     { name: 'Critical Weakness', desc: 'Enemies have +15% crit chance vs you', icon: 'fa-crosshairs' }
                 ],
@@ -21110,6 +21045,10 @@
                 // Hide level display for victory
                 document.getElementById('final-level').parentElement.style.display = 'none';
                 
+                // Hide death recap button on victory (only show on game over)
+                const deathRecapBtnTest = document.getElementById('death-recap-btn');
+                if (deathRecapBtnTest) deathRecapBtnTest.style.display = 'none';
+                
                 // Set score and time
                 document.getElementById('final-score').innerText = formatScore(state.score);
                 const t = Math.floor((state.gameTime)/1000);
@@ -21122,14 +21061,14 @@
             }
             
             // NORMAL MODE: Save progress
-            // Check if this is the first victory
+            // Check if this is the first victory EVER (not just first victory on an ascension level)
             const hasBeatenBoss = localStorage.getItem('neonrogue_hasBeatenBoss');
-            const isFirstVictory = !hasBeatenBoss || hasBeatenBoss === 'false';
+            const isFirstVictoryEver = !hasBeatenBoss || hasBeatenBoss === 'false';
             
             // Mark boss as beaten
-            if (isFirstVictory) {
+            if (isFirstVictoryEver) {
                 localStorage.setItem('neonrogue_hasBeatenBoss', 'true');
-                window.justUnlockedSystems = true; // Flag for unlock notification
+                window.justUnlockedSystems = true; // Flag for unlock notification (first time only!)
             } else {
                 window.justUnlockedSystems = false;
             }
@@ -21149,6 +21088,10 @@
             
             // Hide level display for victory
             document.getElementById('final-level').parentElement.style.display = 'none';
+            
+            // Hide death recap button on victory (only show on game over)
+            const deathRecapBtn = document.getElementById('death-recap-btn');
+            if (deathRecapBtn) deathRecapBtn.style.display = 'none';
             
             // Set score and time
             document.getElementById('final-score').innerText = formatScore(state.score);
@@ -21363,6 +21306,10 @@
                 // Show level for normal death
                 const levelElement = document.getElementById('final-level').parentElement;
                 if (levelElement) levelElement.style.display = '';
+                
+                // Show death recap button on game over (hidden on victory)
+                const deathRecapBtn = document.getElementById('death-recap-btn');
+                if (deathRecapBtn) deathRecapBtn.style.display = '';
                 
                 console.log('🔴 Displaying stats...');
                 document.getElementById('final-level').innerText = state.level;
@@ -21873,7 +21820,9 @@
                     singularities: parseInt(localStorage.getItem('neonrogue_singularities') || '0'),
                     fourElementsAchieved: localStorage.getItem('neonrogue_4elementsAchieved') === 'true',
                     highestAscension: parseInt(localStorage.getItem('neonrogue_highestAscension') || '0'),
-                    lastAscension: parseInt(localStorage.getItem('neonrogue_lastAscension') || '0')
+                    lastAscension: parseInt(localStorage.getItem('neonrogue_lastAscension') || '0'),
+                    hasBeatenBoss: localStorage.getItem('neonrogue_hasBeatenBoss') === 'true',
+                    selectedShip: localStorage.getItem('neonrogue_selectedShip') || 'PATHFINDER'
                 },
                 // Augment system data
                 augmentProgress: augmentProgress // Save entire augment progress object
@@ -21918,6 +21867,17 @@
             if (meta.lastAscension !== undefined) {
                 localStorage.setItem('neonrogue_lastAscension', meta.lastAscension || 0);
                 console.log('✅ Loaded last used Ascension level:', meta.lastAscension);
+            }
+            
+            // Load boss beaten flag and selected ship
+            if (meta.hasBeatenBoss !== undefined) {
+                localStorage.setItem('neonrogue_hasBeatenBoss', meta.hasBeatenBoss ? 'true' : 'false');
+                console.log('✅ Loaded hasBeatenBoss:', meta.hasBeatenBoss);
+            }
+            
+            if (meta.selectedShip) {
+                localStorage.setItem('neonrogue_selectedShip', meta.selectedShip);
+                console.log('✅ Loaded selected ship:', meta.selectedShip);
             }
             
             // Load augment progress - REPLACE entire augment system state
@@ -22001,6 +21961,7 @@
             const highestScore = parseInt(localStorage.getItem('neonrogue_highestScore') || '0');
             const totalPlaytime = parseInt(localStorage.getItem('neonrogue_totalPlaytime') || '0');
             const singularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
+            const highestAscension = parseInt(localStorage.getItem('neonrogue_highestAscension') || '0');
             
             // Update display
             document.getElementById('stat-singularities').textContent = singularities.toLocaleString();
@@ -22008,6 +21969,7 @@
             document.getElementById('stat-runs').textContent = totalRuns.toLocaleString();
             document.getElementById('stat-kills').textContent = totalKills.toLocaleString();
             document.getElementById('stat-level').textContent = highestLevel;
+            document.getElementById('stat-ascension').textContent = highestAscension;
             document.getElementById('stat-score').textContent = highestScore.toLocaleString();
             
             // Format playtime
