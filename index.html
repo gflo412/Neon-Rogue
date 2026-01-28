@@ -21705,14 +21705,17 @@
                 }
                 
                 // Normal flow - check if Ascension mode is unlocked
+                const hasBeatenBoss = localStorage.getItem('neonrogue_hasBeatenBoss') === 'true';
                 const singularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
+                const highestAscension = parseInt(localStorage.getItem('neonrogue_highestAscension') || '0');
                 
-                if (singularities > 0) {
+                // Show ascension screen if player has beaten boss OR has singularities OR has ascension progress
+                if (hasBeatenBoss || singularities > 0 || highestAscension > 0) {
                     // Show Ascension selection screen
                     document.getElementById('menu-screen').classList.remove('active');
                     showAscensionScreen();
                 } else {
-                    // Go directly to game
+                    // Go directly to game (first time player)
                     document.getElementById('menu-screen').classList.remove('active'); 
                     initGame();
                 }
@@ -22994,6 +22997,7 @@
         function initializePostGameSystems() {
             const hasBeatenBoss = localStorage.getItem('neonrogue_hasBeatenBoss') === 'true';
             const highestAscension = parseInt(localStorage.getItem('neonrogue_highestAscension') || '0');
+            const singularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
             const augmentLabBtn = document.getElementById('augment-lab-btn');
             
             // Load augment progress to check if any augments are unlocked
@@ -23009,10 +23013,11 @@
             }
             
             // Show post-game systems if:
-            // 1. Player has beaten boss, OR
-            // 2. Player has any ascension level (legacy saves), OR
-            // 3. Player has any augments unlocked (legacy saves)
-            const shouldShowSystems = hasBeatenBoss || highestAscension > 0 || hasUnlockedAugments;
+            // 1. Player has beaten boss (primary condition - once unlocked, always accessible), OR
+            // 2. Player has any singularities (backwards compat - means they beat boss), OR
+            // 3. Player has any ascension level completed (backwards compat for legacy saves), OR
+            // 4. Player has any augments unlocked (backwards compat for legacy saves)
+            const shouldShowSystems = hasBeatenBoss || singularities > 0 || highestAscension > 0 || hasUnlockedAugments;
             
             if (!shouldShowSystems) {
                 // Hide Augment Lab button until first victory
