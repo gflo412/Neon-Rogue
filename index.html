@@ -1251,6 +1251,10 @@
         const resize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
         window.addEventListener('resize', resize); resize();
 
+        // DAMAGE DISPLAY MULTIPLIER
+        // Makes damage numbers look bigger without affecting actual game balance
+        const DAMAGE_DISPLAY_MULTIPLIER = 1;
+
         // SEEDED RNG SYSTEM
         // Allows for reproducible runs by using a seed instead of seededRandom()
         let rngSeed = 0;
@@ -3570,8 +3574,21 @@
                         const fireSeeker = (dmgMult = 1.0, depth = 0) => {
                             const count = Math.min(4, this.weapons.seeker); // Cap at 4 missiles instead of 5
                             
-                            // Target ANY visible enemies on screen - no distance limit
-                            const visibleEnemies = entities.enemies.filter(e => e.hp > 0);
+                            // Target ONLY on-screen enemies - calculate viewport bounds
+                            const camX = state.camera.x;
+                            const camY = state.camera.y;
+                            const viewWidth = width / state.zoom;
+                            const viewHeight = height / state.zoom;
+                            const viewLeft = -camX / state.zoom;
+                            const viewRight = viewLeft + viewWidth;
+                            const viewTop = -camY / state.zoom;
+                            const viewBottom = viewTop + viewHeight;
+                            
+                            // Filter to on-screen enemies only
+                            const visibleEnemies = entities.enemies.filter(e => {
+                                if (e.hp <= 0) return false;
+                                return e.x >= viewLeft && e.x <= viewRight && e.y >= viewTop && e.y <= viewBottom;
+                            });
                             
                             if (visibleEnemies.length === 0) return false; // Return false = didn't fire
                             
@@ -4033,6 +4050,13 @@
                                 this.beamTerminationOrder = indices;
                             }
                             
+                            // Clear armor reduction from all previous targets
+                            for (let [enemy, ramp] of this.beamRampMap.entries()) {
+                                if (enemy.plasmaBeamArmorReduction) {
+                                    enemy.plasmaBeamArmorReduction = 0;
+                                }
+                            }
+                            
                             this.beamTargets = [];
                             this.beamRampMap.clear(); // Reset ramp when beam ends
                             this.beamTerminationTimer = 25; // Total termination animation time (25 frames)
@@ -4060,11 +4084,15 @@
                                 
                                 const newTargets = possibleTargets.slice(0, maxTargets);
                                 
-                                // Clear ramp for enemies no longer targeted
+                                // Clear ramp and armor reduction for enemies no longer targeted
                                 const currentTargetIds = new Set(newTargets.map(t => t));
                                 for (let [enemy, ramp] of this.beamRampMap.entries()) {
                                     if (!currentTargetIds.has(enemy)) {
                                         this.beamRampMap.delete(enemy);
+                                        // Reset plasma beam armor reduction when beam stops hitting
+                                        if (enemy.plasmaBeamArmorReduction) {
+                                            enemy.plasmaBeamArmorReduction = 0;
+                                        }
                                     }
                                 }
                                 
@@ -4100,6 +4128,30 @@
                                     // Damage multiplier: 0.75x → 2.0x over 180 frames (linear ramp)
                                     const rampProgress = Math.min(rampFrames / 180, 1.0);
                                     const damageMultiplier = 0.75 + (rampProgress * 1.25); // 0.75x → 2.0x
+                                    
+                                    // PLASMA BEAM ARMOR REDUCTION: Melts armor while beam continuously hits same target
+                                    // Reduces 40% of enemy's armor over full 3-second beam duration
+                                    // This gives 7-11% more damage depending on armor amount
+                                    // Titans: 20% reduction (half rate) - more resistant to armor melt
+                                    // Bosses: 10% reduction (quarter rate) - highly resistant
+                                    if (!t.plasmaBeamArmorReduction) t.plasmaBeamArmorReduction = 0;
+                                    
+                                    const baseArmor = t.armor || 0;
+                                    if (baseArmor > 0) {
+                                        // Determine armor reduction rate based on enemy type
+                                        let armorReductionRate = 0.1333; // 13.33% per second for normal enemies (40% total)
+                                        if (t.isChampion) {
+                                            armorReductionRate = 0.0667; // 6.67% per second for titans (20% total)
+                                        } else if (t.isNexusPrime || t.type === 'boss') {
+                                            armorReductionRate = 0.0333; // 3.33% per second for bosses (10% total)
+                                        }
+                                        
+                                        const armorReductionPerTick = armorReductionRate * (20 / 60); // Tick every 20 frames
+                                        const armorToReduce = baseArmor * armorReductionPerTick;
+                                        const maxReduction = baseArmor * (armorReductionRate * 3); // Cap based on enemy type
+                                        const newArmorReduction = Math.min(t.plasmaBeamArmorReduction + armorToReduce, maxReduction);
+                                        t.plasmaBeamArmorReduction = newArmorReduction;
+                                    }
                                     
                                     let finalDmg = baseDmg * damageMultiplier;
                                     
@@ -5956,7 +6008,7 @@
                     }
                     
                     const elementType = forceElement || player.weaponAugments[sourceId] || null;
-                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg), color, isCrit, type, sourceId, elementType));
+                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                     
                     // Only explode ONCE when dying (not every damage tick after death)
                     if (enemy.hp <= 0 && !enemy.hasExploded) {
@@ -5999,7 +6051,7 @@
                     }
                     
                     const elementType = forceElement || player.weaponAugments[sourceId] || null;
-                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg), color, isCrit, type, sourceId, elementType));
+                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                     
                     if (enemy.hp <= 0) {
                         enemy.hp = 0;
@@ -6043,7 +6095,7 @@
                     }
                     
                     const elementType = forceElement || player.weaponAugments[sourceId] || null;
-                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg), color, isCrit, type, sourceId, elementType));
+                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                     return;
                 }
                 
@@ -6080,7 +6132,7 @@
                                 
                                 // Use normal damage number styling (color from weapon, shows element icons)
                                 const elementType = forceElement || player.weaponAugments[sourceId] || null;
-                                entities.texts.push(new FloatingText(sx, sy - 20, Math.ceil(finalDmg), color, isCrit, type, sourceId, elementType));
+                                entities.texts.push(new FloatingText(sx, sy - 20, Math.ceil(finalDmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                                 
                                 if (shield.hp <= 0) {
                                     shield.hp = 0;
@@ -8026,7 +8078,7 @@
                 const damageText = new FloatingText(
                     target.x + (Math.random() - 0.5) * 40,
                     target.y - 30,
-                    Math.floor(damage),
+                    Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER),
                     damageColor,
                     tickCount === 4, // isCrit on final tick
                     'normal'
@@ -8186,7 +8238,7 @@
                                 e.takeDamage(pullDamage, '#9400ff', false, 'normal');
                                 
                                 // Small damage text
-                                const damageText = new FloatingText(e.x, e.y - 20, Math.floor(pullDamage), '#bb66ff');
+                                const damageText = new FloatingText(e.x, e.y - 20, Math.floor(pullDamage * DAMAGE_DISPLAY_MULTIPLIER), '#bb66ff');
                                 damageText.fontSize = 16;
                                 damageText.life = 60;
                                 entities.texts.push(damageText);
@@ -8224,7 +8276,7 @@
                                     e.takeDamage(damage, '#9400ff', false, 'normal');
                                     e.flash = 8;
                                     
-                                    const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage), '#9400ff');
+                                    const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER), '#9400ff');
                                     damageText.fontSize = 24;
                                     damageText.life = 90;
                                     entities.texts.push(damageText);
@@ -8396,7 +8448,7 @@
                                     e.pushY = Math.sin(angle) * 20;
                                 }
                                 
-                                const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage), '#ff6600');
+                                const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER), '#ff6600');
                                 damageText.fontSize = 24;
                                 damageText.life = 90;
                                 entities.texts.push(damageText);
@@ -8436,7 +8488,7 @@
                                         e.frozen = e.isChampion ? 60 : 120;
                                     }
                                     
-                                    const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage), '#ffaa00');
+                                    const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER), '#ffaa00');
                                     damageText.fontSize = 24;
                                     damageText.life = 90;
                                     entities.texts.push(damageText);
@@ -8470,7 +8522,7 @@
                                         e.frozen = e.isChampion ? 60 : 120;
                                     }
                                     
-                                    const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage), '#ffcc00');
+                                    const damageText = new FloatingText(e.x, e.y - 20, Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER), '#ffcc00');
                                     damageText.fontSize = 24;
                                     damageText.life = 90;
                                     entities.texts.push(damageText);
@@ -8517,7 +8569,7 @@
                                         const damageText = new FloatingText(
                                             e.x + (Math.random() - 0.5) * 20,
                                             e.y - 10,
-                                            Math.floor(damage),
+                                            Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER),
                                             '#ff5722'
                                         );
                                         damageText.fontSize = 20;
@@ -8669,7 +8721,7 @@
                     const damageText = new FloatingText(
                         e.x + (Math.random() - 0.5) * 30,
                         e.y - 20,
-                        Math.floor(damage),
+                        Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER),
                         ultimateData.color
                     );
                     damageText.fontSize = 22;
@@ -8767,7 +8819,9 @@
                 const visibleWorldHeight = height / state.zoom;
                 
                 // Spawn distance = half the diagonal of visible area + buffer
-                const screenBuffer = 50; // Buffer to ensure fully offscreen
+                // Reduce buffer in early game (first 20 seconds) so enemies arrive faster
+                const earlyGameMultiplier = state.gameTime < 20000 ? 0.6 : 1.0; // 40% closer in first 20 seconds
+                const screenBuffer = 50 * earlyGameMultiplier;
                 const spawnDist = Math.sqrt(visibleWorldWidth**2 + visibleWorldHeight**2) / 2 + screenBuffer;
                 
                 // Random angle around player
@@ -9068,7 +9122,13 @@
                 // Formula: armorReduction = armor / (armor + 100)
                 // Player can reduce effective armor with armor piercing augment
                 if (this.armor && this.armor > 0) {
-                    const effectiveArmor = this.armor * (1 - (player.armorPiercing || 0));
+                    let effectiveArmor = this.armor * (1 - (player.armorPiercing || 0));
+                    
+                    // PLASMA BEAM ARMOR REDUCTION: Reduces effective armor the longer it hits
+                    if (this.plasmaBeamArmorReduction && this.plasmaBeamArmorReduction > 0 && sourceId === 'beam') {
+                        effectiveArmor = Math.max(0, effectiveArmor - this.plasmaBeamArmorReduction);
+                    }
+                    
                     const armorReduction = effectiveArmor / (effectiveArmor + 100);
                     amt *= (1 - armorReduction);
                     
@@ -9159,7 +9219,7 @@
                 
                 // Always show DOT damage, or show regular damage if >= 1 or 10% chance
                 if (type === 'dot' || amt >= 1 || seededRandom() < 0.1) {
-                    entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt), displayColor, isCrit, type, sourceId, elementType));
+                    entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt * DAMAGE_DISPLAY_MULTIPLIER), displayColor, isCrit, type, sourceId, elementType));
                 }
                 if(this.hp <= 0) {
                     // FINAL BOSS: No pickups during boss fight
@@ -14988,8 +15048,8 @@
                 type: 'nexus_prime',
                 isNexusPrime: true,
                 tier: 'boss', // Mark as boss tier
-                maxHp: 100000, // Increased for longer fight to experience all phases
-                hp: 100000,
+                maxHp: 75000, // Reduced from 100k for faster paced fight
+                hp: 75000,
                 radius: 60, // Reduced from 80 to fit screen better
                 phase: 1,
                 coreRotation: 0,
@@ -15036,7 +15096,7 @@
                         const damageText = new FloatingText(
                             this.x + (Math.random() - 0.5) * 40,
                             this.y + (Math.random() - 0.5) * 40,
-                            Math.floor(amt),
+                            Math.floor(amt * DAMAGE_DISPLAY_MULTIPLIER),
                             color || '#ffffff',
                             isCrit,
                             type,
@@ -15095,7 +15155,7 @@
                         
                         // Create damage text
                         if (amt >= 1 || type === 'dot') {
-                            entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt), color, isCrit, type, sourceId, elementType));
+                            entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                         }
                         
                         // Shields don't have death logic - handled by boss system
@@ -15252,7 +15312,7 @@
                         
                         // Create damage text
                         if (amt >= 1 || type === 'dot') {
-                            entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt), color, isCrit, type, sourceId, elementType));
+                            entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                         }
                         
                         // Turrets don't have special death logic
@@ -15968,17 +16028,28 @@
             const mins = state.gameTime / 60000;
             // Boost early game spawn cap for levels 1-5
             const baseSpawnCap = state.level < 5 ? 8 : 5;
-            const spawnCap = baseSpawnCap + Math.floor(mins * 15) + state.level; 
+            const spawnCap = Math.min(125, baseSpawnCap + Math.floor(mins * 15) + state.level); // Hard cap at 125 for performance 
             
-            // MINIMUM ENEMY COUNT SYSTEM (post-level 10)
-            // Prevents enemy drought for strong builds
+            // MINIMUM ENEMY COUNT SYSTEM
+            // Prevents enemy drought for strong builds at all levels
             let minimumEnemyTrigger = 0;
             let minimumEnemyTarget = 0;
             
-            if (state.level >= 10 && !state.bossActive && !state.finalBossActive) {
-                // Scale minimum with level - increased by 20% for late game
-                minimumEnemyTrigger = 10 + Math.floor((state.level - 10) * 0.6); // 10 at lvl 10, 16 at lvl 20, 22 at lvl 30
-                minimumEnemyTarget = minimumEnemyTrigger + 8; // Always 8 above trigger (was 7)
+            if (!state.bossActive && !state.finalBossActive) {
+                if (state.level < 10) {
+                    // Early game (levels 1-9): Keep 4-8 enemies on screen
+                    minimumEnemyTrigger = 4 + Math.floor(state.level * 0.4); // 4 at lvl 1, 8 at lvl 9
+                    minimumEnemyTarget = minimumEnemyTrigger + 4; // 8 at lvl 1, 12 at lvl 9
+                } else {
+                    // Late game (level 10+): Scale minimum with level
+                    // Softer scaling past level 30 to match spawn rate changes
+                    if (state.level <= 30) {
+                        minimumEnemyTrigger = 10 + Math.floor((state.level - 10) * 0.6); // 10 at lvl 10, 16 at lvl 20, 22 at lvl 30
+                    } else {
+                        minimumEnemyTrigger = 22 + Math.floor((state.level - 30) * 0.35); // 22 at lvl 30, 29 at lvl 50
+                    }
+                    minimumEnemyTarget = minimumEnemyTrigger + 8; // Always 8 above trigger
+                }
             }
             
             // Count non-boss enemies
@@ -16002,10 +16073,12 @@
             }
             
             // Spawn interval in SECONDS (framerate-independent)
-            // Reduced from 0.47-0.25s to 0.40-0.22s for ~15% more spawns
+            // Reduced from 0.40-0.22s to 0.33-0.18s for ~15% more spawns
+            // After level 30, scale less aggressively (0.008 instead of 0.013) to prevent overwhelming spawns
+            const levelForSpawn = state.level <= 30 ? state.level : 30 + (state.level - 30) * 0.615; // Softer scaling past 30
             let spawnIntervalSeconds = state.bossActive ? 
-                (0.40 - Math.min(0.18, state.level * 0.016)) * 1.67 : // 67% slower during champion
-                (0.40 - Math.min(0.18, state.level * 0.016));
+                (0.33 - Math.min(0.15, levelForSpawn * 0.013)) * 1.67 : // 67% slower during champion
+                (0.33 - Math.min(0.15, levelForSpawn * 0.013));
             
             // Convert to timer units (dt/16, where dt is in ms)
             // At 60fps: dt=16.67, so dt/16≈1.04 per frame
@@ -16020,6 +16093,11 @@
             // Override spawn interval during rapid spawning
             if (state.rapidSpawning) {
                 spawnInterval = 5; // Spawn every 5 frames (~12 per second at 60fps)
+            }
+            
+            // EARLY GAME BOOST: First 15 seconds get very fast spawns to populate the screen
+            if (state.gameTime < 15000) { // First 15 seconds
+                spawnInterval = Math.min(spawnInterval, 10); // At least 6 enemies per second
             }
             
             // Normal enemy spawning (skip during final boss) - framerate independent timer
@@ -16151,7 +16229,7 @@
                                 const damageText = new FloatingText(
                                     e.x + (Math.random() - 0.5) * 20,
                                     e.y - 10,
-                                    Math.floor(damage),
+                                    Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER),
                                     '#ff8800'
                                 );
                                 damageText.fontSize = 18;
@@ -16659,7 +16737,7 @@
                                         
                                         // Create damage text
                                         if (amt >= 1 || type === 'dot') {
-                                            entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt), color, isCrit, type, sourceId, elementType));
+                                            entities.texts.push(new FloatingText(this.x, this.y - 20, Math.ceil(amt * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                                         }
                                         
                                         // Shields don't have death logic - handled by boss system
@@ -21137,13 +21215,20 @@
                 </div>
             ` : '';
             
+            // Calculate actual singularities awarded based on ascension multiplier
+            const singularityMultiplier = currentAscension > 0 ? ASCENSION_DATA[currentAscension].coreMultiplier : 1.0;
+            const singularitiesAwarded = Math.floor(singularityMultiplier);
+            const singularityText = singularitiesAwarded === 1 ? 
+                '+1 Quantum Singularity' : 
+                `+${singularitiesAwarded} Quantum Singularities`;
+            
             victoryMessage.innerHTML = `
                 ${ascensionDisplay}
                 <div style="color: #00d1b2; font-size: 18px; font-weight: bold; margin-bottom: 8px;">
                     ✨ NEXUS PRIME DEFEATED ✨
                 </div>
                 <div style="color: #ffd700; font-size: 16px;">
-                    +1 Quantum Singularity
+                    ${singularityText}
                 </div>
                 ${ascensionUnlockMessage}
             `;
