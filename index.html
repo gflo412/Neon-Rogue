@@ -549,6 +549,9 @@
         </div>
 
         <div id="start-hint" class="joystick-hint">ENGAGE THRUSTERS</div>
+
+        <!-- FPS Counter - Bottom Right -->
+        <div id="fps-counter" style="position: absolute; bottom: 12px; right: 12px; font-size: 10px; font-family: monospace; color: rgba(255,255,255,0.4); pointer-events: none;">0 FPS</div>
     </div>
 
 
@@ -1485,6 +1488,10 @@
         let entities = { enemies: [], projectiles: [], enemyProjectiles: [], particles: [], pickups: [], texts: [], lightnings: [], gasClouds: [] };
         let animationFrameId;
 
+        // FPS Counter
+        let fpsFrames = 0;
+        let fpsLastTime = performance.now();
+        let fpsDisplay = 0;
 
         // --- Defs ---
         const weaponDefs = {
@@ -15559,10 +15566,20 @@
             if (state.screen !== 'game' && !isLevelupScreen) return;
 
 
-            const now = Date.now(); 
+            const now = Date.now();
             let dt = now - state.lastTime;
             state.lastTime = now;
-            
+
+            // FPS Counter Update
+            fpsFrames++;
+            const fpsNow = performance.now();
+            if (fpsNow - fpsLastTime >= 1000) {
+                fpsDisplay = fpsFrames;
+                fpsFrames = 0;
+                fpsLastTime = fpsNow;
+                document.getElementById('fps-counter').textContent = fpsDisplay + ' FPS';
+            }
+
             // PERFORMANCE MONITORING - Track entity counts
             if (!state.performanceMode) state.performanceMode = 'normal'; // normal, reduced, minimal
             const entityCount = entities.enemies.length + entities.projectiles.length + entities.particles.length;
