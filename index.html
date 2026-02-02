@@ -1846,7 +1846,7 @@
             ice: { id: 'ice', type: 'mastery', name: 'Cryo Control', desc: '+50% aura range, frozen take +50% damage', icon: 'fa-snowflake', offensive: true },
             volt: { id: 'volt', type: 'mastery', name: 'Volt Amplifier', desc: '+1 chain jump, +30% chain damage', icon: 'fa-bolt', offensive: true },
             bio: { id: 'bio', type: 'mastery', name: 'Bio Accelerator', desc: 'Decay ticks 50% faster (more armor reduction), +1% starting damage', icon: 'fa-biohazard', offensive: true },
-            hack: { id: 'hack', type: 'mastery', name: 'Hack Override', desc: '+2s duration, +67% damage, can hack elite enemies (tanks, voidwalkers)', icon: 'fa-terminal', offensive: true }
+            hack: { id: 'hack', type: 'mastery', name: 'Hack Override', desc: '+2s duration, +67% damage, can hack elite enemies (tanks)', icon: 'fa-terminal', offensive: true }
         };
 
         const synergyDefs = {
@@ -1867,6 +1867,7 @@
         class Player {
             constructor() {
                 this.x = 0; this.y = 0; this.radius = 12; this.speed = 2.5; // Tighter hitbox: 12 (was 16) 
+                this.collectRadSq = (12 + 10) * (12 + 10); // Cached pickup collection radius squared
                 this.vx = 0; this.vy = 0; // Velocity components
                 this.hp = 150; this.maxHp = 150; this.armor = 15; // Base Armor increased from 10 to 15
                 
@@ -2127,9 +2128,8 @@
                     // Leaky Shields: Shields only block 50% of damage
                     this.leakyShields = true;
                     
-                    // Compressed Field: -15% area and area upgrades
-                    this.compressedFieldPenalty = 0.85; // Stored for area calculations
-                    console.log(`📉 Compressed Field: Weapon areas at 85%`);
+                    // Hardened Enemies: +10 flat armor on all enemies
+                    console.log(`🛡️ Hardened Enemies: All enemies gain +10 armor`);
                 }
                 
                 // ASCENSION 5 (5 debuffs) - ONLY for Ascension 5
@@ -3354,9 +3354,9 @@
                             activeShields.forEach(shield => {
                                 const dx = shield.x - cannonX;
                                 const dy = shield.y - cannonY;
-                                const dist = Math.sqrt(dx*dx + dy*dy);
-                                if (dist < minDist) {
-                                    minDist = dist;
+                                const distSq = dx*dx + dy*dy;
+                                if (distSq < minDist) {
+                                    minDist = distSq;
                                     target = shield;
                                 }
                             });
@@ -3366,9 +3366,9 @@
                                 if (e.hp <= 0) return;
                                 const dx = e.x - cannonX;
                                 const dy = e.y - cannonY;
-                                const dist = Math.sqrt(dx*dx + dy*dy);
-                                if (dist < minDist) {
-                                    minDist = dist;
+                                const distSq = dx*dx + dy*dy;
+                                if (distSq < minDist) {
+                                    minDist = distSq;
                                     target = e;
                                 }
                             });
@@ -3423,107 +3423,88 @@
                         
                         const fireTesla = (depth = 0, cascadeDmg = null) => {
                             const range = (250 + (this.weapons.tesla * 25)) * this.weaponStats.tesla.area;
+                            const rangeSq = range * range;
                             const baseDmg = this.damage * 2.5 * this.weaponStats.tesla.dmg;
-                            const dmg = cascadeDmg || baseDmg; // Use cascade damage if provided
+                            const dmg = cascadeDmg || baseDmg;
                             
-                            // Recursive forking chain function
-                            const chainFork = (source, sourceX, sourceY, hitEnemies, currentDepth, damageMult) => {
-                                if (currentDepth >= 3) return; // Max 3 chain depths for 1>2>4 pattern
+                            // Recursive forking chain - runs synchronously within frame (no setTimeout)
+                            const chainFork = (sourceX, sourceY, hitEnemies, currentDepth, damageMult) => {
+                                if (currentDepth >= 3) return;
                                 
-                                // Find candidates within chain range that haven't been hit
-                                // Base 80, scales significantly with area upgrades
                                 const chainRange = 80 * this.weaponStats.tesla.area;
-                                const candidates = entities.enemies.filter(e => 
-                                    !hitEnemies.has(e) && 
-                                    e.hp > 0 &&
-                                    Math.sqrt((e.x - sourceX)**2 + (e.y - sourceY)**2) < chainRange
-                                );
+                                const chainRangeSq = chainRange * chainRange;
+                                const candidates = [];
+                                for (let i = 0; i < entities.enemies.length; i++) {
+                                    const e = entities.enemies[i];
+                                    if (hitEnemies.has(e) || e.hp <= 0) continue;
+                                    const dx = e.x - sourceX, dy = e.y - sourceY;
+                                    if (dx*dx + dy*dy < chainRangeSq) candidates.push(e);
+                                }
                                 
-                                // Chains jump to RANDOM enemies within range (not nearest!)
-                                // Shuffle candidates
+                                // Shuffle for random targeting
                                 for (let i = candidates.length - 1; i > 0; i--) {
                                     const j = Math.floor(seededRandom() * (i + 1));
                                     [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
                                 }
                                 
-                                // Fork to 2 enemies (creates 1>2>4 pattern)
                                 const forkCount = Math.min(2, candidates.length);
                                 for (let i = 0; i < forkCount; i++) {
                                     const target = candidates[i];
                                     hitEnemies.add(target);
                                     
-                                    // Damage decreases: 100% -> 80% -> 64%
                                     const newDamageMult = damageMult * 0.8;
                                     this.dealElementalDamage(target, dmg * newDamageMult, 'tesla', '#ffffff');
                                     
-                                    // MORE INTENSE: Double lightning bolt + particles
+                                    // Single bolt per chain hit (was 2 via setTimeout)
                                     entities.lightnings.push(new LightningBolt(sourceX, sourceY, target.x, target.y, '#ffeb3b'));
-                                    setTimeout(() => {
-                                        entities.lightnings.push(new LightningBolt(sourceX, sourceY, target.x, target.y, '#ffeb3b'));
-                                    }, 20);
                                     
-                                    // Add electric particles for more intensity
-                                    for (let p = 0; p < 8; p++) {
+                                    // 4 particles per chain hit (was 8)
+                                    for (let p = 0; p < 4; p++) {
                                         entities.particles.push(new Particle(target.x, target.y, '#ffeb3b', 3));
                                     }
                                     
-                                    // Recursively chain from this target
-                                    setTimeout(() => {
-                                        chainFork(target, target.x, target.y, hitEnemies, currentDepth + 1, newDamageMult);
-                                    }, 50); // Small delay for visual effect
+                                    // Recurse immediately (was deferred 50ms via setTimeout)
+                                    chainFork(target.x, target.y, hitEnemies, currentDepth + 1, newDamageMult);
                                 }
                             };
                             
-                            // Fire multiple bolts - each gets its own chain
-                            const usedEnemies = new Set(); // Track enemies hit across all bolts
+                            // Fire multiple bolts synchronously
+                            const usedEnemies = new Set();
                             
                             for (let boltIdx = 0; boltIdx < numBolts; boltIdx++) {
-                                // Find CLOSEST enemy within range (exclude already targeted) - ONLY for initial hit
-                                const candidates = entities.enemies.filter(e => 
-                                    !usedEnemies.has(e) && 
-                                    e.hp > 0 &&
-                                    Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2) < range
-                                );
-                                
-                                // Sort by distance and pick closest (ONLY for initial target)
-                                candidates.sort((a, b) => {
-                                    const distA = Math.sqrt((a.x - this.x)**2 + (a.y - this.y)**2);
-                                    const distB = Math.sqrt((b.x - this.x)**2 + (b.y - this.y)**2);
-                                    return distA - distB;
-                                });
-                                
-                                const initial = candidates[0];
+                                // Find closest enemy using squared distance (no sqrt, no filter+sort)
+                                let initial = null;
+                                let nearestDistSq = Infinity;
+                                for (let i = 0; i < entities.enemies.length; i++) {
+                                    const e = entities.enemies[i];
+                                    if (usedEnemies.has(e) || e.hp <= 0) continue;
+                                    const dx = e.x - this.x, dy = e.y - this.y;
+                                    const dSq = dx*dx + dy*dy;
+                                    if (dSq < rangeSq && dSq < nearestDistSq) {
+                                        nearestDistSq = dSq;
+                                        initial = e;
+                                    }
+                                }
                                 
                                 if(initial) {
                                     usedEnemies.add(initial);
                                     const hitEnemies = new Set([initial]);
                                     
-                                    // Stagger bolt firing with 500ms delay between each
-                                    setTimeout(() => {
-                                        this.dealElementalDamage(initial, dmg, 'tesla', '#ffffff');
-                                        
-                                        // MORE INTENSE: Triple lightning bolt for initial hit
-                                        entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
-                                        setTimeout(() => {
-                                            entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
-                                        }, 15);
-                                        setTimeout(() => {
-                                            entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
-                                        }, 30);
-                                        
-                                        // Add explosion effect for more intensity
-                                        createExplosion(initial.x, initial.y, '#ffeb3b', 20);
-                                        
-                                        // Add electric particles
-                                        for (let p = 0; p < 12; p++) {
-                                            entities.particles.push(new Particle(initial.x, initial.y, '#ffeb3b', 4));
-                                        }
-                                        
-                                        // Start forking chains after 50ms
-                                        setTimeout(() => {
-                                            chainFork(initial, initial.x, initial.y, hitEnemies, 0, 1.0);
-                                        }, 50);
-                                    }, boltIdx * 500); // 500ms between bolts (was 30ms)
+                                    this.dealElementalDamage(initial, dmg, 'tesla', '#ffffff');
+                                    
+                                    // Double bolt for initial hit (was triple via setTimeout)
+                                    entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
+                                    entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
+                                    
+                                    createExplosion(initial.x, initial.y, '#ffeb3b', 20);
+                                    
+                                    // 6 particles per initial hit (was 12)
+                                    for (let p = 0; p < 6; p++) {
+                                        entities.particles.push(new Particle(initial.x, initial.y, '#ffeb3b', 4));
+                                    }
+                                    
+                                    // Chain immediately
+                                    chainFork(initial.x, initial.y, hitEnemies, 0, 1.0);
                                 }
                             }
                         };
@@ -3613,16 +3594,18 @@
                                 bestTarget = visibleEnemies[0];
                                 clusterEnemies = [bestTarget];
                             } else {
-                                // Find cluster (densest area)
+                                // Find cluster (densest area) - sample outer loop to avoid O(n²)
                                 bestTarget = null;
                                 let bestDensity = 0;
+                                const seekStep = Math.max(1, Math.floor(visibleEnemies.length / 20));
                                 
-                                for (let e of visibleEnemies) {
-                                    const nearby = visibleEnemies.filter(e2 => {
-                                        const dist = Math.sqrt((e.x - e2.x)**2 + (e.y - e2.y)**2);
-                                        return dist < 150; // Cluster radius
-                                    }).length;
-                                    
+                                for (let idx = 0; idx < visibleEnemies.length; idx += seekStep) {
+                                    const e = visibleEnemies[idx];
+                                    let nearby = 0;
+                                    for (let j = 0; j < visibleEnemies.length; j++) {
+                                        const dx = e.x - visibleEnemies[j].x, dy = e.y - visibleEnemies[j].y;
+                                        if (dx*dx + dy*dy < 22500) nearby++; // 150²
+                                    }
                                     if (nearby >= bestDensity) {
                                         bestDensity = nearby;
                                         bestTarget = e;
@@ -3631,11 +3614,12 @@
                                 
                                 if (!bestTarget) bestTarget = visibleEnemies[0];
                                 
-                                // Get enemies near the cluster center for targeting
-                                clusterEnemies = visibleEnemies.filter(e => {
-                                    const dist = Math.sqrt((e.x - bestTarget.x)**2 + (e.y - bestTarget.y)**2);
-                                    return dist < 200;
-                                });
+                                // Get enemies near the cluster center (squared distance)
+                                clusterEnemies = [];
+                                for (let i = 0; i < visibleEnemies.length; i++) {
+                                    const dx = visibleEnemies[i].x - bestTarget.x, dy = visibleEnemies[i].y - bestTarget.y;
+                                    if (dx*dx + dy*dy < 40000) clusterEnemies.push(visibleEnemies[i]); // 200²
+                                }
                                 
                                 // Ensure we always have at least the best target
                                 if (clusterEnemies.length === 0) {
@@ -3739,12 +3723,13 @@
                                         } else {
                                             // If origin enemy is dead or not found, find nearest enemy
                                             let nearestEnemy = null;
-                                            let minDist = Infinity;
+                                            let minDistSq = Infinity;
                                             entities.enemies.forEach(e => {
                                                 if (e.hp > 0) {
-                                                    const d = Math.sqrt((e.x - proj.x)**2 + (e.y - proj.y)**2);
-                                                    if (d < minDist) {
-                                                        minDist = d;
+                                                    const dx = e.x - proj.x, dy = e.y - proj.y;
+                                                    const dSq = dx*dx + dy*dy;
+                                                    if (dSq < minDistSq) {
+                                                        minDistSq = dSq;
                                                         nearestEnemy = e;
                                                     }
                                                 }
@@ -3772,8 +3757,8 @@
                             // Hit all enemies in arc
                             entities.enemies.forEach(e => {
                                 if (e.hp > 0) {
-                                    const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                    if (dist < range) {
+                                    const dx = e.x - this.x, dy = e.y - this.y;
+                                    if (dx*dx + dy*dy < range * range) {
                                         const angleToEnemy = Math.atan2(e.y - this.y, e.x - this.x);
                                         let angleDiff = angleToEnemy - centerAngle;
                                         while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
@@ -3820,18 +3805,21 @@
                             const visibleChampions = visibleEnemies.filter(e => e.type === 'champion');
                             const targetPool = visibleChampions.length > 0 ? visibleChampions : visibleEnemies;
                             
-                            // Find best cluster: enemy with most nearby allies
+                            // Find best cluster - sample outer loop to avoid O(n²)
                             let bestTarget = null;
                             let maxNearby = 0;
+                            const meteorStep = Math.max(1, Math.floor(targetPool.length / 20));
                             
-                            targetPool.forEach(e => {
+                            for (let idx = 0; idx < targetPool.length; idx += meteorStep) {
+                                const e = targetPool[idx];
                                 let nearbyCount = 0;
-                                visibleEnemies.forEach(other => {
+                                for (let j = 0; j < visibleEnemies.length; j++) {
+                                    const other = visibleEnemies[j];
                                     if (other !== e) {
-                                        const dist = Math.sqrt((e.x - other.x)**2 + (e.y - other.y)**2);
-                                        if (dist < 150) nearbyCount++; // Count enemies within 150 units
+                                        const dx = e.x - other.x, dy = e.y - other.y;
+                                        if (dx*dx + dy*dy < 22500) nearbyCount++; // 150²
                                     }
-                                });
+                                }
                                 // Bonus weight for champions
                                 if (e.type === 'champion') nearbyCount += 5;
                                 
@@ -3839,7 +3827,7 @@
                                     maxNearby = nearbyCount;
                                     bestTarget = e;
                                 }
-                            });
+                            }
                             
                             // Use clustered target if found, otherwise pick random from visible, fallback to near player
                             let centerX, centerY;
@@ -3897,29 +3885,41 @@
                             const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 500; // Railgun has longer range
                             
-                            // Find enemies in visible range
-                            const visibleEnemies = entities.enemies.filter(e => {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                return dist < visibleRadius && e.hp > 0;
-                            });
+                            // Find enemies in visible range (squared distance, no sqrt)
+                            const visibleRadiusSq_r = visibleRadius * visibleRadius;
+                            const visibleEnemies = [];
+                            for (let i = 0; i < entities.enemies.length; i++) {
+                                const e = entities.enemies[i];
+                                if (e.hp <= 0) continue;
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                if (dx*dx + dy*dy < visibleRadiusSq_r) visibleEnemies.push(e);
+                            }
                             
-                            let targetPool = visibleEnemies.length > 0 ? visibleEnemies : entities.enemies.filter(e => {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                return dist < maxSearchRadius && e.hp > 0;
-                            });
+                            let targetPool = visibleEnemies;
+                            if (visibleEnemies.length === 0) {
+                                const maxSq = maxSearchRadius * maxSearchRadius;
+                                for (let i = 0; i < entities.enemies.length; i++) {
+                                    const e = entities.enemies[i];
+                                    if (e.hp <= 0) continue;
+                                    const dx = e.x - this.x, dy = e.y - this.y;
+                                    if (dx*dx + dy*dy < maxSq) targetPool.push(e);
+                                }
+                            }
                             
                             if (targetPool.length === 0) return; // No targets
                             
-                            // Find cluster (densest area)
+                            // Find cluster (densest area) - sample outer loop to avoid O(n²)
                             let bestTarget = null;
                             let bestDensity = 0;
+                            const railStep = Math.max(1, Math.floor(targetPool.length / 20));
                             
-                            for (let e of targetPool) {
-                                const nearby = targetPool.filter(e2 => {
-                                    const dist = Math.sqrt((e.x - e2.x)**2 + (e.y - e2.y)**2);
-                                    return dist < 200; // Cluster radius
-                                }).length;
-                                
+                            for (let idx = 0; idx < targetPool.length; idx += railStep) {
+                                const e = targetPool[idx];
+                                let nearby = 0;
+                                for (let j = 0; j < targetPool.length; j++) {
+                                    const dx = e.x - targetPool[j].x, dy = e.y - targetPool[j].y;
+                                    if (dx*dx + dy*dy < 40000) nearby++; // 200²
+                                }
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -3957,28 +3957,40 @@
                         const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                         const maxSearchRadius = 450;
                         
-                        // Find enemies in visible range
-                        const visibleEnemies = entities.enemies.filter(e => {
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            return dist < visibleRadius && e.hp > 0;
-                        });
+                        // Find enemies in visible range (squared distance, no sqrt)
+                        const visibleRadiusSq_f = visibleRadius * visibleRadius;
+                        const visibleEnemies = [];
+                        for (let i = 0; i < entities.enemies.length; i++) {
+                            const e = entities.enemies[i];
+                            if (e.hp <= 0) continue;
+                            const dx = e.x - this.x, dy = e.y - this.y;
+                            if (dx*dx + dy*dy < visibleRadiusSq_f) visibleEnemies.push(e);
+                        }
                         
-                        let targetPool = visibleEnemies.length > 0 ? visibleEnemies : entities.enemies.filter(e => {
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            return dist < maxSearchRadius && e.hp > 0;
-                        });
+                        let targetPool = visibleEnemies;
+                        if (visibleEnemies.length === 0) {
+                            const maxSq = maxSearchRadius * maxSearchRadius;
+                            for (let i = 0; i < entities.enemies.length; i++) {
+                                const e = entities.enemies[i];
+                                if (e.hp <= 0) continue;
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                if (dx*dx + dy*dy < maxSq) targetPool.push(e);
+                            }
+                        }
                         
-                        // Find cluster (densest area)
+                        // Find cluster (densest area) - sample outer loop to avoid O(n²)
                         let bestTarget = null;
                         let bestDensity = 0;
                         
                         if (targetPool.length > 0) {
-                            for (let e of targetPool) {
-                                const nearby = targetPool.filter(e2 => {
-                                    const dist = Math.sqrt((e.x - e2.x)**2 + (e.y - e2.y)**2);
-                                    return dist < 200; // Cluster radius
-                                }).length;
-                                
+                            const flakStep = Math.max(1, Math.floor(targetPool.length / 20));
+                            for (let idx = 0; idx < targetPool.length; idx += flakStep) {
+                                const e = targetPool[idx];
+                                let nearby = 0;
+                                for (let j = 0; j < targetPool.length; j++) {
+                                    const dx = e.x - targetPool[j].x, dy = e.y - targetPool[j].y;
+                                    if (dx*dx + dy*dy < 40000) nearby++; // 200²
+                                }
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -4071,15 +4083,20 @@
                                 
                                 const maxTargets = Math.min(3, this.weapons.beam);
                                 // Filter to ALIVE enemies only (hp > 0), including shields
-                                const possibleTargets = entities.enemies.filter(e => {
-                                    if (e.hp <= 0) return false; // Dead enemies/shields
-                                    const dist = Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2);
-                                    return dist < (300 + this.weapons.beam * 30) * this.weaponStats.beam.area;
-                                });
+                                const beamRange = (300 + this.weapons.beam * 30) * this.weaponStats.beam.area;
+                                const beamRangeSq = beamRange * beamRange;
+                                const possibleTargets = [];
+                                for (let i = 0; i < entities.enemies.length; i++) {
+                                    const e = entities.enemies[i];
+                                    if (e.hp <= 0) continue;
+                                    const dx = e.x - this.x, dy = e.y - this.y;
+                                    if (dx*dx + dy*dy < beamRangeSq) possibleTargets.push(e);
+                                }
+                                // Sort by squared distance (preserves ordering, no sqrt needed)
                                 possibleTargets.sort((a,b) => {
-                                    const da = Math.sqrt((a.x-this.x)**2 + (a.y-this.y)**2);
-                                    const db = Math.sqrt((b.x-this.x)**2 + (b.y-this.y)**2);
-                                    return da - db;
+                                    const dxa = a.x-this.x, dya = a.y-this.y;
+                                    const dxb = b.x-this.x, dyb = b.y-this.y;
+                                    return (dxa*dxa + dya*dya) - (dxb*dxb + dyb*dyb);
                                 });
                                 
                                 const newTargets = possibleTargets.slice(0, maxTargets);
@@ -4302,29 +4319,43 @@
                             const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 350; // Reduced from 450 to prevent off-screen throws
                             
-                            // Find enemies in visible range
-                            const visibleEnemies = entities.enemies.filter(e => {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                return dist < visibleRadius && e.hp > 0;
-                            });
+                            // Find enemies in visible range (squared distance)
+                            const visibleRadiusSq_m = visibleRadius * visibleRadius;
+                            const visibleEnemies = [];
+                            for (let i = 0; i < entities.enemies.length; i++) {
+                                const e = entities.enemies[i];
+                                if (e.hp <= 0) continue;
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                if (dx*dx + dy*dy < visibleRadiusSq_m) visibleEnemies.push(e);
+                            }
                             
-                            let targetPool = visibleEnemies.length > 0 ? visibleEnemies : entities.enemies.filter(e => {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                return dist < maxSearchRadius && e.hp > 0;
-                            });
+                            let targetPool = visibleEnemies;
+                            if (visibleEnemies.length === 0) {
+                                const maxSq = maxSearchRadius * maxSearchRadius;
+                                for (let i = 0; i < entities.enemies.length; i++) {
+                                    const e = entities.enemies[i];
+                                    if (e.hp <= 0) continue;
+                                    const dx = e.x - this.x, dy = e.y - this.y;
+                                    if (dx*dx + dy*dy < maxSq) targetPool.push(e);
+                                }
+                            }
                             
                             if (targetPool.length === 0) return; // No targets
                             
-                            // Find cluster (densest area) - each mine targets independently
+                            // Find cluster (densest area) - sample up to 20 enemies to avoid O(n²)
                             let bestTarget = null;
                             let bestDensity = 0;
+                            const sampleSize = Math.min(20, targetPool.length);
+                            const step = Math.max(1, Math.floor(targetPool.length / sampleSize));
                             
-                            for (let e of targetPool) {
-                                const nearby = targetPool.filter(e2 => {
-                                    const dist = Math.sqrt((e.x - e2.x)**2 + (e.y - e2.y)**2);
-                                    return dist < 200; // Cluster radius
-                                }).length;
-                                
+                            for (let idx = 0; idx < targetPool.length; idx += step) {
+                                const e = targetPool[idx];
+                                let nearby = 0;
+                                for (let j = 0; j < targetPool.length; j++) {
+                                    const e2 = targetPool[j];
+                                    const dx = e.x - e2.x, dy = e.y - e2.y;
+                                    if (dx*dx + dy*dy < 40000) nearby++; // 200² = 40000
+                                }
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -4394,10 +4425,14 @@
                             const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 400;
                             
-                            const visibleEnemies = entities.enemies.filter(e => {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                return dist < visibleRadius;
-                            });
+                            const visibleRadiusSq_tb = visibleRadius * visibleRadius;
+                            const visibleEnemies = [];
+                            for (let i = 0; i < entities.enemies.length; i++) {
+                                const e = entities.enemies[i];
+                                if (e.hp <= 0) continue;
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                if (dx*dx + dy*dy < visibleRadiusSq_tb) visibleEnemies.push(e);
+                            }
                             
                             const searchPool = visibleEnemies.length > 0 ? visibleEnemies : entities.enemies;
                             const searchLimit = visibleEnemies.length > 0 ? visibleRadius : maxSearchRadius;
@@ -4405,28 +4440,39 @@
                             let bestTarget = null;
                             let bestCount = 0;
                             
-                            searchPool.forEach(e => {
-                                const distToPlayer = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                if (distToPlayer > searchLimit) return;
+                            // Sample up to 20 enemies to avoid O(n²) against full enemy list
+                            const sampleSize = Math.min(20, searchPool.length);
+                            const step = Math.max(1, Math.floor(searchPool.length / sampleSize));
+                            const searchLimitSq = searchLimit * searchLimit;
+                            
+                            for (let idx = 0; idx < searchPool.length; idx += step) {
+                                const e = searchPool[idx];
+                                const dx0 = e.x - this.x, dy0 = e.y - this.y;
+                                if (dx0*dx0 + dy0*dy0 > searchLimitSq) continue;
                                 
-                                const nearbyCount = entities.enemies.filter(ne => {
-                                    const dist = Math.sqrt((ne.x - e.x)**2 + (ne.y - e.y)**2);
-                                    return dist < 120;
-                                }).length;
+                                // Count nearby enemies using squared distance
+                                let nearbyCount = 0;
+                                for (let j = 0; j < entities.enemies.length; j++) {
+                                    const ne = entities.enemies[j];
+                                    const dx = ne.x - e.x, dy = ne.y - e.y;
+                                    if (dx*dx + dy*dy < 14400) nearbyCount++; // 120² = 14400
+                                }
                                 
-                                if (nearbyCount > bestCount || (nearbyCount === bestCount && (!bestTarget || distToPlayer < Math.sqrt((bestTarget.x - this.x)**2 + (bestTarget.y - this.y)**2)))) {
+                                if (nearbyCount > bestCount) {
                                     bestCount = nearbyCount;
                                     bestTarget = e;
                                 }
-                            });
+                            }
                             
                             if (!bestTarget && visibleEnemies.length > 0) {
                                 bestTarget = visibleEnemies[0];
-                                let minDist = Math.sqrt((bestTarget.x - this.x)**2 + (bestTarget.y - this.y)**2);
+                                const dx0 = bestTarget.x - this.x, dy0 = bestTarget.y - this.y;
+                                let minDist = dx0*dx0 + dy0*dy0;
                                 visibleEnemies.forEach(e => {
-                                    const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                    if (dist < minDist) {
-                                        minDist = dist;
+                                    const dx = e.x - this.x, dy = e.y - this.y;
+                                    const dSq = dx*dx + dy*dy;
+                                    if (dSq < minDist) {
+                                        minDist = dSq;
                                         bestTarget = e;
                                     }
                                 });
@@ -4525,9 +4571,9 @@
                                     if (e.hp > 0 && !targetedEnemies.has(e)) {
                                         const dx = e.x - this.x;
                                         const dy = e.y - this.y;
-                                        const dist = Math.sqrt(dx*dx + dy*dy);
-                                        if (dist < searchRange && dist < bestDist) {
-                                            bestDist = dist;
+                                        const dSq = dx*dx + dy*dy;
+                                        if (dSq < searchRange * searchRange && dSq < bestDist) {
+                                            bestDist = dSq;
                                             bestTarget = e;
                                         }
                                     }
@@ -4598,9 +4644,10 @@
                                 // Find closest enemy
                                 entities.enemies.forEach(e => {
                                     if (e.hp > 0) {
-                                        const distToPlayer = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                        if (distToPlayer < minDist) {
-                                            minDist = distToPlayer;
+                                        const dx = e.x - this.x, dy = e.y - this.y;
+                                        const distSq = dx*dx + dy*dy;
+                                        if (distSq < minDist) {
+                                            minDist = distSq;
                                             closestEnemy = e;
                                         }
                                     }
@@ -4924,9 +4971,6 @@
                                 // Boss turrets are lower priority than bosses
                                 if (enemy.isBossTurret) return 5;
                                 
-                                // Skip invulnerable voidwalkers
-                                if (enemy.type === 'voidwalker' && enemy.cloaked) return -1; // Never target cloaked voidwalkers
-                                
                                 // NEVER target hacked enemies - completely untargetable
                                 if (enemy.hackState && enemy.hackState.active) return -1;
                                 
@@ -4935,7 +4979,6 @@
                                 
                                 let priority = 0;
                                 if (enemy.isChampion) priority = 7;
-                                else if (enemy.type === 'voidwalker') priority = 6; // Only if not cloaked
                                 else if (enemy.type === 'tank') priority = 5;
                                 else if (enemy.type === 'splitter') priority = 4;
                                 else if (enemy.type === 'swarmer') priority = 3.5; // Higher than drones even with proximity boost
@@ -4950,19 +4993,21 @@
                             
                             let bestTarget = null;
                             let bestPriority = -1;
-                            let minDist = droneRange;
+                            let minDistSq = droneRange * droneRange;
+                            const droneRangeSq = minDistSq;
                             
                             entities.enemies.forEach(e => {
                                 if (e.hp > 0) {
-                                    const dist = Math.sqrt((e.x - drone.x)**2 + (e.y - drone.y)**2);
-                                    if (dist < droneRange) {
+                                    const dx = e.x - drone.x, dy = e.y - drone.y;
+                                    const dSq = dx*dx + dy*dy;
+                                    if (dSq < droneRangeSq) {
                                         const priority = priorityOrder(e);
                                         // Skip enemies with priority -1 (invulnerable)
                                         if (priority < 0) return;
                                         // Take higher priority, or if same priority, closer distance
-                                        if (priority > bestPriority || (priority === bestPriority && dist < minDist)) {
+                                        if (priority > bestPriority || (priority === bestPriority && dSq < minDistSq)) {
                                             bestPriority = priority;
-                                            minDist = dist;
+                                            minDistSq = dSq;
                                             bestTarget = e;
                                         }
                                     }
@@ -5181,15 +5226,11 @@
                                 // Boss turrets are lower priority
                                 if (enemy.isBossTurret) return 5;
                                 
-                                // Skip invulnerable voidwalkers
-                                if (enemy.type === 'voidwalker' && enemy.cloaked) return -1;
-                                
                                 // NEVER target hacked enemies - completely untargetable
                                 if (enemy.hackState && enemy.hackState.active) return -1;
                                 
                                 let priority = 0;
                                 if (enemy.isChampion) priority = 7;
-                                else if (enemy.type === 'voidwalker') priority = 6; // Only if not cloaked
                                 else if (enemy.type === 'tank') priority = 5;
                                 else if (enemy.type === 'splitter') priority = 4;
                                 else if (enemy.type === 'swarmer') priority = 3.5;
@@ -5253,35 +5294,47 @@
                     this.empTimer -= dt/16;
                     if (this.empTimer <= 0) {
                         const fireEmpPulse = (dmgMult = 1.0) => {
-                            // CLUSTER TARGETING - Find densest enemy cluster (like missiles/railgun)
+                            // CLUSTER TARGETING - Find densest enemy cluster
                             const visibleRadius = Math.min(width, height) / state.zoom * 0.4;
                             const maxSearchRadius = 500;
                             
-                            // Find enemies in visible range first
-                            const visibleEnemies = entities.enemies.filter(e => {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                return dist < visibleRadius && e.hp > 0;
-                            });
+                            // Find enemies in visible range (squared distance, no sqrt)
+                            const visibleRadiusSq_e = visibleRadius * visibleRadius;
+                            const visibleEnemies = [];
+                            for (let i = 0; i < entities.enemies.length; i++) {
+                                const e = entities.enemies[i];
+                                if (e.hp <= 0) continue;
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                if (dx*dx + dy*dy < visibleRadiusSq_e) visibleEnemies.push(e);
+                            }
                             
-                            let targetPool = visibleEnemies.length > 0 ? visibleEnemies : entities.enemies.filter(e => {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                return dist < maxSearchRadius && e.hp > 0;
-                            });
+                            let targetPool = visibleEnemies;
+                            if (visibleEnemies.length === 0) {
+                                const maxSq = maxSearchRadius * maxSearchRadius;
+                                for (let i = 0; i < entities.enemies.length; i++) {
+                                    const e = entities.enemies[i];
+                                    if (e.hp <= 0) continue;
+                                    const dx = e.x - this.x, dy = e.y - this.y;
+                                    if (dx*dx + dy*dy < maxSq) targetPool.push(e);
+                                }
+                            }
                             
                             if (targetPool.length === 0) {
                                 return;
                             }
                             
-                            // Find densest cluster
+                            // Find densest cluster - sample outer loop to avoid O(n²)
                             let bestTarget = null;
                             let bestDensity = 0;
+                            const empStep = Math.max(1, Math.floor(targetPool.length / 20));
                             
-                            for (let e of targetPool) {
-                                const nearby = targetPool.filter(e2 => {
-                                    const dist = Math.sqrt((e.x - e2.x)**2 + (e.y - e2.y)**2);
-                                    return dist < 200; // Cluster radius
-                                }).length;
-                                
+                            for (let idx = 0; idx < targetPool.length; idx += empStep) {
+                                const e = targetPool[idx];
+                                let nearby = 0;
+                                for (let j = 0; j < targetPool.length; j++) {
+                                    const dx = e.x - targetPool[j].x, dy = e.y - targetPool[j].y;
+                                    if (dx*dx + dy*dy < 40000) nearby++; // 200²
+                                }
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -5368,7 +5421,7 @@
                             
                             const dx = e.x - this.x;
                             const dy = e.y - this.y;
-                            const dist = Math.sqrt(dx**2 + dy**2);
+                            const distSq = dx*dx + dy*dy;
                             const enemyId = e.id;
                             
                             // Calculate angle to enemy relative to ship's forward direction
@@ -5381,7 +5434,8 @@
                             
                             // Check if enemy is within frontal cone AND range
                             const inCone = Math.abs(angleDiff) <= coneHalfAngle;
-                            const inRange = dist < barrierRadius + e.radius;
+                            const barrierHitR = barrierRadius + e.radius;
+                            const inRange = distSq < barrierHitR * barrierHitR;
                             
                             if (inCone && inRange) {
                                 currentBarrierEnemies.add(enemyId);
@@ -5435,7 +5489,8 @@
                                     
                                     // STUN WEAKER ENEMIES: 0.5 second stun on impact
                                     // Only affects basic enemies (not bosses, tanks, or champions)
-                                    if (e.type !== 'boss' && e.type !== 'tank' && !e.isChampion) {
+                                    // Skip hacked enemies — they're friendly, don't stun your own allies
+                                    if (e.type !== 'boss' && e.type !== 'tank' && !e.isChampion && !e.hackState.active) {
                                         if (!e.barrierStunTimer) e.barrierStunTimer = 0;
                                         e.barrierStunTimer = 30; // 30 frames = 0.5 seconds at 60fps
                                     }
@@ -5610,10 +5665,11 @@
                     if (shouldFire) {
                         // Find nearby enemies to target
                         const maxThrowRange = 350 * this.weaponStats.orbital.area;
+                        const maxThrowRangeSq = maxThrowRange * maxThrowRange;
                         const nearbyEnemies = entities.enemies.filter(e => {
                             if (e.hp <= 0) return false;
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            return dist < maxThrowRange;
+                            const dx = e.x - this.x, dy = e.y - this.y;
+                            return dx*dx + dy*dy < maxThrowRangeSq;
                         });
                         
                         if (nearbyEnemies.length > 0) {
@@ -5667,8 +5723,9 @@
                                     if (this.pierceCount < this.maxPierce) {
                                         entities.enemies.forEach(e => {
                                             if (e.hp <= 0 || this.hitEnemies.has(e.id)) return;
-                                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                            if (dist < 18 + e.radius) { // Increased detection radius
+                                            const dx = e.x - this.x, dy = e.y - this.y;
+                                            const hitRadiusSq = (18 + e.radius) * (18 + e.radius);
+                                            if (dx*dx + dy*dy < hitRadiusSq) {
                                                 this.hitEnemies.add(e.id);
                                                 this.pierceCount++;
                                                 
@@ -5858,42 +5915,44 @@
 
 
             getNearestEnemy(range) {
-                let nearest = null; let minDist = range;
-                let nearestHacked = null; let minHackedDist = range;
-                let nearestChampion = null; let minChampionDist = range;
-                let nearestTank = null; let minTankDist = range;
-                let nearestSplitter = null; let minSplitterDist = range;
+                const rangeSq = range * range;
+                let nearest = null; let minDist = rangeSq;
+                let nearestHacked = null; let minHackedDist = rangeSq;
+                let nearestChampion = null; let minChampionDist = rangeSq;
+                let nearestTank = null; let minTankDist = rangeSq;
+                let nearestSplitter = null; let minSplitterDist = rangeSq;
                 
                 for(let e of entities.enemies) {
-                    const d = Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2);
-                    if(d < minDist) {
+                    const dx = e.x - this.x, dy = e.y - this.y;
+                    const dSq = dx*dx + dy*dy;
+                    if(dSq < minDist) {
                         if(e.hackState.active) {
                             // Track hacked enemies separately (lowest priority)
-                            if(d < minHackedDist) {
-                                minHackedDist = d;
+                            if(dSq < minHackedDist) {
+                                minHackedDist = dSq;
                                 nearestHacked = e;
                             }
                         } else if (e.isChampion) {
                             // Track champions separately (highest priority)
-                            if (d < minChampionDist) {
-                                minChampionDist = d;
+                            if (dSq < minChampionDist) {
+                                minChampionDist = dSq;
                                 nearestChampion = e;
                             }
                         } else if (e.type === 'tank') {
                             // Track tanks separately (high priority)
-                            if (d < minTankDist) {
-                                minTankDist = d;
+                            if (dSq < minTankDist) {
+                                minTankDist = dSq;
                                 nearestTank = e;
                             }
                         } else if (e.type === 'splitter') {
                             // Track splitters separately (high priority due to range)
-                            if (d < minSplitterDist) {
-                                minSplitterDist = d;
+                            if (dSq < minSplitterDist) {
+                                minSplitterDist = dSq;
                                 nearestSplitter = e;
                             }
                         } else {
                             // Normal enemies
-                            minDist = d;
+                            minDist = dSq;
                             nearest = e;
                         }
                     }
@@ -5901,13 +5960,13 @@
                 
                 // Priority: 1. Champions, 2. Tanks, 3. Splitters, 4. Normal enemies, 5. Hacked enemies
                 // Give champions 1.7x, tanks 1.5x, splitters 1.3x effective range
-                if (nearestChampion && minChampionDist < range * 1.7) {
+                if (nearestChampion && minChampionDist < (range * 1.7) * (range * 1.7)) {
                     return nearestChampion;
                 }
-                if (nearestTank && minTankDist < range * 1.5) {
+                if (nearestTank && minTankDist < (range * 1.5) * (range * 1.5)) {
                     return nearestTank;
                 }
-                if (nearestSplitter && minSplitterDist < range * 1.3) {
+                if (nearestSplitter && minSplitterDist < (range * 1.3) * (range * 1.3)) {
                     return nearestSplitter;
                 }
                 return nearest || nearestHacked;
@@ -6304,10 +6363,11 @@
                         const auraRadius = this.elementalMasteries.ice ? 150 : 100;
                         
                         // Spread 30% slow to nearby enemies
+                        const auraRadiusSq = auraRadius * auraRadius;
                         entities.enemies.forEach(e => {
                             if (e !== enemy && e.hp > 0 && !e.cryoState.frozen) {
-                                const dist = Math.sqrt((e.x - enemy.x)**2 + (e.y - enemy.y)**2);
-                                if (dist < auraRadius) {
+                                const dx = e.x - enemy.x, dy = e.y - enemy.y;
+                                if (dx*dx + dy*dy < auraRadiusSq) {
                                     e.cryoState.slowed = true;
                                 }
                             }
@@ -6374,8 +6434,11 @@
                             const enemyMaxHp = enemy.maxHp || enemy.hp || 100;
                             const burnDmg = enemyMaxHp * 0.015; // Approximate burn tick
                             entities.enemies.forEach(e => {
-                                if (e !== enemy && e.hp > 0 && Math.sqrt((e.x-enemy.x)**2 + (e.y-enemy.y)**2) < 80) {
-                                    e.takeDamage(burnDmg, '#ffaa00');
+                                if (e !== enemy && e.hp > 0) {
+                                    const dx = e.x - enemy.x, dy = e.y - enemy.y;
+                                    if (dx*dx + dy*dy < 6400) { // 80² = 6400
+                                        e.takeDamage(burnDmg, '#ffaa00');
+                                    }
                                 }
                             });
                         }
@@ -6391,7 +6454,7 @@
                 }
                 // HACK: Tier-based system
                 // Basic: Always hackable (drone, swarm, splitter)
-                // Elite: Only with mastery (tank, voidwalker)
+                // Elite: Only with mastery (tank)
                 // Boss: Never hackable
                 const canHack = enemy.tier === 'basic' || 
                                (enemy.tier === 'elite' && this.elementalMasteries.hack);
@@ -6421,9 +6484,7 @@
                         const wouldDie = enemy.hp - finalDmg <= 0;
                         if (wouldDie) {
                             enemy.hp = 1; // Set to 1 HP to prevent death
-                            // Voidwalkers should detonate, not die after hack
-                            const shouldDieAfter = enemy.type !== 'voidwalker';
-                            enemy.hackState = { active: true, timer: baseDuration, diesAfter: shouldDieAfter }; // Mark to die after (unless voidwalker)
+                            enemy.hackState = { active: true, timer: baseDuration, diesAfter: true };
                         } else {
                             enemy.hackState = { active: true, timer: baseDuration, diesAfter: false };
                         }
@@ -7846,14 +7907,15 @@
                 
                 entities.enemies.forEach(e => {
                     if (e.hp > 0 && (e.isBossShield || e.isBossTurret)) {
-                        // Calculate distance to player
-                        const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
+                        // Calculate squared distance to player
+                        const dx = e.x - player.x, dy = e.y - player.y;
+                        const distSq = dx*dx + dy*dy;
                         
                         // Take if higher HP, or if same HP but closer
-                        if (e.hp > highestHp || (e.hp === highestHp && dist < closestDistance)) {
+                        if (e.hp > highestHp || (e.hp === highestHp && distSq < closestDistance)) {
                             highestHp = e.hp;
                             highestHpEnemy = e;
-                            closestDistance = dist;
+                            closestDistance = distSq;
                         }
                     }
                 });
@@ -7869,14 +7931,15 @@
             
             entities.enemies.forEach(e => {
                 if (e.hp > 0) {
-                    // Calculate distance to player
-                    const dist = Math.sqrt((e.x - player.x) ** 2 + (e.y - player.y) ** 2);
+                    // Calculate squared distance to player
+                    const dx = e.x - player.x, dy = e.y - player.y;
+                    const distSq = dx*dx + dy*dy;
                     
                     // Take if higher max HP, or if same max HP but closer
-                    if (e.maxHp > highestMaxHp || (e.maxHp === highestMaxHp && dist < closestDistance)) {
+                    if (e.maxHp > highestMaxHp || (e.maxHp === highestMaxHp && distSq < closestDistance)) {
                         highestMaxHp = e.maxHp;
                         highestMaxHpEnemy = e;
-                        closestDistance = dist;
+                        closestDistance = distSq;
                     }
                 }
             });
@@ -8063,8 +8126,8 @@
                     damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
                 }
                 
-                // Deal damage
-                target.hp -= damage;
+                // Deal damage via takeDamage to ensure proper death handling (XP, champion HUD cleanup, etc.)
+                target.takeDamage(damage, '#00d4ff', false, 'normal', 'skyfall');
                 target.flash = 5;
                 
                 console.log(`⚡ Skyfall tick ${tickCount + 1}/5: ${Math.floor(damage)} damage to ${target.type}`);
@@ -8259,12 +8322,12 @@
                                 
                                 const dx = singularityX - e.x;
                                 const dy = singularityY - e.y;
-                                const dist = Math.sqrt(dx * dx + dy * dy);
+                                const distSq = dx * dx + dy * dy;
                                 
                                 let damagePercent = 0;
-                                if (dist < 100) damagePercent = ultimateData.collapseDamage.center;
-                                else if (dist < 200) damagePercent = ultimateData.collapseDamage.mid;
-                                else if (dist < 300) damagePercent = ultimateData.collapseDamage.outer;
+                                if (distSq < 10000) damagePercent = ultimateData.collapseDamage.center;       // 100²
+                                else if (distSq < 40000) damagePercent = ultimateData.collapseDamage.mid;      // 200²
+                                else if (distSq < 90000) damagePercent = ultimateData.collapseDamage.outer;    // 300²
                                 
                                 if (damagePercent > 0) {
                                     let damage = e.maxHp * (damagePercent / 100);
@@ -8333,22 +8396,25 @@
             let bestClusterY = nearTarget.y;
             let bestDensity = 0;
             
-            const clusterRadius = 200; // Check for enemies within 200 units
+            const clusterRadius = 200;
+            const clusterRadiusSq = clusterRadius * clusterRadius;
             const aliveEnemies = entities.enemies.filter(e => e.hp > 0);
             
-            aliveEnemies.forEach(e => {
-                // Count nearby enemies to this potential center point
-                const nearbyCount = aliveEnemies.filter(other => {
-                    const dist = Math.sqrt((e.x - other.x)**2 + (e.y - other.y)**2);
-                    return dist < clusterRadius;
-                }).length;
-                
+            // Sample outer loop to avoid O(n²)
+            const bombStep = Math.max(1, Math.floor(aliveEnemies.length / 20));
+            for (let idx = 0; idx < aliveEnemies.length; idx += bombStep) {
+                const e = aliveEnemies[idx];
+                let nearbyCount = 0;
+                for (let j = 0; j < aliveEnemies.length; j++) {
+                    const dx = e.x - aliveEnemies[j].x, dy = e.y - aliveEnemies[j].y;
+                    if (dx*dx + dy*dy < clusterRadiusSq) nearbyCount++;
+                }
                 if (nearbyCount > bestDensity) {
                     bestDensity = nearbyCount;
                     bestClusterX = e.x;
                     bestClusterY = e.y;
                 }
-            });
+            }
             
             console.log(`💣 Found cluster with ${bestDensity} enemies at (${Math.floor(bestClusterX)}, ${Math.floor(bestClusterY)})`);
             return { x: bestClusterX, y: bestClusterY, density: bestDensity };
@@ -8430,9 +8496,10 @@
                         // INITIAL BLAST
                         entities.enemies.forEach(e => {
                             if (e.hp <= 0) return;
-                            const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
+                            const dx = bombX - e.x, dy = bombY - e.y;
+                            const distSq = dx*dx + dy*dy;
                             
-                            if (dist < ultimateData.blastRadius) {
+                            if (distSq < ultimateData.blastRadius * ultimateData.blastRadius) {
                                 let damage = e.maxHp * (ultimateData.blastDamage.aoe / 100);
                                 
                                 if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
@@ -8472,9 +8539,10 @@
                             
                             entities.enemies.forEach(e => {
                                 if (e.hp <= 0) return;
-                                const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
+                                const dx = bombX - e.x, dy = bombY - e.y;
+                                const distSq = dx*dx + dy*dy;
                                 
-                                if (dist < ultimateData.shockwave1.radius) {
+                                if (distSq < ultimateData.shockwave1.radius * ultimateData.shockwave1.radius) {
                                     let damage = e.maxHp * (ultimateData.shockwave1.damage / 100);
                                     
                                     if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
@@ -8506,9 +8574,10 @@
                             
                             entities.enemies.forEach(e => {
                                 if (e.hp <= 0) return;
-                                const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
+                                const dx = bombX - e.x, dy = bombY - e.y;
+                                const distSq = dx*dx + dy*dy;
                                 
-                                if (dist < ultimateData.shockwave2.radius) {
+                                if (distSq < ultimateData.shockwave2.radius * ultimateData.shockwave2.radius) {
                                     let damage = e.maxHp * (ultimateData.shockwave2.damage / 100);
                                     
                                     if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
@@ -8555,9 +8624,10 @@
                                 // Burning damage every second
                                 entities.enemies.forEach(e => {
                                     if (e.hp <= 0) return;
-                                    const dist = Math.sqrt((bombX - e.x)**2 + (bombY - e.y)**2);
+                                    const dx = bombX - e.x, dy = bombY - e.y;
+                                    const distSq = dx*dx + dy*dy;
                                     
-                                    if (dist < ultimateData.burningGround.radius) {
+                                    if (distSq < ultimateData.burningGround.radius * ultimateData.burningGround.radius) {
                                         let damage = e.maxHp * (ultimateData.burningGround.damagePerSecond / 100);
                                         
                                         if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
@@ -8689,9 +8759,9 @@
                 
                 const dx = e.x - data.phoenixX;
                 const dy = e.y - data.phoenixY;
-                const dist = Math.sqrt(dx * dx + dy * dy);
+                const distSq = dx * dx + dy * dy;
                 
-                if (dist < pulseInfo.radius) {
+                if (distSq < pulseInfo.radius * pulseInfo.radius) {
                     // Calculate damage
                     let damage = e.maxHp * (pulseInfo.damage / 100);
                     
@@ -8711,7 +8781,7 @@
                     e.takeDamage(damage, ultimateData.color, false, 'normal');
                     
                     // Knockback (push away from player) - BOSS IMMUNE
-                    if (dist > 0 && !e.isNexusPrime && !e.isBossShield && !e.isBossTurret) {
+                    if (distSq > 0 && !e.isNexusPrime && !e.isBossShield && !e.isBossTurret) {
                         const knockbackAngle = Math.atan2(dy, dx);
                         e.pushX = Math.cos(knockbackAngle) * ultimateData.knockbackForce;
                         e.pushY = Math.sin(knockbackAngle) * ultimateData.knockbackForce;
@@ -8969,32 +9039,6 @@
                     this.tier = 'basic'; // Always hackable
                     this.speed = 0.88 * speedMult; this.hp = (45 + (state.level*6)) * 1.65 * scaling; this.radius = 16; this.color = '#ff9500'; this.xp = 10; this.dmg = (12 + state.level * 2) * scaling * damageBonus; 
                 } 
-                else if (type === 'voidwalker') {
-                    this.tier = 'elite'; // Hackable with mastery
-                    this.speed = 0; // Doesn't walk, only teleports
-                    this.hp = (60 + (state.level*5)) * 1.45 * scaling;
-                    this.radius = 16; 
-                    this.color = '#9933ff'; // Purple
-                    this.xp = 4;
-                    this.dmg = 50; // Base explosion damage to player (NOT scaled)
-                    this.enemyDmg = 50 * scaling; // Explosion damage to enemies (reduced from 100)
-                    this.blastRadius = 120;
-                    
-                    // Phase state machine
-                    this.phaseState = 'phased'; // 'phased', 'materializing', 'countdown', 'detonating'
-                    this.phaseTimer = 300; // 5 seconds phased (60fps × 5)
-                    this.countdownTimer = 120; // 2 seconds countdown (60fps × 2)
-                    this.materializeRange = [60, 80]; // Distance from target
-                    
-                    // Visual
-                    this.pulsePhase = seededRandom() * Math.PI * 2;
-                    this.opacity = 0.3; // Start semi-transparent
-                    this.warningCircleRadius = 0;
-                    
-                    // Target tracking
-                    this.driftTarget = null; // Where it's drifting toward
-                    this.hasBeenHacked = false; // Track if hack teleport has triggered
-                }
                 
                 // Set maxHp for all enemy types (needed for ultimate % damage calculations)
                 if (!this.maxHp) {
@@ -9010,7 +9054,7 @@
                 } else if (type === 'champion') {
                     this.armor = 40; // ~28.5% damage reduction - tanky
                 } else if (this.tier === 'elite') {
-                    // Tank, Voidwalker, etc.
+                    // Elite enemies
                     this.armor = 25; // ~20% damage reduction
                 } else if (type === 'tank') {
                     // Extra armor for tanks specifically (overrides elite)
@@ -9019,73 +9063,11 @@
                     // Basic enemies: drone, swarm, splitter
                     this.armor = 10; // ~9% damage reduction
                 }
-            }
-            
-            triggerDetonation() {
-                // VOIDWALKER DETONATION - Enhanced animation
-                const explosionColor = this.hackState.active ? '#00ff00' : '#9933ff';
-                const brightColor = this.hackState.active ? '#88ffcc' : '#ff66ff';
                 
-                // Multi-layered explosion
-                createExplosion(this.x, this.y, explosionColor, 60); // More particles
-                createExplosion(this.x, this.y, brightColor, 40); // Bright center
-                createExplosion(this.x, this.y, '#ffffff', 20); // White core
-                
-                // Multiple shockwaves at different speeds
-                entities.particles.push(new Shockwave(this.x, this.y, this.blastRadius, explosionColor));
-                entities.particles.push(new Shockwave(this.x, this.y, this.blastRadius * 0.7, brightColor));
-                entities.particles.push(new Shockwave(this.x, this.y, this.blastRadius * 0.4, '#ffffff'));
-                
-                // Radial burst effect
-                for (let i = 0; i < 12; i++) {
-                    const angle = (i / 12) * Math.PI * 2;
-                    const speed = 8 + seededRandom() * 4;
-                    entities.particles.push({
-                        x: this.x,
-                        y: this.y,
-                        vx: Math.cos(angle) * speed,
-                        vy: Math.sin(angle) * speed,
-                        life: 30,
-                        color: explosionColor,
-                        size: 4,
-                        update: function(dt) {
-                            this.x += this.vx * (dt/16);
-                            this.y += this.vy * (dt/16);
-                            this.life -= dt/16;
-                            this.vx *= 0.95;
-                            this.vy *= 0.95;
-                            return this.life > 0;
-                        },
-                        draw: function(ctx) {
-                            ctx.fillStyle = this.color;
-                            ctx.globalAlpha = this.life / 30;
-                            ctx.beginPath();
-                            ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                            ctx.fill();
-                            ctx.globalAlpha = 1;
-                        }
-                    });
+                // ASCENSION 4: HARDENED ENEMIES - +10 flat armor on all enemies
+                if (state.activeAscension === 4) {
+                    this.armor += 10;
                 }
-                
-                // Damage player (only if not hacked)
-                if (!this.hackState.active) {
-                    const distToPlayer = Math.sqrt((player.x - this.x)**2 + (player.y - this.y)**2);
-                    if (distToPlayer < this.blastRadius && player.invulnTimer <= 0) {
-                        const falloff = 1 - (distToPlayer / this.blastRadius) * 0.4; // 40% falloff at edge
-                        player.takeHit(this.dmg * falloff, 'Voidwalker Detonation', 'VOIDWALKER');
-                    }
-                }
-                
-                // Damage enemies (always, including when not hacked)
-                entities.enemies.forEach(e => {
-                    if (e !== this && e.hp > 0) {
-                        const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                        if (dist < this.blastRadius) {
-                            const falloff = 1 - (dist / this.blastRadius) * 0.4; // 40% falloff
-                            e.takeDamage(this.enemyDmg * falloff, explosionColor, false, 'normal', 'voidwalker');
-                        }
-                    }
-                });
             }
             
             takeDamage(amt, color = '#ffffff', isCrit = false, type = 'normal', sourceId = null, elementType = null) {
@@ -9103,13 +9085,7 @@
                     return; // No damage to core while shields up
                 }
                 
-                // VOIDWALKER PHASE PROTECTION: Invulnerable while phased out
-                if (this.type === 'voidwalker' && this.phaseState === 'phased') {
-                    return; // No damage while phased
-                }
-                
                 // HACK PROTECTION: Hacked enemies cannot die from player damage (except hack damage itself)
-                // Voidwalkers when hacked are also immune until hack expires
                 if (this.hackState.active && sourceId !== 'hack' && elementType !== 'hack') {
                     // Prevent death - set HP to minimum 1
                     if (this.hp - amt <= 0) {
@@ -9144,11 +9120,6 @@
                 // CHAMPION DAMAGE REDUCTION: Champions have massive damage reduction (75%)
                 if (this.isChampion && this.damageReduction) {
                     amt *= (1 - this.damageReduction); // Apply damage reduction percentage
-                }
-                
-                // CHAMPION HACKED ENEMY MITIGATION: Titans take much less damage from hacked enemy attacks
-                if (this.isChampion && sourceId === 'voidwalker') {
-                    amt *= 0.2; // 80% reduction from hacked voidwalker explosions
                 }
                 
                 // CHAMPION ELEMENTAL RESISTANCE: Champions have strong defense against elements
@@ -9204,10 +9175,16 @@
                     displayColor = weaponColors[sourceId];
                 }
                 
+                // SAFETY: Guard against NaN damage which would silently corrupt hp
+                if (isNaN(amt) || !isFinite(amt)) {
+                    console.error(`🐛 NaN/Infinite damage blocked on ${this.type}${this.isChampion ? ' CHAMPION ' + this.championId : ''}: amt=${amt}, sourceId=${sourceId}, elementType=${elementType}`);
+                    return;
+                }
+                
                 this.hp -= amt; this.flash = 2;
                 
                 // TRACK WEAPON DAMAGE
-                if (sourceId && sourceId !== 'voidwalker' && sourceId !== 'kamikaze') {
+                if (sourceId && sourceId !== 'kamikaze') {
                     if (!state.weaponStats[sourceId]) {
                         state.weaponStats[sourceId] = { damage: 0, kills: 0 };
                     }
@@ -9240,9 +9217,10 @@
                         // Find nearest champion within radius
                         entities.enemies.forEach(e => {
                             if (e.isChampion && e.hp > 0) {
-                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                if (dist < nearbyChampionRadius && dist < nearestDist) {
-                                    nearestDist = dist;
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                const dSq = dx*dx + dy*dy;
+                                if (dSq < nearbyChampionRadius * nearbyChampionRadius && dSq < nearestDist) {
+                                    nearestDist = dSq;
                                     nearestChampion = e;
                                 }
                             }
@@ -9321,7 +9299,7 @@
                     }
                     
                     // TRACK WEAPON KILLS
-                    if (sourceId && sourceId !== 'voidwalker' && sourceId !== 'kamikaze') {
+                    if (sourceId && sourceId !== 'kamikaze') {
                         if (!state.weaponStats[sourceId]) {
                             state.weaponStats[sourceId] = { damage: 0, kills: 0 };
                         }
@@ -9516,20 +9494,6 @@
                                 }
                             }
                         }
-                    } else if (this.type === 'voidwalker') {
-                        // VOIDWALKER: Explodes on death (if in countdown state)
-                        if (this.phaseState === 'countdown' || this.phaseState === 'detonating') {
-                            this.triggerDetonation();
-                        }
-                        
-                        // Drop XP shards
-                        if (allowPickups && this.xp > 0) {
-                            for(let i=0; i<4; i++) {
-                                const sx = this.x + (seededRandom()-0.5)*20; 
-                                const sy = this.y + (seededRandom()-0.5)*20;
-                                entities.pickups.push(new Pickup(sx, sy, this.xp / 4, 'xp'));
-                            }
-                        }
                     } else {
                         let shards = 1;
                         if(this.type === 'swarm') shards = 4; 
@@ -9683,8 +9647,8 @@
                         // Cache nearby slowed count
                         this.cryoState.cachedNearbySlowed = entities.enemies.filter(e => {
                             if (e === this || !e.cryoState.slowed) return false;
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            return dist < 150;
+                            const dx = e.x - this.x, dy = e.y - this.y;
+                            return dx*dx + dy*dy < 22500; // 150²
                         }).length;
                     }
                     
@@ -9838,11 +9802,6 @@
                     if (this.hackState.timer <= 0) {
                         this.hackState.active = false;
                         
-                        // Reset voidwalker hack flag
-                        if (this.type === 'voidwalker') {
-                            this.hasBeenHacked = false;
-                        }
-                        
                         // Necrosis: Hack end resets bio duration
                         if (player.synergies.bio_hack && this.bioState.active) {
                             this.bioState.timer = 300; // Reset to full duration
@@ -9878,14 +9837,14 @@
                             // state.shake = 12;
                             
                             // Damage and knockback all nearby enemies
+                            const explodeSq = explosionRadius * explosionRadius;
                             entities.enemies.forEach(enemy => {
                                 if (enemy === this || enemy.hp <= 0) return;
                                 
                                 const dx = enemy.x - explodeX;
                                 const dy = enemy.y - explodeY;
-                                const distance = Math.sqrt(dx * dx + dy * dy);
                                 
-                                if (distance < explosionRadius) {
+                                if (dx * dx + dy * dy < explodeSq) {
                                     // Apply damage
                                     enemy.takeDamage(explosionDamage, '#00ffff');
                                     
@@ -9920,31 +9879,35 @@
                             if (this.splitterTargetCache.timer >= 15 || !this.splitterTargetCache.target || this.splitterTargetCache.target.hp <= 0) {
                                 this.splitterTargetCache.timer = 0;
                                 
-                                // Find densest enemy cluster (similar to gas grenade/mines)
+                                // Find densest enemy cluster - sample outer loop to avoid O(n²)
                                 let bestTarget = null;
                                 let bestCount = 0;
+                                let bestDistSq = Infinity;
                                 const maxSearchRadius = 400;
+                                const maxSearchSq = maxSearchRadius * maxSearchRadius;
+                                const splitterStep = Math.max(1, Math.floor(entities.enemies.length / 20));
                                 
-                                entities.enemies.forEach(e => {
-                                    if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                        const distToSplitter = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                        if (distToSplitter > maxSearchRadius) return;
-                                        
-                                        // Count nearby enemies to this potential target
-                                        const nearbyCount = entities.enemies.filter(ne => {
-                                            if (ne === this || ne === e || ne.hackState.active || ne.hp <= 0) return false;
-                                            const dist = Math.sqrt((ne.x - e.x)**2 + (ne.y - e.y)**2);
-                                            return dist < 150; // Cluster detection radius
-                                        }).length;
-                                        
-                                        // Prefer denser clusters, then closer targets
-                                        if (nearbyCount > bestCount || 
-                                            (nearbyCount === bestCount && (!bestTarget || distToSplitter < Math.sqrt((bestTarget.x - this.x)**2 + (bestTarget.y - this.y)**2)))) {
-                                            bestCount = nearbyCount;
-                                            bestTarget = e;
-                                        }
+                                for (let idx = 0; idx < entities.enemies.length; idx += splitterStep) {
+                                    const e = entities.enemies[idx];
+                                    if (e === this || e.hp <= 0 || e.hackState.active) continue;
+                                    const dx0 = e.x - this.x, dy0 = e.y - this.y;
+                                    const distSq0 = dx0*dx0 + dy0*dy0;
+                                    if (distSq0 > maxSearchSq) continue;
+                                    
+                                    let nearbyCount = 0;
+                                    for (let j = 0; j < entities.enemies.length; j++) {
+                                        const ne = entities.enemies[j];
+                                        if (ne === this || ne === e || ne.hackState.active || ne.hp <= 0) continue;
+                                        const dx = ne.x - e.x, dy = ne.y - e.y;
+                                        if (dx*dx + dy*dy < 22500) nearbyCount++; // 150²
                                     }
-                                });
+                                    
+                                    if (nearbyCount > bestCount || (nearbyCount === bestCount && distSq0 < bestDistSq)) {
+                                        bestCount = nearbyCount;
+                                        bestTarget = e;
+                                        bestDistSq = distSq0;
+                                    }
+                                }
                                 
                                 this.splitterTargetCache.target = bestTarget;
                             }
@@ -10046,10 +10009,11 @@
                                 
                                 entities.enemies.forEach(e => {
                                     if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                        const dist = Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2);
-                                        if (dist < nearestDist && dist < 600) { // Longer detection range
+                                        const dx = e.x - this.x, dy = e.y - this.y;
+                                        const dSq = dx*dx + dy*dy;
+                                        if (dSq < nearestDist && dSq < 360000) { // 600² = 360000
                                             nearest = e;
-                                            nearestDist = dist;
+                                            nearestDist = dSq;
                                         }
                                     }
                                 });
@@ -10097,8 +10061,9 @@
                                     // Check collision with all non-hacked enemies
                                     entities.enemies.forEach(e => {
                                         if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                            if (dist < this.radius + e.radius + 10) {
+                                            const dx = e.x - this.x, dy = e.y - this.y;
+                                            const hitR = this.radius + e.radius + 10;
+                                            if (dx*dx + dy*dy < hitR * hitR) {
                                                 // Only hit each enemy once per charge
                                                 if (!this.chargeHitEnemies) this.chargeHitEnemies = [];
                                                 if (this.chargeHitEnemies.includes(e)) return; // Already hit this enemy
@@ -10178,24 +10143,26 @@
                             
                             // Find CLOSEST enemy that's not hacked
                             let nearest = null;
-                            let nearestDist = 400; // Max detection range
+                            let nearestDistSq = 400 * 400; // Max detection range squared
                         
                         entities.enemies.forEach(e => {
                             if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                const dist = Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2);
-                                if (dist < nearestDist) {
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                const dSq = dx*dx + dy*dy;
+                                if (dSq < nearestDistSq) {
                                     nearest = e;
-                                    nearestDist = dist;
+                                    nearestDistSq = dSq;
                                 }
                             }
                         });
                         
                         if (nearest) {
                             const dx = nearest.x - this.x; const dy = nearest.y - this.y;
+                            const dist = Math.sqrt(nearestDistSq);
                             const attackRange = this.radius + nearest.radius + 15;
                             
                             // If in attack range, stop and attack
-                            if (nearestDist < attackRange) {
+                            if (dist < attackRange) {
                                 this.vx = 0;
                                 this.vy = 0;
                                 // Deal damage every 20 frames (~0.33s at 60fps)
@@ -10222,8 +10189,8 @@
                                 // Reset attack timer when moving
                                 this.hackAttackTimer = 0;
                                 // Move toward target
-                                this.vx = (dx/nearestDist) * this.speed * 2.0;
-                                this.vy = (dy/nearestDist) * this.speed * 2.0;
+                                this.vx = (dx/dist) * this.speed * 2.0;
+                                this.vy = (dy/dist) * this.speed * 2.0;
                             }
                         } else {
                             // Random wander if no target
@@ -10268,159 +10235,6 @@
                         const pushForce = 20 * pushStrength; // Very strong push
                         this.pushX = (dx/dist) * pushForce;
                         this.pushY = (dy/dist) * pushForce;
-                    }
-                }
-
-                // VOIDWALKER BEHAVIOR - Phase-based teleporting bomb
-                if (this.type === 'voidwalker') {
-                    this.pulsePhase += 0.15 * (dt/16);
-                    
-                    // IMMEDIATE TELEPORT WHEN HACKED
-                    if (this.hackState.active && !this.hasBeenHacked) {
-                        this.hasBeenHacked = true; // Flag to prevent repeated teleports
-                        
-                        // Find densest enemy cluster
-                        let bestTarget = null;
-                        let bestCount = 0;
-                        
-                        entities.enemies.forEach(e => {
-                            if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                const nearbyCount = entities.enemies.filter(ne => {
-                                    if (ne === this || ne === e || ne.hackState.active || ne.hp <= 0) return false;
-                                    const dist = Math.sqrt((ne.x - e.x)**2 + (ne.y - e.y)**2);
-                                    return dist < 120;
-                                }).length;
-                                
-                                if (nearbyCount > bestCount) {
-                                    bestCount = nearbyCount;
-                                    bestTarget = e;
-                                }
-                            }
-                        });
-                        
-                        if (bestTarget) {
-                            // Teleport to cluster center
-                            const angle = seededRandom() * Math.PI * 2;
-                            this.x = bestTarget.x + Math.cos(angle) * 20;
-                            this.y = bestTarget.y + Math.sin(angle) * 20;
-                            
-                            // Force countdown state
-                            this.phaseState = 'countdown';
-                            this.countdownTimer = 60; // 1 second
-                            this.opacity = 1.0;
-                            this.warningCircleRadius = 0;
-                            this.driftTarget = bestTarget;
-                            
-                            // Visual feedback
-                            createExplosion(this.x, this.y, '#00ff00', 30);
-                            entities.particles.push(new Shockwave(this.x, this.y, 80, '#00ff00'));
-                        }
-                    }
-                    
-                    // PHASE STATE MACHINE
-                    if (this.phaseState === 'phased') {
-                        // PHASED OUT - Invulnerable, drifting toward target
-                        this.opacity = 0.3; // Semi-transparent
-                        
-                        // Determine target (player or enemy cluster if hacked)
-                        let target = player;
-                        if (this.hackState.active) {
-                            // Find densest enemy cluster
-                            let bestTarget = null;
-                            let bestCount = 0;
-                            
-                            entities.enemies.forEach(e => {
-                                if (e !== this && e.hp > 0 && !e.hackState.active) {
-                                    const nearbyCount = entities.enemies.filter(ne => {
-                                        if (ne === this || ne === e || ne.hackState.active || ne.hp <= 0) return false;
-                                        const dist = Math.sqrt((ne.x - e.x)**2 + (ne.y - e.y)**2);
-                                        return dist < 120;
-                                    }).length;
-                                    
-                                    if (nearbyCount > bestCount) {
-                                        bestCount = nearbyCount;
-                                        bestTarget = e;
-                                    }
-                                }
-                            });
-                            
-                            if (bestTarget) target = bestTarget;
-                        }
-                        
-                        this.driftTarget = target;
-                        
-                        // Slow drift toward target
-                        const dx = target.x - this.x;
-                        const dy = target.y - this.y;
-                        const dist = Math.sqrt(dx*dx + dy*dy);
-                        if (dist > 0) {
-                            const driftSpeed = 0.4;
-                            this.vx = (dx/dist) * driftSpeed;
-                            this.vy = (dy/dist) * driftSpeed;
-                        }
-                        
-                        // Count down phase timer
-                        this.phaseTimer -= dt/16;
-                        
-                        if (this.phaseTimer <= 0) {
-                            // MATERIALIZE!
-                            this.phaseState = 'countdown';
-                            
-                            // Materialize at random point within range of target
-                            const angle = seededRandom() * Math.PI * 2;
-                            const distance = this.materializeRange[0] + seededRandom() * (this.materializeRange[1] - this.materializeRange[0]);
-                            
-                            // For hacked voidwalkers, materialize closer (center of cluster)
-                            if (this.hackState.active && target !== player) {
-                                this.x = target.x + Math.cos(angle) * 20; // Very close to cluster center
-                                this.y = target.y + Math.sin(angle) * 20;
-                                this.countdownTimer = 60; // 1 second for hacked
-                            } else {
-                                this.x = target.x + Math.cos(angle) * distance;
-                                this.y = target.y + Math.sin(angle) * distance;
-                                this.countdownTimer = 120; // 2 seconds for normal
-                            }
-                            
-                            this.opacity = 1.0; // Fully visible
-                            this.warningCircleRadius = 0;
-                            
-                            // Visual/audio feedback
-                            createExplosion(this.x, this.y, this.hackState.active ? '#00ff00' : '#9933ff', 20);
-                            entities.particles.push(new Shockwave(this.x, this.y, 60, this.hackState.active ? '#00ff00' : '#9933ff'));
-                        }
-                    } 
-                    
-                    // COUNTDOWN STATE (note: not else if, so it can run same frame after hack teleport)
-                    if (this.phaseState === 'countdown') {
-                        // COUNTDOWN - Vulnerable, drifting toward target, warning circle
-                        this.opacity = 1.0; // Fully visible and vulnerable
-                        
-                        // Slow drift toward target
-                        if (this.driftTarget) {
-                            const dx = this.driftTarget.x - this.x;
-                            const dy = this.driftTarget.y - this.y;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
-                            if (dist > 0) {
-                                const driftSpeed = 0.6;
-                                this.vx = (dx/dist) * driftSpeed;
-                                this.vy = (dy/dist) * driftSpeed;
-                            }
-                        }
-                        
-                        // Animate warning circle
-                        const maxTimer = this.hackState.active ? 60 : 120;
-                        const progress = 1 - (this.countdownTimer / maxTimer);
-                        this.warningCircleRadius = this.blastRadius * (0.8 + Math.sin(progress * Math.PI * 8) * 0.2);
-                        
-                        // Countdown
-                        this.countdownTimer -= dt/16;
-                        
-                        if (this.countdownTimer <= 0) {
-                            // DETONATE!
-                            this.triggerDetonation();
-                            this.hp = 0; // Kill self
-                            return; // Don't continue update
-                        }
                     }
                 }
 
@@ -10553,9 +10367,10 @@
                                             
                                             const dx = this.x - other.x;
                                             const dy = this.y - other.y;
-                                            const dist = Math.sqrt(dx*dx + dy*dy);
+                                            const distSq = dx*dx + dy*dy;
                                             
-                                            if (dist < minTitanDistance && dist > 0) {
+                                            if (distSq < minTitanDistance * minTitanDistance && distSq > 0) {
+                                                const dist = Math.sqrt(distSq);
                                                 // Push away from other TITANs
                                                 const repelStrength = (minTitanDistance - dist) / minTitanDistance;
                                                 cachedRepelX += (dx / dist) * repelStrength * this.speed * 2.0;
@@ -10662,10 +10477,11 @@
                                         this.ignoreCollision = true; // Pass through enemies while spinning
                                         
                                         // Initial damage
+                                        const spinRadSq = this.attackRadius * this.attackRadius;
                                         entities.enemies.forEach(e => {
                                             if (e === this) return;
-                                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                                            if (dist < this.attackRadius) {
+                                            const dx = e.x - this.x, dy = e.y - this.y;
+                                            if (dx*dx + dy*dy < spinRadSq) {
                                                 e.takeDamage(this.dmg, '#ff3300', false, 'normal');
                                             }
                                         });
@@ -10924,8 +10740,8 @@
                 } else if (this.type !== 'tank') {
                     // SPLITTER: Ranged attacker - stops and fires
                     if (this.type === 'splitter') {
-                        // BARRIER STUN: Stunned splitters don't move or attack
-                        if (this.barrierStunTimer && this.barrierStunTimer > 0) {
+                        // BARRIER STUN: Stunned splitters don't move or attack (skip if hacked — they're friendly)
+                        if (this.barrierStunTimer && this.barrierStunTimer > 0 && !this.hackState.active) {
                             this.barrierStunTimer -= dt/16;
                             if (this.barrierStunTimer < 0) this.barrierStunTimer = 0;
                             this.vx = 0;
@@ -10944,88 +10760,101 @@
                                 );
                             }
                         
-                        if (target) {
-                            const dx = target.x - this.x;
-                            const dy = target.y - this.y;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
-                            
-                            // Keep distance (200-300 range), kite backwards if too close
-                            const idealDist = 250;
-                            const tooClose = 180;
-                            
-                            if (dist > idealDist) {
-                                // Move closer
-                                if (dist > 0) { 
-                                    this.vx = (dx/dist) * this.speed * 0.8; 
-                                    this.vy = (dy/dist) * this.speed * 0.8; 
+                            if (target) {
+                                const dx = target.x - this.x;
+                                const dy = target.y - this.y;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                
+                                // Keep distance (200-300 range), kite backwards if too close
+                                const idealDist = 250;
+                                const tooClose = 180;
+                                
+                                if (dist > idealDist) {
+                                    // Move closer
+                                    if (dist > 0) { 
+                                        this.vx = (dx/dist) * this.speed * 0.8; 
+                                        this.vy = (dy/dist) * this.speed * 0.8; 
+                                    }
+                                } else if (dist < tooClose) {
+                                    // Kite backwards
+                                    if (dist > 0) { 
+                                        this.vx = -(dx/dist) * this.speed * 0.6; 
+                                        this.vy = -(dy/dist) * this.speed * 0.6; 
+                                    }
+                                } else {
+                                    // In ideal range - slow down
+                                    this.vx *= 0.9;
+                                    this.vy *= 0.9;
                                 }
-                            } else if (dist < tooClose) {
-                                // Kite backwards
-                                if (dist > 0) { 
-                                    this.vx = -(dx/dist) * this.speed * 0.6; 
-                                    this.vy = -(dy/dist) * this.speed * 0.6; 
+                                
+                                // Fire projectile
+                                this.splitterAttackTimer += dt/16;
+                                if (this.splitterAttackTimer >= this.splitterMaxAttackTimer && dist < 350) {
+                                    const angle = Math.atan2(dy, dx);
+                                    
+                                    // Create a large, slow, VERY visible projectile
+                                    entities.enemyProjectiles.push({
+                                        x: this.x,
+                                        y: this.y,
+                                        vx: Math.cos(angle) * 2.5, // Slow speed for reaction time (reduced from 3.5)
+                                        vy: Math.sin(angle) * 2.5,
+                                        radius: 9, // Reduced from 14 - still visible but not confusing
+                                        color: '#ff9500', // Matches splitter orange color
+                                        life: 150, // Reduced from 250 - travels less distance
+                                        splitterShot: true, // Flag for special rendering
+                                        glowPhase: 0, // For pulsing glow effect
+                                        targetWasPlayer: targetIsPlayer, // Track what it was shot at
+                                        shooter: this // Track origin enemy for whip deflection
+                                    });
+                                    
+                                    // Visual feedback - charging effect
+                                    for(let i=0; i<8; i++) {
+                                        const particleAngle = (Math.PI * 2 / 8) * i;
+                                        entities.particles.push(new Particle(
+                                            this.x + Math.cos(particleAngle) * 15,
+                                            this.y + Math.sin(particleAngle) * 15,
+                                            '#ff9500',
+                                            1.2
+                                        ));
+                                    }
+                                    
+                                    this.splitterAttackTimer = 0;
                                 }
                             } else {
-                                // In ideal range - slow down
-                                this.vx *= 0.9;
-                                this.vy *= 0.9;
-                            }
-                            
-                            // Fire projectile
-                            this.splitterAttackTimer += dt/16;
-                            if (this.splitterAttackTimer >= this.splitterMaxAttackTimer && dist < 350) {
-                                const angle = Math.atan2(dy, dx);
-                                
-                                // Create a large, slow, VERY visible projectile
-                                entities.enemyProjectiles.push({
-                                    x: this.x,
-                                    y: this.y,
-                                    vx: Math.cos(angle) * 2.5, // Slow speed for reaction time (reduced from 3.5)
-                                    vy: Math.sin(angle) * 2.5,
-                                    radius: 9, // Reduced from 14 - still visible but not confusing
-                                    color: '#ff9500', // Matches splitter orange color
-                                    life: 150, // Reduced from 250 - travels less distance
-                                    splitterShot: true, // Flag for special rendering
-                                    glowPhase: 0, // For pulsing glow effect
-                                    targetWasPlayer: targetIsPlayer, // Track what it was shot at
-                                    shooter: this // Track origin enemy for whip deflection
-                                });
-                                
-                                // Visual feedback - charging effect
-                                for(let i=0; i<8; i++) {
-                                    const particleAngle = (Math.PI * 2 / 8) * i;
-                                    entities.particles.push(new Particle(
-                                        this.x + Math.cos(particleAngle) * 15,
-                                        this.y + Math.sin(particleAngle) * 15,
-                                        '#ff9500',
-                                        1.2
-                                    ));
+                                // No target - wander
+                                const dx = player.x - this.x;
+                                const dy = player.y - this.y;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                if (dist > 0) { 
+                                    this.vx = (dx/dist) * this.speed * 0.5; 
+                                    this.vy = (dy/dist) * this.speed * 0.5; 
                                 }
-                                
-                                this.splitterAttackTimer = 0;
-                            }
-                        } else {
-                            // No target - wander
-                            const dx = player.x - this.x;
-                            const dy = player.y - this.y;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
-                            if (dist > 0) { 
-                                this.vx = (dx/dist) * this.speed * 0.5; 
-                                this.vy = (dy/dist) * this.speed * 0.5; 
                             }
                         }
-                        } // End stun check
                     } else {
                         // Regular enemy movement (drone, swarm)
                         // BARRIER STUN: Stunned enemies don't move toward player
-                        if (this.barrierStunTimer && this.barrierStunTimer > 0) {
+                        if (this.barrierStunTimer && this.barrierStunTimer > 0 && !this.hackState.active) {
                             this.barrierStunTimer -= dt/16;
                             // Clamp to 0 when expired
                             if (this.barrierStunTimer < 0) this.barrierStunTimer = 0;
                             this.vx = 0;
                             this.vy = 0;
                         } else {
-                            const dx = player.x - this.x; const dy = player.y - this.y;
+                            let target = player;
+                            
+                            // HACKED: Retarget toward nearest non-hacked enemy
+                            if (this.hackState.active) {
+                                const nearest = entities.enemies.find(e =>
+                                    e !== this &&
+                                    e.hp > 0 &&
+                                    !e.hackState.active &&
+                                    Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2) < 400
+                                );
+                                if (nearest) target = nearest;
+                            }
+                            
+                            const dx = target.x - this.x; const dy = target.y - this.y;
                             const dist = Math.sqrt(dx*dx + dy*dy);
                             if (dist > 0) { this.vx = (dx/dist)*this.speed; this.vy = (dy/dist)*this.speed; }
                         }
@@ -11119,7 +10948,6 @@
                 
                 if (this.flash > 0) this.flash -= (dt/16);
 
-
                 const dist = Math.sqrt((player.x - this.x)**2 + (player.y - this.y)**2);
                 if (dist < this.radius + player.radius && this.type !== 'splitter') { // Splitters don't do melee damage
                     // HACK: Hacked enemies attack other enemies instead of player
@@ -11171,10 +10999,11 @@
                 state.shake = shakeIntensity[this.slamHitCount];
                 
                 // Damage all enemies in radius
+                const slamRadiusSq = currentRadius * currentRadius;
                 entities.enemies.forEach(e => {
                     if (e === this) return;
-                    const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                    if (dist < currentRadius) {
+                    const dx = e.x - this.x, dy = e.y - this.y;
+                    if (dx*dx + dy*dy < slamRadiusSq) {
                         e.takeDamage(this.dmg * 1.5, '#ff3300', false, 'normal');
                     }
                 });
@@ -11573,128 +11402,6 @@
                     ctx.beginPath();
                     ctx.arc(0, 0, this.radius * 0.4, 0, Math.PI * 2);
                     ctx.fill();
-                } else if (this.type === 'voidwalker') {
-                    // Voidwalker: Rotating crystal/diamond with phase-based appearance
-                    const isHacked = this.hackState.active;
-                    const baseColor = isHacked ? '#00ff00' : '#9933ff';
-                    const glowColor = isHacked ? '#00ff88' : '#cc66ff';
-                    
-                    // Apply opacity based on phase state
-                    ctx.globalAlpha = this.opacity;
-                    
-                    // Warning circle on ground (during countdown)
-                    if (this.phaseState === 'countdown' && this.warningCircleRadius > 0) {
-                        const maxTimer = isHacked ? 60 : 120;
-                        const progress = 1 - (this.countdownTimer / maxTimer);
-                        
-                        // Pulsing warning circle
-                        ctx.strokeStyle = isHacked ? 'rgba(0, 255, 0, 0.4)' : 'rgba(153, 51, 255, 0.4)';
-                        ctx.lineWidth = 3;
-                        ctx.setLineDash([10, 5]);
-                        ctx.beginPath();
-                        ctx.arc(0, 0, this.warningCircleRadius, 0, Math.PI*2);
-                        ctx.stroke();
-                        ctx.setLineDash([]);
-                        
-                        // Inner fill
-                        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.warningCircleRadius);
-                        gradient.addColorStop(0, isHacked ? 'rgba(0, 255, 0, 0.05)' : 'rgba(153, 51, 255, 0.05)');
-                        gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
-                        ctx.fillStyle = gradient;
-                        ctx.beginPath();
-                        ctx.arc(0, 0, this.warningCircleRadius, 0, Math.PI*2);
-                        ctx.fill();
-                    }
-                    
-                    // Pulse based on state
-                    let pulseSpeed = this.phaseState === 'phased' ? 2 : 8;
-                    let pulseIntensity = this.phaseState === 'phased' ? 0.1 : 0.25;
-                    
-                    if (this.phaseState === 'countdown') {
-                        const maxTimer = isHacked ? 60 : 120;
-                        const countdown = this.countdownTimer / maxTimer;
-                        pulseSpeed = 8 + (1 - countdown) * 12; // Accelerates to 20
-                        pulseIntensity = 0.25 + (1 - countdown) * 0.2;
-                    }
-                    
-                    const pulse = 1 + Math.sin(this.pulsePhase * pulseSpeed) * pulseIntensity;
-                    ctx.scale(pulse, pulse);
-                    
-                    // Rotation (faster when counting down)
-                    const rotationSpeed = this.phaseState === 'countdown' ? 0.08 : 0.03;
-                    ctx.rotate(this.animTick * rotationSpeed);
-                    
-                    // Shadow/glow
-                    ctx.shadowColor = glowColor;
-                    ctx.shadowBlur = this.phaseState === 'countdown' ? 30 : 20;
-                    
-                    // Draw diamond/crystal shape (4-pointed star)
-                    const size = this.radius * 1.2;
-                    
-                    // Outer diamond
-                    ctx.fillStyle = baseColor;
-                    ctx.beginPath();
-                    ctx.moveTo(0, -size);
-                    ctx.lineTo(size * 0.5, 0);
-                    ctx.lineTo(0, size);
-                    ctx.lineTo(-size * 0.5, 0);
-                    ctx.closePath();
-                    ctx.fill();
-                    
-                    // Inner crystal layers
-                    if (this.phaseState === 'countdown') {
-                        // Bright pulsing inner diamond
-                        ctx.fillStyle = isHacked ? '#88ffcc' : '#ff66ff';
-                        ctx.shadowBlur = 20;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -size * 0.6);
-                        ctx.lineTo(size * 0.3, 0);
-                        ctx.lineTo(0, size * 0.6);
-                        ctx.lineTo(-size * 0.3, 0);
-                        ctx.closePath();
-                        ctx.fill();
-                        
-                        // Bright center core
-                        ctx.fillStyle = '#ffffff';
-                        ctx.shadowBlur = 15;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -size * 0.3);
-                        ctx.lineTo(size * 0.15, 0);
-                        ctx.lineTo(0, size * 0.3);
-                        ctx.lineTo(-size * 0.15, 0);
-                        ctx.closePath();
-                        ctx.fill();
-                    } else {
-                        // Dim core when phased
-                        ctx.fillStyle = baseColor;
-                        ctx.globalAlpha = this.opacity * 0.6;
-                        ctx.beginPath();
-                        ctx.moveTo(0, -size * 0.5);
-                        ctx.lineTo(size * 0.25, 0);
-                        ctx.lineTo(0, size * 0.5);
-                        ctx.lineTo(-size * 0.25, 0);
-                        ctx.closePath();
-                        ctx.fill();
-                    }
-                    
-                    // Energy particles orbiting (during countdown)
-                    if (this.phaseState === 'countdown') {
-                        ctx.globalAlpha = 1.0;
-                        const particleCount = 4;
-                        for (let i = 0; i < particleCount; i++) {
-                            const angle = (this.animTick * 0.1) + (i * Math.PI * 2 / particleCount);
-                            const dist = size * 0.8;
-                            const px = Math.cos(angle) * dist;
-                            const py = Math.sin(angle) * dist;
-                            
-                            ctx.fillStyle = glowColor;
-                            ctx.beginPath();
-                            ctx.arc(px, py, 2, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
-                    }
-                    
-                    ctx.globalAlpha = 1.0; // Reset opacity
                 } else if (this.isChampion && this.championType === 'TITAN') {
                     // TITAN: Mechanical boss design with armor plates and glowing core
                     const pulse = 0.8 + Math.sin(state.frameCount * 0.08) * 0.2;
@@ -11825,7 +11532,10 @@
                     
                     let hit = false;
                     for(let e of entities.enemies) {
-                        if(Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2) < e.radius + 15) { hit = true; break; }
+                        if(e.hp <= 0) continue;
+                        const fdx = e.x - this.x, fdy = e.y - this.y;
+                        const fHitR = e.radius + 15;
+                        if(fdx*fdx + fdy*fdy < fHitR * fHitR) { hit = true; break; }
                     }
 
 
@@ -11916,10 +11626,11 @@
                             t = Math.max(0, Math.min(1, t));
                             const px = p1.x + t * (p2.x - p1.x);
                             const py = p1.y + t * (p2.y - p1.y);
-                            const dist = Math.sqrt((e.x - px)**2 + (e.y - py)**2);
                             
                             const hitbox = 30 + (this.railLevel * 5);
-                            if(dist < e.radius + hitbox) {
+                            const hitRadSq = (e.radius + hitbox) * (e.radius + hitbox);
+                            const dpx = e.x - px, dpy = e.y - py;
+                            if(dpx*dpx + dpy*dpy < hitRadSq) {
                                  if(!this.hitList.includes(e)) {
                                      const distFromOrigin = Math.sqrt((e.x - this.origX)**2 + (e.y - this.origY)**2);
                                      const falloff = Math.max(0.1, 1.0 - (distFromOrigin / 400)); 
@@ -11945,11 +11656,13 @@
                         createExplosion(this.x, this.y, '#00ffcc', 30);
                         entities.particles.push(new Shockwave(this.x, this.y, this.target.radius + 50));
                         entities.enemies.forEach(e => {
-                            const dist = Math.sqrt((e.x-this.x)**2 + (e.y-this.y)**2);
-                            if(dist < this.target.radius) {
+                            const mdx = e.x - this.x, mdy = e.y - this.y;
+                            const mDistSq = mdx*mdx + mdy*mdy;
+                            const mainRadSq = this.target.radius * this.target.radius;
+                            if(mDistSq < mainRadSq) {
                                 // Full damage in main zone
                                 player.dealElementalDamage(e, this.damage, 'meteor', '#00ffcc');
-                            } else if (dist < this.target.radius * 1.5) {
+                            } else if (mDistSq < mainRadSq * 2.25) { // (1.5²)
                                 // 50% splash damage in outer zone (50% larger than main zone)
                                 player.dealElementalDamage(e, this.damage * 0.5, 'meteor', '#00ffcc');
                             }
@@ -12004,12 +11717,13 @@
                     if (!this.triggered) {
                         // Find nearest enemy and drift toward them slowly
                         let nearestEnemy = null;
-                        let nearestDist = Infinity;
+                        let nearestDistSq = Infinity;
                         
                         for (let e of entities.enemies) {
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            if (dist < nearestDist && dist < 300) { // Only drift toward enemies within 300 units
-                                nearestDist = dist;
+                            const dx = e.x - this.x, dy = e.y - this.y;
+                            const dSq = dx*dx + dy*dy;
+                            if (dSq < nearestDistSq && dSq < 90000) { // 300² = 90000
+                                nearestDistSq = dSq;
                                 nearestEnemy = e;
                             }
                         }
@@ -12027,9 +11741,10 @@
                         }
                         
                         // Check for nearby enemies to trigger
+                        const triggerRadSq = this.detectionRadius * this.detectionRadius;
                         for (let e of entities.enemies) {
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            if (dist < this.detectionRadius) {
+                            const tdx = e.x - this.x, tdy = e.y - this.y;
+                            if (tdx*tdx + tdy*tdy < triggerRadSq) {
                                 this.triggered = true;
                                 this.detonationTimer = 60; // 1 second countdown
                                 break;
@@ -12042,38 +11757,44 @@
                         this.detonationTimer -= dt/16;
                         
                         // Pull enemies toward mine (extends beyond blast radius)
-                        const gravityRadius = this.blastRadius * 1.6; // 60% beyond blast radius (increased from 30%)
-                        entities.enemies.forEach(e => {
-                            // Boss entities immune to pull effects
-                            if (e.isNexusPrime || e.isBossShield || e.isBossTurret) return;
+                        const gravityRadius = this.blastRadius * 1.6;
+                        const gravityRadiusSq = gravityRadius * gravityRadius;
+                        
+                        // Tick the gravity particle timer ONCE per frame, outside the enemy loop
+                        if (!this.gravityParticleTimer) this.gravityParticleTimer = 0;
+                        this.gravityParticleTimer += dt/16;
+                        const spawnParticles = this.gravityParticleTimer >= 4;
+                        if (spawnParticles) this.gravityParticleTimer -= 4;
+                        
+                        for (let i = 0; i < entities.enemies.length; i++) {
+                            const e = entities.enemies[i];
+                            if (e.isNexusPrime || e.isBossShield || e.isBossTurret) continue;
                             
                             const dx = this.x - e.x;
                             const dy = this.y - e.y;
-                            const dist = Math.sqrt(dx*dx + dy*dy);
+                            const distSq = dx*dx + dy*dy;
                             
-                            if (dist < gravityRadius && dist > 0) {
+                            if (distSq < gravityRadiusSq && distSq > 0) {
+                                const dist = Math.sqrt(distSq);
                                 // Pull strength increases as detonation approaches
                                 const detProgress = 1 - (this.detonationTimer / 60);
                                 const distRatio = 1 - (dist / gravityRadius);
-                                const pullStrength = 1.2 * detProgress * distRatio * (dt/16); // Increased from 0.8 to 1.2 (+50% pull)
+                                const pullStrength = 1.2 * detProgress * distRatio * (dt/16);
                                 
                                 e.pushX += (dx/dist) * pullStrength;
                                 e.pushY += (dy/dist) * pullStrength;
                                 
-                                // Visual feedback - particles being pulled (4 frames = ~0.067s at 60fps)
-                                if (!this.gravityParticleTimer) this.gravityParticleTimer = 0;
-                                this.gravityParticleTimer += dt/16;
-                                if (this.gravityParticleTimer >= 4) {
-                                    this.gravityParticleTimer -= 4;
+                                // One particle per enemy per tick (not every frame)
+                                if (spawnParticles) {
                                     entities.particles.push(new Particle(
                                         e.x + (seededRandom() - 0.5) * e.radius,
                                         e.y + (seededRandom() - 0.5) * e.radius,
-                                        '#ff44cc', // Brighter magenta particles
+                                        '#ff44cc',
                                         0.5
                                     ));
                                 }
                             }
-                        });
+                        }
                         
                         if (this.detonationTimer <= 0) {
                             // Detonate!
@@ -12190,13 +11911,13 @@
                                 
                                 const cdx = candidate.x - this.x;
                                 const cdy = candidate.y - this.y;
-                                const d = Math.sqrt(cdx*cdx + cdy*cdy);
+                                const dSq = cdx*cdx + cdy*cdy;
                                 
                                 // Check unhit enemies first
                                 if (!this.hitEnemies.has(candidate)) {
                                     foundUnhit = true;
-                                    if (d < nearestDist) {
-                                        nearestDist = d;
+                                    if (dSq < nearestDist) {
+                                        nearestDist = dSq;
                                         this.target = candidate;
                                     }
                                 }
@@ -12212,9 +11933,9 @@
                                     
                                     const cdx = candidate.x - this.x;
                                     const cdy = candidate.y - this.y;
-                                    const d = Math.sqrt(cdx*cdx + cdy*cdy);
-                                    if (d < nearestDist) {
-                                        nearestDist = d;
+                                    const dSq = cdx*cdx + cdy*cdy;
+                                    if (dSq < nearestDist) {
+                                        nearestDist = dSq;
                                         this.target = candidate;
                                     }
                                 }
@@ -12241,21 +11962,18 @@
                         this.vx = this.vx + (targetVx - this.vx) * steerStrength;
                         this.vy = this.vy + (targetVy - this.vy) * steerStrength;
                     } else {
-                        // No target - find nearest (optimized)
+                        // No target - find nearest
                         let nearest = null;
-                        let nearestDist = Infinity;
+                        let nearestDistSq = Infinity;
                         for (let i = 0; i < entities.enemies.length; i++) {
                             const e = entities.enemies[i];
                             if (e.hp > 0) {
                                 const dx = e.x - this.x;
                                 const dy = e.y - this.y;
-                                const roughDist = Math.abs(dx) + Math.abs(dy);
-                                if (roughDist < nearestDist * 1.5) { // Quick rejection
-                                    const d = Math.sqrt(dx*dx + dy*dy);
-                                    if (d < nearestDist) {
-                                        nearestDist = d;
-                                        nearest = e;
-                                    }
+                                const dSq = dx*dx + dy*dy;
+                                if (dSq < nearestDistSq) {
+                                    nearestDistSq = dSq;
+                                    nearest = e;
                                 }
                             }
                         }
@@ -12289,8 +12007,9 @@
                     // Hit detection
                     for (let e of entities.enemies) {
                         if (e.hp > 0) {
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            if (dist < e.radius + 8) {
+                            const hdx = e.x - this.x, hdy = e.y - this.y;
+                            const hR = e.radius + 8;
+                            if (hdx*hdx + hdy*hdy < hR * hR) {
                                 player.dealElementalDamage(e, this.damage, 'turret', '#ff8800');
                                 return false;
                             }
@@ -12312,8 +12031,9 @@
                     // Hit detection
                     for (let e of entities.enemies) {
                         if (e.hp > 0) {
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            if (dist < e.radius + 10) {
+                            const hdx = e.x - this.x, hdy = e.y - this.y;
+                            const hR = e.radius + 10;
+                            if (hdx*hdx + hdy*hdy < hR * hR) {
                                 // Deal full damage to main target
                                 player.dealElementalDamage(e, this.damage, 'emp', '#a855f7');
                                 
@@ -13380,14 +13100,79 @@
         }
 
 
+        // PICKUP MERGE SYSTEM: Prevents pickup count explosion via spatial-hash clustering
+        const PICKUP_MERGE = {
+            MAX_XP_PICKUPS: 300,   // Hard cap — triggers forced merge when exceeded
+            CELL_SIZE: 60,         // Spatial grid cell size (= merge radius)
+            MIN_CLUSTER: 5,        // Minimum pickups in a cell to trigger merge
+            SWEEP_INTERVAL: 120,   // Frames between merge sweeps
+            _timer: 0              // Internal frame counter
+        };
+
+        function mergeXpPickups(forceAll) {
+            // Build spatial hash of XP-only pickups
+            const grid = new Map();
+            const xpPickups = [];
+            const otherPickups = [];
+
+            for (let i = 0; i < entities.pickups.length; i++) {
+                const p = entities.pickups[i];
+                if (p.type !== 'xp') { otherPickups.push(p); continue; }
+                xpPickups.push(p);
+                const cx = Math.floor(p.x / PICKUP_MERGE.CELL_SIZE);
+                const cy = Math.floor(p.y / PICKUP_MERGE.CELL_SIZE);
+                const key = cx + ',' + cy;
+                if (!grid.has(key)) grid.set(key, []);
+                grid.get(key).push(p);
+            }
+
+            // Nothing to do
+            if (xpPickups.length <= PICKUP_MERGE.MAX_XP_PICKUPS && !forceAll) return;
+
+            // Determine merge threshold: normal sweep uses MIN_CLUSTER,
+            // forced merge (over cap) drops to 2 to aggressively reduce count
+            const threshold = (xpPickups.length > PICKUP_MERGE.MAX_XP_PICKUPS) ? 2 : PICKUP_MERGE.MIN_CLUSTER;
+
+            const merged = [];
+            const consumed = new Set();
+
+            grid.forEach((cell) => {
+                if (cell.length < threshold) return; // Cell too sparse, skip
+
+                // Merge entire cell into one pickup at centroid
+                let sumX = 0, sumY = 0, sumVal = 0, anyMagnetized = false;
+                for (let i = 0; i < cell.length; i++) {
+                    sumX += cell[i].x;
+                    sumY += cell[i].y;
+                    sumVal += cell[i].val;
+                    if (cell[i].magnetized) anyMagnetized = true;
+                    consumed.add(cell[i]);
+                }
+                const mp = new Pickup(sumX / cell.length, sumY / cell.length, sumVal, 'xp');
+                mp.magnetized = anyMagnetized;
+                merged.push(mp);
+            });
+
+            // Rebuild pickups array: keep non-consumed XP + all non-XP + new merged
+            if (consumed.size > 0) {
+                const kept = [];
+                for (let i = 0; i < xpPickups.length; i++) {
+                    if (!consumed.has(xpPickups[i])) kept.push(xpPickups[i]);
+                }
+                entities.pickups = otherPickups.concat(kept, merged);
+            }
+        }
+
+
         class Pickup {
             constructor(x, y, val, type='xp') { this.x = x; this.y = y; this.val = val; this.type = type; this.magnetized = false; }
             update(dt) {
                 const dx = player.x - this.x; const dy = player.y - this.y;
-                const dist = Math.sqrt(dx*dx + dy*dy);
+                const distSq = dx*dx + dy*dy;
                 
-                if (this.magnetized || dist < player.pickupRadius) {
+                if (this.magnetized || distSq < player.pickupRadiusSq) {
                     if(!this.magnetized) this.magnetized = true;
+                    const dist = Math.sqrt(distSq); // Only computed when moving
                     const speed = 15;
                     this.x += (dx/dist)*speed*(dt/16); this.y += (dy/dist)*speed*(dt/16);
                 }
@@ -13396,21 +13181,18 @@
                      // Only data cores and mod crates magnetize other pickups
                      const isDataCore = (this.type === 'core' || this.type === 'mod_crate');
                      if (isDataCore) {
-                         const magnetRange = 9999; // Data cores = infinite range (reverted)
-                         entities.pickups.forEach(p => {
-                             if(p !== this && !p.magnetized) {
-                                 const dist = Math.sqrt((p.x-this.x)**2 + (p.y-this.y)**2);
-                                 if(dist < magnetRange) {
-                                     p.magnetized = true;
-                                 }
+                         // Infinite range magnetization — no distance check needed
+                         for (let i = 0; i < entities.pickups.length; i++) {
+                             if (entities.pickups[i] !== this && !entities.pickups[i].magnetized) {
+                                 entities.pickups[i].magnetized = true;
                              }
-                         });
+                         }
                      }
                      // Normal XP shards DON'T magnetize other pickups (this was the bug!)
                 }
 
 
-                if (dist < player.radius + 10) { 
+                if (distSq < player.collectRadSq) { 
                     if (this.type === 'xp') gainXp(this.val);
                     if (this.type === 'health') { player.heal(30, true); } // Reduced from 50 to 30 
                     // Shield cells removed from game
@@ -13495,8 +13277,24 @@
             }
             draw(ctx) {
                 if (this.type === 'xp') {
-                    ctx.fillStyle = '#00d1b2'; ctx.shadowColor = '#00d1b2'; ctx.shadowBlur = 8;
-                    ctx.beginPath(); ctx.moveTo(this.x, this.y-5); ctx.lineTo(this.x+5, this.y); ctx.lineTo(this.x, this.y+5); ctx.lineTo(this.x-5, this.y); ctx.fill(); ctx.shadowBlur = 0;
+                    // Tiered visuals based on accumulated XP value
+                    let r, glow, color;
+                    if (this.val >= 40) {        // Huge merged pickup
+                        r = 14; glow = 18; color = '#66ffdd';
+                    } else if (this.val >= 16) { // Large merged pickup
+                        r = 10; glow = 14; color = '#33eec8';
+                    } else if (this.val >= 5) {  // Medium merged pickup
+                        r = 7;  glow = 10; color = '#1addb5';
+                    } else {                     // Single shard (default)
+                        r = 5;  glow = 8;  color = '#00d1b2';
+                    }
+                    // Huge pickups pulse
+                    if (this.val >= 40) {
+                        const pulse = 0.8 + Math.sin(state.frameCount * 0.12) * 0.2;
+                        glow *= pulse;
+                    }
+                    ctx.fillStyle = color; ctx.shadowColor = color; ctx.shadowBlur = glow;
+                    ctx.beginPath(); ctx.moveTo(this.x, this.y-r); ctx.lineTo(this.x+r, this.y); ctx.lineTo(this.x, this.y+r); ctx.lineTo(this.x-r, this.y); ctx.fill(); ctx.shadowBlur = 0;
                 } else if (this.type === 'health') {
                     // Health pack - glowing red cross with pulsing animation
                     const pulse = 0.8 + Math.sin(Date.now() * 0.005) * 0.2;
@@ -13784,7 +13582,7 @@
                 this.level = level;
                 this.life = 300; // 5 seconds
                 this.maxLife = 300;
-                this.tickTimer = 0;
+                this.tickTimer = 20; // First tick after 20 frames (~0.33s)
                 this.opacity = 0;
                 this.cloudParticles = [];
                 
@@ -13808,7 +13606,7 @@
             
             update(dt) {
                 this.life -= dt/16;
-                this.tickTimer += dt/16;
+                this.tickTimer -= dt/16;
                 
                 // Fade in/out
                 if (this.life > 270) {
@@ -13819,14 +13617,16 @@
                     this.opacity = 0.8;
                 }
                 
-                // Damage tick every 20 frames (~0.33s)
-                if (Math.floor(this.tickTimer) % 20 === 0 && this.tickTimer > 1) {
-                    entities.enemies.forEach(e => {
-                        const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                        if (dist < this.radius) {
+                // Damage tick every 20 frames (~0.33s) using countdown (not modulo)
+                if (this.tickTimer <= 0) {
+                    this.tickTimer = 20; // Reset to next tick
+                    for (let i = 0; i < entities.enemies.length; i++) {
+                        const e = entities.enemies[i];
+                        const dx = e.x - this.x, dy = e.y - this.y;
+                        if (dx*dx + dy*dy < this.radius * this.radius) {
                             player.dealElementalDamage(e, this.tickDamage, 'gas', '#99ff33');
                         }
-                    });
+                    }
                 }
                 
                 // Update swirling particles
@@ -14172,10 +13972,11 @@
                 }
                 
                 // Damage enemies - scaled with area
+                const baseRadiusSq_surge = baseRadius * baseRadius;
                 entities.enemies.forEach(e => {
                     if (e.hp <= 0) return;
-                    const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
-                    if (dist < baseRadius) {
+                    const dx = e.x - x, dy = e.y - y;
+                    if (dx*dx + dy*dy < baseRadiusSq_surge) {
                         player.dealElementalDamage(e, player.damage * 0.8, 'surge', color, true, 'normal', 'fire');
                         // OPTIMIZED: Reduced hit particles from 6 to 3
                         for (let i = 0; i < 3; i++) {
@@ -14209,10 +14010,11 @@
                 }
                 
                 // Freeze enemies - scaled with area
+                const baseRadiusSq_ice = baseRadius * baseRadius;
                 entities.enemies.forEach(e => {
                     if (e.hp <= 0) return;
-                    const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
-                    if (dist < baseRadius) {
+                    const dx = e.x - x, dy = e.y - y;
+                    if (dx*dx + dy*dy < baseRadiusSq_ice) {
                         e.cryoState.frozen = true;
                         e.cryoState.frozenTimer = 90; // 1.5 seconds
                         // OPTIMIZED: Reduced hit particles from 5 to 3
@@ -14230,16 +14032,17 @@
                 // OPTIMIZED: Reduced central explosion
                 createExplosion(x, y, color, 30); // Reduced from 50
                 
+                const poisonRadSq = baseRadius * baseRadius;
                 const nearbyEnemies = entities.enemies
                     .filter(e => {
                         if (e.hp <= 0) return false;
-                        const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
-                        return dist < baseRadius; // Only target enemies in range
+                        const dx = e.x - x, dy = e.y - y;
+                        return dx*dx + dy*dy < poisonRadSq;
                     })
                     .sort((a, b) => {
-                        const distA = Math.sqrt((a.x - x)**2 + (a.y - y)**2);
-                        const distB = Math.sqrt((b.x - x)**2 + (b.y - y)**2);
-                        return distA - distB;
+                        const dxa = a.x - x, dya = a.y - y;
+                        const dxb = b.x - x, dyb = b.y - y;
+                        return (dxa*dxa + dya*dya) - (dxb*dxb + dyb*dyb);
                     })
                     .slice(0, 4); // Reduced from 5 to 4 enemies
                 
@@ -14290,10 +14093,11 @@
                 }
                 
                 // Apply poison - scaled with area
+                const baseRadiusSq_bio = baseRadius * baseRadius;
                 entities.enemies.forEach(e => {
                     if (e.hp <= 0) return;
-                    const dist = Math.sqrt((e.x - x)**2 + (e.y - y)**2);
-                    if (dist < baseRadius) {
+                    const dx = e.x - x, dy = e.y - y;
+                    if (dx*dx + dy*dy < baseRadiusSq_bio) {
                         e.bioState.active = true;
                         e.bioState.timer = 240; // 4 seconds
                         e.bioState.level = 1;
@@ -14962,7 +14766,7 @@
             
             // Make enemies FLEE before despawning (cinematic effect)
             const fleeeingEnemies = entities.enemies.filter(e => 
-                !e.isNexusPrime && !e.isBossTurret && !e.isBossShield
+                !e.isNexusPrime && !e.isBossTurret && !e.isBossShield && !e.isChampion
             );
             
             // Mark enemies as fleeing and set them to run away
@@ -16108,12 +15912,22 @@
                 if(state.score>500 && r>0.99 && state.level >= 5) type='tank';
                 // Splitters appear after level 8, 8% chance (reduced from 15%)
                 if(state.level >= 8 && r>0.7 && r<=0.78) type='splitter';
-                // Voidwalkers removed from game
                 entities.enemies.push(new Enemy(type));
             }
 
 
             // Particle cap removed - handled later in filter (line ~11573) to not interfere with boss attacks
+
+
+            // PICKUP MERGE: Periodic sweep to collapse nearby XP shards
+            PICKUP_MERGE._timer++;
+            if (PICKUP_MERGE._timer >= PICKUP_MERGE.SWEEP_INTERVAL) {
+                PICKUP_MERGE._timer = 0;
+                mergeXpPickups(false);
+            }
+
+            // Cache pickup radius squared once per frame for all pickup updates
+            player.pickupRadiusSq = player.pickupRadius * player.pickupRadius;
 
             entities.pickups = entities.pickups.filter(p => { 
                 // FINAL BOSS: No pickups allowed during boss fight
@@ -16206,9 +16020,9 @@
                         entities.enemies.forEach(e => {
                             if (e.hp <= 0) return;
                             
-                            const dist = Math.sqrt((e.x - bg.x)**2 + (e.y - bg.y)**2);
+                            const dx = e.x - bg.x, dy = e.y - bg.y;
                             
-                            if (dist < bg.radius) {
+                            if (dx*dx + dy*dy < bg.radius * bg.radius) {
                                 let damage = e.maxHp * (ultimateData.burningGround.damagePerSecond / 100);
                                 
                                 // Apply damage reduction
@@ -17360,6 +17174,12 @@
                         return false; // Remove crashed champion
                     }
                 }
+                // SAFETY: If a champion's HP is NaN (corrupted), preserve it and log — never silently remove
+                if (e.isChampion && isNaN(e.hp)) {
+                    console.error(`🐛 CRITICAL: Champion ${e.championId} has NaN HP! Resetting to 1 to prevent silent removal. pos=(${e.x}, ${e.y})`);
+                    e.hp = 1; // Preserve champion, reset to 1 HP so it stays targetable
+                }
+                
                 return e.hp>0; 
             });
             
@@ -17589,6 +17409,11 @@
             
             entities.gasClouds = entities.gasClouds.filter(c => { const a=c.update(scaledDt); if(a) c.draw(ctx); return a; });
             entities.lightnings = entities.lightnings.filter(l => { const a=l.update(scaledDt); if(a) l.draw(ctx); return a; });
+            // Hard cap on lightning bolts to prevent Tesla chain storms from piling up
+            const MAX_LIGHTNINGS = 30;
+            if (entities.lightnings.length > MAX_LIGHTNINGS) {
+                entities.lightnings = entities.lightnings.slice(-MAX_LIGHTNINGS);
+            }
             entities.texts = entities.texts.filter(t => { const a=t.update(scaledDt); if(a) t.draw(ctx); return a; });
 
             // SKYFALL BEAM RENDERING - Ultra-powerful divine annihilation beam
@@ -18877,9 +18702,10 @@
                         let minDist = Infinity;
                         entities.enemies.forEach(e => {
                             if (e.hp > 0) {
-                                const d = Math.sqrt((e.x - ep.x)**2 + (e.y - ep.y)**2);
-                                if (d < minDist) {
-                                    minDist = d;
+                                const dx = e.x - ep.x, dy = e.y - ep.y;
+                                const dSq = dx*dx + dy*dy;
+                                if (dSq < minDist) {
+                                    minDist = dSq;
                                     nearestEnemy = e;
                                 }
                             }
@@ -19106,9 +18932,9 @@
                         
                         const edx = e.x - ep.x;
                         const edy = e.y - ep.y;
-                        const dist = Math.sqrt(edx*edx + edy*edy);
+                        const eHitR = e.radius + ep.radius;
                         
-                        if(dist < e.radius + ep.radius) {
+                        if(edx*edx + edy*edy < eHitR * eHitR) {
                             // Check if this is the origin enemy for auto-crit
                             const isOriginEnemy = (ep.originEnemy && ep.originEnemy === e);
                             
@@ -19146,9 +18972,9 @@
                             
                             const edx = e.x - ep.x;
                             const edy = e.y - ep.y;
-                            const dist = Math.sqrt(edx*edx + edy*edy);
+                            const eHitR2 = e.radius + ep.radius;
                             
-                            if(dist < e.radius + ep.radius) {
+                            if(edx*edx + edy*edy < eHitR2 * eHitR2) {
                                 e.takeDamage(25, '#00ffff', false, 'normal'); // Decent damage, hacked color
                                 createExplosion(ep.x, ep.y, '#00ffff', 8);
                                 for(let i=0; i<6; i++) {
@@ -19166,8 +18992,8 @@
                             if (e.hackState.active) continue;
                             const edx = e.x - ep.x;
                             const edy = e.y - ep.y;
-                            const dist = Math.sqrt(edx*edx + edy*edy);
-                            if(dist < e.radius + ep.radius) {
+                            const eHitR3 = e.radius + ep.radius;
+                            if(edx*edx + edy*edy < eHitR3 * eHitR3) {
                                 e.takeDamage(25, '#ff9500', false, 'normal');
                                 createExplosion(ep.x, ep.y, '#ff9500', 8);
                                 for(let i=0; i<6; i++) {
@@ -19180,7 +19006,8 @@
                 }
                 
                 // Normal collision with player (for non-hacked shots or hacked shots that missed enemies)
-                if(Math.sqrt(dx*dx + dy*dy) < player.radius + ep.radius) {
+                const pHitR = player.radius + ep.radius;
+                if(dx*dx + dy*dy < pHitR * pHitR) {
                     if (player.invulnTimer <= 0) { 
                         const sourceType = ep.splitterShot ? 'SPLITTER' : (ep.fromBoss ? 'BOSS' : 'ENEMY');
                         player.takeHit(ep.splitterShot ? 20 : 15, 'Projectile', sourceType);
@@ -20222,11 +20049,8 @@
                                 player.weaponStats[opt.id].dmg *= 1.055;   // +5.5% dmg per level (increased from 2%)
                                 player.weaponStats[opt.id].rate *= 1.04;   // +4% rate per level (increased from 1.5%)
                                 
-                                // Area upgrades affected by Compressed Field (-15%)
+                                // Area upgrade
                                 let areaBonus = 1.02; // +2% area per level base
-                                if (player.compressedFieldPenalty) {
-                                    areaBonus = 1 + ((areaBonus - 1) * player.compressedFieldPenalty); // Reduce bonus by 15%
-                                }
                                 player.weaponStats[opt.id].area *= areaBonus;
                             }
                             
@@ -20829,7 +20653,7 @@
                     { name: 'Brittle Armor', desc: 'Start with -1 shield charge', icon: 'fa-shield-alt' },
                     { name: 'Overloaded Circuits', desc: 'Weapon fire rate -15%', icon: 'fa-plug' },
                     { name: 'Leaky Shields', desc: 'Shields only block 50% of damage', icon: 'fa-shield-alt' },
-                    { name: 'Compressed Field', desc: 'Weapon area and area upgrades -15%', icon: 'fa-compress-arrows-alt' }
+                    { name: 'Hardened Enemies', desc: 'All enemies gain +10 armor', icon: 'fa-shield-alt' }
                 ],
                 coreMultiplier: 5.0,
                 scoreMultiplier: 5.0
