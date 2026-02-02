@@ -548,6 +548,8 @@
             <div id="xp-bar" class="xp-bar-fill" style="height: 100%;"></div>
         </div>
 
+        <div id="fps-counter" style="position: absolute; bottom: 12px; right: 12px; font-size: 12px; color: rgba(0,209,178,0.8); text-shadow: 0 0 8px rgba(0,209,178,0.6); font-family: monospace;">FPS: 60</div>
+        
         <div id="start-hint" class="joystick-hint">ENGAGE THRUSTERS</div>
     </div>
 
@@ -1473,7 +1475,11 @@
             manualCameraControl: false, // Manual camera pan mode (prevents game loop interference)
             // Ascension System
             activeAscension: 0, // Current ascension level for this run (0 = normal mode)
-            playerDead: false // Flag to prevent multiple death triggers
+            playerDead: false, // Flag to prevent multiple death triggers
+            // FPS tracking
+            fps: 60,
+            fpsFrames: 0,
+            fpsLastTime: performance.now()
         };
 
 
@@ -13795,6 +13801,7 @@
             updateHud(); 
             state.lastTime = Date.now();
             document.getElementById('hud').style.display='flex';
+            document.getElementById('fps-counter').style.display='block';
             document.getElementById('start-hint').style.display='block';
             
             // Apply Test Mode settings if enabled
@@ -15562,6 +15569,21 @@
             const now = Date.now(); 
             let dt = now - state.lastTime;
             state.lastTime = now;
+            
+            // FPS tracking
+            state.fpsFrames++;
+            const fpsNow = performance.now();
+            if (fpsNow - state.fpsLastTime >= 1000) { // Update every second
+                state.fps = Math.round(state.fpsFrames * 1000 / (fpsNow - state.fpsLastTime));
+                state.fpsFrames = 0;
+                state.fpsLastTime = fpsNow;
+                
+                // Update FPS display
+                const fpsCounter = document.getElementById('fps-counter');
+                if (fpsCounter && state.screen === 'game') {
+                    fpsCounter.textContent = `FPS: ${state.fps}`;
+                }
+            }
             
             // PERFORMANCE MONITORING - Track entity counts
             if (!state.performanceMode) state.performanceMode = 'normal'; // normal, reduced, minimal
@@ -21176,6 +21198,7 @@
             // Show the screen
             document.getElementById('gameover-screen').classList.add('active');
             document.getElementById('hud').style.display = 'none';
+            document.getElementById('fps-counter').style.display = 'none';
         }
 
         function gameOver() {
@@ -22953,6 +22976,7 @@
             document.getElementById('menu-screen').classList.add('active'); 
             state.screen='menu'; 
             document.getElementById('hud').style.display='none';
+            document.getElementById('fps-counter').style.display='none';
         };
         
         // ===== DEBUG COMMANDS =====
