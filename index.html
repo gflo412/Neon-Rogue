@@ -3348,7 +3348,8 @@
                         // Find closest enemy to THIS cannon's position
                         // PRIORITY: Boss shields first (if any exist), then closest enemy
                         let target = null;
-                        let minDist = this.range * this.weaponStats.ion.area;
+                        const rangeSq = (this.range * this.weaponStats.ion.area) ** 2; // Squared for distance comparison
+                        let minDistSq = rangeSq;
                         
                         // Check for boss shields first (highest priority)
                         const activeShields = entities.enemies.filter(e => 
@@ -3361,8 +3362,8 @@
                                 const dx = shield.x - cannonX;
                                 const dy = shield.y - cannonY;
                                 const distSq = dx*dx + dy*dy;
-                                if (distSq < minDist) {
-                                    minDist = distSq;
+                                if (distSq < minDistSq) {
+                                    minDistSq = distSq;
                                     target = shield;
                                 }
                             });
@@ -3373,8 +3374,8 @@
                                 const dx = e.x - cannonX;
                                 const dy = e.y - cannonY;
                                 const distSq = dx*dx + dy*dy;
-                                if (distSq < minDist) {
-                                    minDist = distSq;
+                                if (distSq < minDistSq) {
+                                    minDistSq = distSq;
                                     target = e;
                                 }
                             });
@@ -4456,13 +4457,9 @@
                                 const dx0 = e.x - this.x, dy0 = e.y - this.y;
                                 if (dx0*dx0 + dy0*dy0 > searchLimitSq) continue;
                                 
-                                // Count nearby enemies using squared distance
-                                let nearbyCount = 0;
-                                for (let j = 0; j < entities.enemies.length; j++) {
-                                    const ne = entities.enemies[j];
-                                    const dx = ne.x - e.x, dy = ne.y - e.y;
-                                    if (dx*dx + dy*dy < 14400) nearbyCount++; // 120² = 14400
-                                }
+                                // OPTIMIZATION: Use spatial grid instead of full enemy loop
+                                const nearbyEnemies = spatialGrid.getNearby(e.x, e.y, 120);
+                                const nearbyCount = nearbyEnemies.length;
                                 
                                 if (nearbyCount > bestCount) {
                                     bestCount = nearbyCount;
@@ -11844,7 +11841,15 @@
                         // Create toxic gas cloud
                         createExplosion(this.x, this.y, '#99ff33', 15);
                         const level = player.weapons.gas;
-                        entities.gasClouds.push(new GasCloud(this.x, this.y, this.pierce, this.damage, level));
+                        
+                        // OPTIMIZATION: Cap gas clouds at 8 to prevent mobile performance issues
+                        if (entities.gasClouds.length < 8) {
+                            entities.gasClouds.push(new GasCloud(this.x, this.y, this.pierce, this.damage, level));
+                        } else {
+                            // Remove oldest cloud and add new one
+                            entities.gasClouds.shift();
+                            entities.gasClouds.push(new GasCloud(this.x, this.y, this.pierce, this.damage, level));
+                        }
                         return false;
                     }
                     
@@ -13108,10 +13113,10 @@
 
         // PICKUP MERGE SYSTEM: Prevents pickup count explosion via spatial-hash clustering
         const PICKUP_MERGE = {
-            MAX_XP_PICKUPS: 300,   // Hard cap — triggers forced merge when exceeded
+            MAX_XP_PICKUPS: 200,   // Hard cap — triggers forced merge when exceeded (reduced from 300)
             CELL_SIZE: 60,         // Spatial grid cell size (= merge radius)
-            MIN_CLUSTER: 5,        // Minimum pickups in a cell to trigger merge
-            SWEEP_INTERVAL: 120,   // Frames between merge sweeps
+            MIN_CLUSTER: 4,        // Minimum pickups in a cell to trigger merge (reduced from 5)
+            SWEEP_INTERVAL: 90,    // Frames between merge sweeps (reduced from 120 for more frequent merging)
             _timer: 0              // Internal frame counter
         };
 
@@ -13176,6 +13181,12 @@
                 const dx = player.x - this.x; const dy = player.y - this.y;
                 const distSq = dx*dx + dy*dy;
                 
+                // OPTIMIZATION: Early culling for very distant pickups (>2000px away)
+                // They won't be magnetized or collected this frame anyway
+                if (distSq > 4000000 && !this.magnetized) { // 2000px squared
+                    return true; // Keep alive but skip expensive updates
+                }
+                
                 if (this.magnetized || distSq < player.pickupRadiusSq) {
                     if(!this.magnetized) this.magnetized = true;
                     const dist = Math.sqrt(distSq); // Only computed when moving
@@ -13187,10 +13198,26 @@
                      // Only data cores and mod crates magnetize other pickups
                      const isDataCore = (this.type === 'core' || this.type === 'mod_crate');
                      if (isDataCore) {
-                         // Infinite range magnetization — no distance check needed
-                         for (let i = 0; i < entities.pickups.length; i++) {
-                             if (entities.pickups[i] !== this && !entities.pickups[i].magnetized) {
-                                 entities.pickups[i].magnetized = true;
+                         // OPTIMIZATION: Use a flag to prevent repeated full-array scans
+                         if (!this.hasFullyMagnetized) {
+                             let allMagnetized = true;
+                             // Magnetize nearby pickups first (within 1500px)
+                             for (let i = 0; i < entities.pickups.length; i++) {
+                                 const p = entities.pickups[i];
+                                 if (p !== this && !p.magnetized) {
+                                     // Only magnetize if within reasonable range (save CPU on distant pickups)
+                                     const pdx = p.x - player.x;
+                                     const pdy = p.y - player.y;
+                                     if (pdx*pdx + pdy*pdy < 2250000) { // 1500px squared
+                                         p.magnetized = true;
+                                     } else {
+                                         allMagnetized = false;
+                                     }
+                                 }
+                             }
+                             // If all nearby pickups are magnetized, don't check again
+                             if (allMagnetized) {
+                                 this.hasFullyMagnetized = true;
                              }
                          }
                      }
@@ -13282,6 +13309,18 @@
                 return true;
             }
             draw(ctx) {
+                // OPTIMIZATION: Skip rendering pickups far off screen
+                const screenMargin = 200; // Extra margin for particles/glow
+                const screenLeft = state.camera.x - (canvas.width / (2 * state.zoom)) - screenMargin;
+                const screenRight = state.camera.x + (canvas.width / (2 * state.zoom)) + screenMargin;
+                const screenTop = state.camera.y - (canvas.height / (2 * state.zoom)) - screenMargin;
+                const screenBottom = state.camera.y + (canvas.height / (2 * state.zoom)) + screenMargin;
+                
+                // Skip if completely off screen
+                if (this.x < screenLeft || this.x > screenRight || this.y < screenTop || this.y > screenBottom) {
+                    return; // Don't render
+                }
+                
                 if (this.type === 'xp') {
                     // Tiered visuals based on accumulated XP value
                     let r, glow, color;
@@ -13592,15 +13631,15 @@
                 this.opacity = 0;
                 this.cloudParticles = [];
                 
-                // OPTIMIZED: Reduced particle count for better performance
-                const particleCount = Math.floor(30 + (radius / 80) * 10); // Reduced from 50 base
+                // OPTIMIZED: Further reduced particle count for mobile performance
+                const particleCount = Math.floor(15 + (radius / 80) * 8); // Reduced from 30 base to 15
                 for (let i = 0; i < particleCount; i++) {
                     const angle = seededRandom() * Math.PI * 2;
                     const dist = Math.sqrt(seededRandom()) * radius; // Square root for even distribution
                     this.cloudParticles.push({
                         offsetX: Math.cos(angle) * dist,
                         offsetY: Math.sin(angle) * dist,
-                        size: 8 + seededRandom() * 12, // Slightly larger particles
+                        size: 10 + seededRandom() * 14, // Slightly larger to compensate for fewer particles
                         orbitAngle: angle,
                         orbitSpeed: (seededRandom() - 0.5) * 0.015,
                         orbitRadius: 5 + seededRandom() * 15,
@@ -13626,8 +13665,12 @@
                 // Damage tick every 20 frames (~0.33s) using countdown (not modulo)
                 if (this.tickTimer <= 0) {
                     this.tickTimer = 20; // Reset to next tick
-                    for (let i = 0; i < entities.enemies.length; i++) {
-                        const e = entities.enemies[i];
+                    
+                    // OPTIMIZATION: Use spatial grid instead of checking all enemies
+                    const nearbyEnemies = spatialGrid.getNearby(this.x, this.y, this.radius);
+                    for (let i = 0; i < nearbyEnemies.length; i++) {
+                        const e = nearbyEnemies[i];
+                        if (e.hp <= 0) continue;
                         const dx = e.x - this.x, dy = e.y - this.y;
                         if (dx*dx + dy*dy < this.radius * this.radius) {
                             player.dealElementalDamage(e, this.tickDamage, 'gas', '#99ff33');
@@ -15946,6 +15989,28 @@
             if (PICKUP_MERGE._timer >= PICKUP_MERGE.SWEEP_INTERVAL) {
                 PICKUP_MERGE._timer = 0;
                 mergeXpPickups(false);
+            }
+            
+            // HARD PICKUP CAP: Emergency culling if pickups exceed threshold (prevents FPS death)
+            if (entities.pickups.length > 250) {
+                console.warn(`⚠️ PICKUP CAP: ${entities.pickups.length} pickups! Culling excess...`);
+                
+                // Separate by type
+                const xpPickups = entities.pickups.filter(p => p.type === 'xp');
+                const otherPickups = entities.pickups.filter(p => p.type !== 'xp');
+                
+                // Sort XP pickups by distance from player (keep closest)
+                xpPickups.sort((a, b) => {
+                    const distA = (a.x - player.x) ** 2 + (a.y - player.y) ** 2;
+                    const distB = (b.x - player.x) ** 2 + (b.y - player.y) ** 2;
+                    return distA - distB;
+                });
+                
+                // Keep only 150 closest XP pickups + all special pickups
+                const keepXP = xpPickups.slice(0, 150);
+                entities.pickups = [...keepXP, ...otherPickups];
+                
+                console.log(`   Reduced to ${entities.pickups.length} pickups (kept ${keepXP.length} XP + ${otherPickups.length} special)`);
             }
 
             // Cache pickup radius squared once per frame for all pickup updates
