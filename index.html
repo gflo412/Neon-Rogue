@@ -13311,13 +13311,16 @@
             draw(ctx) {
                 // OPTIMIZATION: Skip rendering pickups far off screen
                 const screenMargin = 200; // Extra margin for particles/glow
-                const screenLeft = state.camera.x - (canvas.width / (2 * state.zoom)) - screenMargin;
-                const screenRight = state.camera.x + (canvas.width / (2 * state.zoom)) + screenMargin;
-                const screenTop = state.camera.y - (canvas.height / (2 * state.zoom)) - screenMargin;
-                const screenBottom = state.camera.y + (canvas.height / (2 * state.zoom)) + screenMargin;
+                
+                // Convert camera screen coordinates to world coordinates
+                // Camera position is where to draw the world on screen, so we invert it
+                const worldLeft = (-state.camera.x / state.zoom) - screenMargin;
+                const worldRight = (canvas.width - state.camera.x) / state.zoom + screenMargin;
+                const worldTop = (-state.camera.y / state.zoom) - screenMargin;
+                const worldBottom = (canvas.height - state.camera.y) / state.zoom + screenMargin;
                 
                 // Skip if completely off screen
-                if (this.x < screenLeft || this.x > screenRight || this.y < screenTop || this.y > screenBottom) {
+                if (this.x < worldLeft || this.x > worldRight || this.y < worldTop || this.y > worldBottom) {
                     return; // Don't render
                 }
                 
@@ -15616,7 +15619,7 @@
             // FPS tracking
             state.fpsFrames++;
             const fpsNow = performance.now();
-            if (fpsNow - state.fpsLastTime >= 1000) { // Update every second
+            if (fpsNow - state.fpsLastTime >= 250) { // Update every 0.25 seconds (4x per second)
                 state.fps = Math.round(state.fpsFrames * 1000 / (fpsNow - state.fpsLastTime));
                 state.fpsFrames = 0;
                 state.fpsLastTime = fpsNow;
