@@ -552,6 +552,58 @@
         
         <div id="start-hint" class="joystick-hint">ENGAGE THRUSTERS</div>
     </div>
+    
+    <!-- Graphics Settings Modal -->
+    <div id="graphics-settings-modal" class="modal" style="z-index: 200;">
+        <div class="bg-gray-900 bg-opacity-95 border-2 border-teal-600 rounded-lg p-6 max-w-md w-full">
+            <!-- Header -->
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-2xl text-teal-400 font-black tracking-widest">
+                    <i class="fas fa-sliders-h mr-2"></i>GRAPHICS
+                </h2>
+                <button id="graphics-close" class="text-gray-500 hover:text-white text-2xl">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <p class="text-sm text-gray-400 mb-6">Adjust render quality for performance. Changes apply to next run.</p>
+            
+            <!-- Render Quality -->
+            <div class="mb-6">
+                <label class="text-sm font-bold text-teal-300 mb-2 block">RENDER QUALITY</label>
+                <select id="render-quality-select" class="w-full bg-gray-800 text-white border border-gray-600 rounded px-3 py-2 font-mono text-sm mb-2">
+                    <option value="0.38">⚡ Low - Best FPS</option>
+                    <option value="0.45" selected>⚖️ Medium - Balanced</option>
+                    <option value="0.6">💎 High - Sharp</option>
+                    <option value="0.8">✨ Ultra - Very Sharp</option>
+                    <option value="1.0">🔥 Max - Native DPI</option>
+                </select>
+                <p class="text-xs text-gray-500">Lower = better FPS. Higher = sharper but slower.</p>
+            </div>
+            
+            <!-- Quality Details Display -->
+            <div class="bg-gray-800 border border-gray-700 rounded p-3 mb-6">
+                <div class="text-xs space-y-1">
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Render Scale:</span>
+                        <span id="quality-scale-display" class="text-teal-400 font-mono">0.5x</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Pixels/Frame:</span>
+                        <span id="quality-pixels-display" class="text-teal-400 font-mono">~0.9M</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-gray-400">Performance:</span>
+                        <span id="quality-performance-display" class="text-teal-400 font-mono">Balanced</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Close Button -->
+            <button id="graphics-apply" class="w-full border border-gray-500 text-gray-400 hover:text-white hover:border-white py-2 px-8 rounded transition-all">
+                APPLY & CLOSE
+            </button>
+        </div>
+    </div>
 
 
     <!-- Main Menu -->
@@ -569,6 +621,11 @@
         <!-- Stats Icon Button - Bottom Left Corner (Pinned) -->
         <button id="view-stats-btn" class="absolute bottom-6 left-6 w-12 h-12 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-teal-400 rounded-lg border border-gray-700 flex items-center justify-center transition-all z-10">
             <i class="fas fa-chart-bar text-lg"></i>
+        </button>
+        
+        <!-- Graphics Settings Icon Button - Bottom Center -->
+        <button id="graphics-menu-btn" onclick="document.getElementById('graphics-settings-modal').classList.add('active'); console.log('Inline click worked!');" class="absolute bottom-6 left-1/2 -translate-x-1/2 w-12 h-12 bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-teal-400 rounded-lg border border-gray-700 flex items-center justify-center transition-all z-10">
+            <i class="fas fa-sliders-h text-lg"></i>
         </button>
         
         <!-- Centered Content Area - Fixed positioning, pushed down slightly -->
@@ -1249,12 +1306,9 @@
 
     <script>
         // RESOLUTION SCALING for performance
-        // This multiplier is applied ON TOP of DPI scaling
-        // 1.0 = Full native resolution (sharp but slow on high-DPI displays)
-        // 0.75 = 75% of native (balanced - good clarity, better FPS)
-        // 0.5 = 50% of native (good performance, still sharper than pre-DPI)
-        // Anything above ~0.38 is sharper than the original blurry setup
-        const RENDER_SCALE = 0.5; // Lowered from 0.75 for better performance
+        // Load from localStorage or default to 0.45 (Medium)
+        let RENDER_SCALE = parseFloat(localStorage.getItem('renderQuality')) || 0.45;
+        console.log(`🎨 Render Quality: ${RENDER_SCALE}x`);
         
         // BASE ZOOM - Controls how much world space you see
         // This will be multiplied by DPI and RENDER_SCALE to compensate
@@ -3506,11 +3560,11 @@
                                     const newDamageMult = damageMult * 0.8;
                                     this.dealElementalDamage(target, dmg * newDamageMult, 'tesla', '#ffffff');
                                     
-                                    // Single bolt per chain hit (was 2 via setTimeout)
+                                    // Single bolt per chain hit
                                     entities.lightnings.push(new LightningBolt(sourceX, sourceY, target.x, target.y, '#ffeb3b'));
                                     
-                                    // 4 particles per chain hit (was 8)
-                                    for (let p = 0; p < 4; p++) {
+                                    // 2 particles per chain hit (reduced from 4)
+                                    for (let p = 0; p < 2; p++) {
                                         entities.particles.push(new Particle(target.x, target.y, '#ffeb3b', 3));
                                     }
                                     
@@ -3543,14 +3597,13 @@
                                     
                                     this.dealElementalDamage(initial, dmg, 'tesla', '#ffffff');
                                     
-                                    // Double bolt for initial hit (was triple via setTimeout)
-                                    entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
+                                    // Single bolt for initial hit (reduced from double)
                                     entities.lightnings.push(new LightningBolt(this.x, this.y, initial.x, initial.y, '#ffeb3b'));
                                     
-                                    createExplosion(initial.x, initial.y, '#ffeb3b', 20);
+                                    createExplosion(initial.x, initial.y, '#ffeb3b', 15); // Reduced: 20→15
                                     
-                                    // 6 particles per initial hit (was 12)
-                                    for (let p = 0; p < 6; p++) {
+                                    // 3 particles per initial hit (reduced from 6)
+                                    for (let p = 0; p < 3; p++) {
                                         entities.particles.push(new Particle(initial.x, initial.y, '#ffeb3b', 4));
                                     }
                                     
@@ -3650,13 +3703,10 @@
                                 let bestDensity = 0;
                                 const seekStep = Math.max(1, Math.floor(visibleEnemies.length / 20));
                                 
+                                // ⚡ OPTIMIZED: Use spatial grid for clustering
                                 for (let idx = 0; idx < visibleEnemies.length; idx += seekStep) {
                                     const e = visibleEnemies[idx];
-                                    let nearby = 0;
-                                    for (let j = 0; j < visibleEnemies.length; j++) {
-                                        const dx = e.x - visibleEnemies[j].x, dy = e.y - visibleEnemies[j].y;
-                                        if (dx*dx + dy*dy < 22500) nearby++; // 150²
-                                    }
+                                    const nearby = spatialGrid.getNearby(e.x, e.y, 150).length;
                                     if (nearby >= bestDensity) {
                                         bestDensity = nearby;
                                         bestTarget = e;
@@ -3665,12 +3715,8 @@
                                 
                                 if (!bestTarget) bestTarget = visibleEnemies[0];
                                 
-                                // Get enemies near the cluster center (squared distance)
-                                clusterEnemies = [];
-                                for (let i = 0; i < visibleEnemies.length; i++) {
-                                    const dx = visibleEnemies[i].x - bestTarget.x, dy = visibleEnemies[i].y - bestTarget.y;
-                                    if (dx*dx + dy*dy < 40000) clusterEnemies.push(visibleEnemies[i]); // 200²
-                                }
+                                // ⚡ OPTIMIZED: Use spatial grid to get cluster enemies
+                                clusterEnemies = spatialGrid.getNearby(bestTarget.x, bestTarget.y, 200);
                                 
                                 // Ensure we always have at least the best target
                                 if (clusterEnemies.length === 0) {
@@ -3856,21 +3902,17 @@
                             const visibleChampions = visibleEnemies.filter(e => e.type === 'champion');
                             const targetPool = visibleChampions.length > 0 ? visibleChampions : visibleEnemies;
                             
-                            // Find best cluster - sample outer loop to avoid O(n²)
+                            // ⚡ OPTIMIZED: Use spatial grid for clustering (was O(n²))
                             let bestTarget = null;
                             let maxNearby = 0;
-                            const meteorStep = Math.max(1, Math.floor(targetPool.length / 20));
+                            const meteorStep = Math.max(1, Math.floor(targetPool.length / 15)); // Sample fewer: 20→15
                             
                             for (let idx = 0; idx < targetPool.length; idx += meteorStep) {
                                 const e = targetPool[idx];
-                                let nearbyCount = 0;
-                                for (let j = 0; j < visibleEnemies.length; j++) {
-                                    const other = visibleEnemies[j];
-                                    if (other !== e) {
-                                        const dx = e.x - other.x, dy = e.y - other.y;
-                                        if (dx*dx + dy*dy < 22500) nearbyCount++; // 150²
-                                    }
-                                }
+                                // Use spatial grid instead of checking all enemies
+                                const nearby = spatialGrid.getNearby(e.x, e.y, 150);
+                                let nearbyCount = nearby.length - 1; // Don't count self
+                                
                                 // Bonus weight for champions
                                 if (e.type === 'champion') nearbyCount += 5;
                                 
@@ -3964,13 +4006,10 @@
                             let bestDensity = 0;
                             const railStep = Math.max(1, Math.floor(targetPool.length / 20));
                             
+                            // ⚡ OPTIMIZED: Use spatial grid for clustering
                             for (let idx = 0; idx < targetPool.length; idx += railStep) {
                                 const e = targetPool[idx];
-                                let nearby = 0;
-                                for (let j = 0; j < targetPool.length; j++) {
-                                    const dx = e.x - targetPool[j].x, dy = e.y - targetPool[j].y;
-                                    if (dx*dx + dy*dy < 40000) nearby++; // 200²
-                                }
+                                const nearby = spatialGrid.getNearby(e.x, e.y, 200).length;
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -4029,7 +4068,7 @@
                             }
                         }
                         
-                        // Find cluster (densest area) - sample outer loop to avoid O(n²)
+                        // ⚡ OPTIMIZED: Use spatial grid for clustering
                         let bestTarget = null;
                         let bestDensity = 0;
                         
@@ -4037,11 +4076,7 @@
                             const flakStep = Math.max(1, Math.floor(targetPool.length / 20));
                             for (let idx = 0; idx < targetPool.length; idx += flakStep) {
                                 const e = targetPool[idx];
-                                let nearby = 0;
-                                for (let j = 0; j < targetPool.length; j++) {
-                                    const dx = e.x - targetPool[j].x, dy = e.y - targetPool[j].y;
-                                    if (dx*dx + dy*dy < 40000) nearby++; // 200²
-                                }
+                                const nearby = spatialGrid.getNearby(e.x, e.y, 200).length;
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -4393,7 +4428,7 @@
                             
                             if (targetPool.length === 0) return; // No targets
                             
-                            // Find cluster (densest area) - sample up to 20 enemies to avoid O(n²)
+                            // ⚡ OPTIMIZED: Use spatial grid for clustering
                             let bestTarget = null;
                             let bestDensity = 0;
                             const sampleSize = Math.min(20, targetPool.length);
@@ -4401,12 +4436,7 @@
                             
                             for (let idx = 0; idx < targetPool.length; idx += step) {
                                 const e = targetPool[idx];
-                                let nearby = 0;
-                                for (let j = 0; j < targetPool.length; j++) {
-                                    const e2 = targetPool[j];
-                                    const dx = e.x - e2.x, dy = e.y - e2.y;
-                                    if (dx*dx + dy*dy < 40000) nearby++; // 200² = 40000
-                                }
+                                const nearby = spatialGrid.getNearby(e.x, e.y, 200).length;
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -5371,17 +5401,14 @@
                             }
                             
                             // Find densest cluster - sample outer loop to avoid O(n²)
+                            // ⚡ OPTIMIZED: Use spatial grid for clustering
                             let bestTarget = null;
                             let bestDensity = 0;
                             const empStep = Math.max(1, Math.floor(targetPool.length / 20));
                             
                             for (let idx = 0; idx < targetPool.length; idx += empStep) {
                                 const e = targetPool[idx];
-                                let nearby = 0;
-                                for (let j = 0; j < targetPool.length; j++) {
-                                    const dx = e.x - targetPool[j].x, dy = e.y - targetPool[j].y;
-                                    if (dx*dx + dy*dy < 40000) nearby++; // 200²
-                                }
+                                const nearby = spatialGrid.getNearby(e.x, e.y, 200).length;
                                 if (nearby > bestDensity) {
                                     bestDensity = nearby;
                                     bestTarget = e;
@@ -6099,6 +6126,27 @@
                     return;
                 }
                 
+                // 🎨 VISUAL ENHANCEMENT: Hit confirmation burst (OPTIMIZED)
+                // Only spawn particles for significant hits to avoid particle spam
+                // Skip for rapid-fire/DOT weapons (beam, rad, gas, bio) and small damage
+                const isRapidFire = sourceId === 'beam' || sourceId === 'rad' || sourceId === 'gas' || sourceId === 'bio' || sourceId === 'volt';
+                const isSignificantHit = dmg > 10; // Only show burst for decent damage
+                const shouldShowBurst = !isRapidFire && isSignificantHit && Math.random() < 0.3; // 30% chance even for big hits
+                
+                if (shouldShowBurst) {
+                    const burstCount = Math.floor(2 + Math.random() * 2); // Reduced: 3-5 → 2-3
+                    for (let i = 0; i < burstCount; i++) {
+                        const angle = Math.random() * Math.PI * 2;
+                        const speed = 1 + Math.random() * 2;
+                        entities.particles.push(particlePool.spawn(
+                            enemy.x,
+                            enemy.y,
+                            color,
+                            speed
+                        ));
+                    }
+                }
+                
                 // Apply Ascension damage multipliers
                 dmg *= this.getAscensionDamageMult(enemy);
                 
@@ -6639,8 +6687,10 @@
                     const centerAngle = this.whipVisualAngle;
                     const startAngle = centerAngle - arcAngle / 2;
                     
-                    // Faster, snappier animation - complete in 20 frames instead of 30
-                    const sweepProgress = 1 - (this.whipVisualTimer / 20);
+                    // 🎨 VISUAL ENHANCEMENT: Ease-in-out for snappier, more impactful animation
+                    const t = 1 - (this.whipVisualTimer / 20);
+                    // EaseInOutQuad formula
+                    const sweepProgress = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
                     
                     const alpha = Math.min(1, this.whipVisualTimer / 15); // Faster fade
                     
@@ -6650,7 +6700,9 @@
                     // Brightness ramps up during animation - starts dimmer, gets brighter
                     const brightnessRamp = 0.4 + (sweepProgress * 0.6); // 40% to 100%
                     
-                    const segments = 16;
+                    // PERFORMANCE: Reduced segments from 16 to 6 (major FPS gain)
+                    const segments = 6;
+                    const bladeWidth = 0.4; // Slightly wider to compensate
                     
                     // Pre-calculate all segment data
                     const segmentData = [];
@@ -6660,7 +6712,7 @@
                         const lagAmount = Math.pow(segmentRatio, 3) * 0.5;
                         const segmentProgress = Math.max(0, Math.min(1, sweepProgress - lagAmount));
                         const currentAngle = startAngle + (arcAngle * segmentProgress);
-                        const segmentAlpha = alpha * (0.3 + segmentRatio * 0.5) * brightnessRamp;
+                        const segmentAlpha = alpha * (0.5 + segmentRatio * 0.5) * brightnessRamp; // Even brighter
                         
                         segmentData.push({
                             angle: currentAngle,
@@ -6671,76 +6723,47 @@
                         });
                     }
                     
-                    const bladeWidth = 0.35;
+                    // PERFORMANCE: Removed shadowBlur, combined batches
                     
-                    // BATCH 1: Draw all outer glows in one pass
-                    ctx.shadowBlur = 40;
-                    ctx.shadowColor = '#ff00ff';
+                    // Single pass - draw both outer glow and core together
                     for (let data of segmentData) {
-                        ctx.fillStyle = `rgba(255, 0, 255, ${data.alpha * 0.6})`;
+                        // Outer glow
+                        ctx.fillStyle = `rgba(255, 0, 255, ${data.alpha * 0.7})`;
                         ctx.beginPath();
                         ctx.moveTo(0, 0);
                         ctx.arc(0, 0, data.range, data.angle - bladeWidth, data.angle + bladeWidth);
                         ctx.closePath();
                         ctx.fill();
-                    }
-                    
-                    // BATCH 2: Draw all inner cores in one pass
-                    ctx.shadowBlur = 25;
-                    ctx.shadowColor = '#ff88ff';
-                    for (let data of segmentData) {
-                        ctx.fillStyle = `rgba(255, 180, 255, ${data.alpha * 0.8})`;
+                        
+                        // Inner core (same loop)
+                        ctx.fillStyle = `rgba(255, 200, 255, ${data.alpha})`;
                         ctx.beginPath();
                         ctx.moveTo(0, 0);
-                        ctx.arc(0, 0, data.range * 0.95, data.angle - bladeWidth * 0.5, data.angle + bladeWidth * 0.5);
+                        ctx.arc(0, 0, data.range * 0.9, data.angle - bladeWidth * 0.6, data.angle + bladeWidth * 0.6);
                         ctx.closePath();
                         ctx.fill();
                     }
                     
-                    // BATCH 3: Draw edge lines (every other segment)
-                    ctx.shadowBlur = 10;
-                    ctx.shadowColor = '#ff88ff';
-                    ctx.lineWidth = 2;
-                    ctx.lineCap = 'round';
-                    for (let data of segmentData) {
-                        if (data.seg % 2 === 0) {
-                            ctx.strokeStyle = `rgba(255, 220, 255, ${data.alpha * 0.7})`;
-                            ctx.beginPath();
-                            ctx.moveTo(Math.cos(data.angle) * data.range * 0.5, Math.sin(data.angle) * data.range * 0.5);
-                            ctx.lineTo(Math.cos(data.angle) * data.range, Math.sin(data.angle) * data.range);
-                            ctx.stroke();
-                        }
-                    }
-                    
-                    ctx.shadowBlur = 0;
                     ctx.restore();
                 }
                 
                 // PYLON RENDERING (OPTIMIZED)
                 if (this.weapons.pylons > 0 && this.pylons.length > 0) {
-                    const renderStartTime = performance.now();
-                    
-                    // Draw pylons - simplified but still distinctive
+                    // Draw pylons - SIMPLIFIED
                     this.pylons.forEach((pylon, idx) => {
                         ctx.save();
                         ctx.translate(pylon.x, pylon.y);
                         
-                        // Pulsing glow effect (single calculation for whole pylon)
                         const pulsePhase = state.frameCount * 0.05 + idx;
                         const pulseIntensity = 0.6 + Math.sin(pulsePhase) * 0.4;
                         
-                        // Single radial gradient for efficient glow
-                        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, 15);
-                        gradient.addColorStop(0, '#ff99ff');
-                        gradient.addColorStop(0.5, '#cc44cc');
-                        gradient.addColorStop(1, 'rgba(204, 68, 204, 0)');
-                        
-                        ctx.fillStyle = gradient;
+                        // PERFORMANCE: Solid color glow instead of gradient
+                        ctx.fillStyle = `rgba(255, 153, 255, ${0.4 * pulseIntensity})`;
                         ctx.beginPath();
                         ctx.arc(0, 0, 15, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Core - simple bright circle
+                        // Core
                         ctx.fillStyle = `rgba(255, 200, 255, ${pulseIntensity})`;
                         ctx.beginPath();
                         ctx.arc(0, 0, 6, 0, Math.PI * 2);
@@ -6755,14 +6778,12 @@
                         ctx.restore();
                     });
                     
-                    const beamRenderStart = performance.now();
-                    
-                    // Draw energy beams between pylons - SINGLE PASS, NO SHADOWS
+                    // Draw energy beams between pylons - SIMPLIFIED
                     if (this.pylons.length >= 2) {
                         const frameTime = state.frameCount;
                         const areaScale = this.weaponStats.pylons.area;
                         
-                        // Cache pylon pairs for rendering if not already done
+                        // Cache pylon pairs
                         if (!this.cachedPylonPairs || this.pylons.length !== this.lastPylonCount) {
                             this.cachedPylonPairs = [];
                             for (let i = 0; i < this.pylons.length; i++) {
@@ -6775,87 +6796,43 @@
                         
                         ctx.lineCap = 'round';
                         
-                        // Single beam pass with animated pulse - inspired by rad field ripples
+                        // PERFORMANCE: Solid color beams instead of gradients
                         for (let pair of this.cachedPylonPairs) {
                             const p1 = this.pylons[pair.i];
                             const p2 = this.pylons[pair.j];
                             
-                            // Animated pulse intensity (keeps visual interest without multiple passes)
                             const pulseFactor = 0.5 + Math.sin(frameTime * 0.08 + pair.i * 2 + pair.j * 3) * 0.3;
-                            const baseAlpha = 0.5 + pulseFactor * 0.3;
+                            const baseAlpha = 0.6 + pulseFactor * 0.3; // Brighter
                             
-                            // Draw beam with gradient for depth
-                            const dx = p2.x - p1.x;
-                            const dy = p2.y - p1.y;
-                            const midX = (p1.x + p2.x) / 2;
-                            const midY = (p1.y + p2.y) / 2;
-                            
-                            // Create linear gradient along the beam
-                            const gradient = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
-                            gradient.addColorStop(0, `rgba(255, 100, 255, ${baseAlpha * 0.6})`);
-                            gradient.addColorStop(0.5, `rgba(255, 100, 255, ${baseAlpha})`);
-                            gradient.addColorStop(1, `rgba(255, 100, 255, ${baseAlpha * 0.6})`);
-                            
-                            ctx.strokeStyle = gradient;
+                            // PERFORMANCE: Simple solid color beam
+                            ctx.strokeStyle = `rgba(255, 100, 255, ${baseAlpha})`;
                             ctx.lineWidth = 5 * areaScale;
                             ctx.beginPath();
                             ctx.moveTo(p1.x, p1.y);
                             ctx.lineTo(p2.x, p2.y);
                             ctx.stroke();
                             
-                            // Add energy sparks traveling along beam (every 3rd frame, limited count)
-                            if (state.frameCount % 3 === 0 && pair.i === 0) { // Only draw for first pair to limit count
-                                const beamLength = Math.sqrt(dx * dx + dy * dy);
-                                const sparkProgress = ((frameTime * 4) % beamLength) / beamLength;
-                                const sparkX = p1.x + dx * sparkProgress;
-                                const sparkY = p1.y + dy * sparkProgress;
-                                
-                                ctx.fillStyle = `rgba(255, 200, 255, ${0.8 * pulseFactor})`;
-                                ctx.beginPath();
-                                ctx.arc(sparkX, sparkY, 4 * areaScale, 0, Math.PI * 2);
-                                ctx.fill();
-                            }
+                            // PERFORMANCE: Removed energy sparks (too expensive)
                         }
-                    }
-                    
-                    const renderTotalTime = performance.now() - renderStartTime;
-                    const beamRenderTime = performance.now() - beamRenderStart;
-                    
-                    // Track peak render time
-                    if (!this.pylonsRenderPeakTime) this.pylonsRenderPeakTime = 0;
-                    if (renderTotalTime > this.pylonsRenderPeakTime) {
-                        this.pylonsRenderPeakTime = renderTotalTime;
-                        if (renderTotalTime > 2) { // Log if over 2ms (lowered threshold)
-                            console.warn(`⚠️ PYLONS SLOW RENDER: ${renderTotalTime.toFixed(2)}ms (peak) | Beams: ${beamRenderTime.toFixed(2)}ms | Pylons: ${this.pylons.length} | Pairs: ${this.cachedPylonPairs?.length || 0}`);
-                        }
-                    }
-                    
-                    // Periodic performance summary
-                    if (!this.pylonsRenderLogFrame) this.pylonsRenderLogFrame = 0;
-                    this.pylonsRenderLogFrame++;
-                    if (this.pylonsRenderLogFrame >= 300) { // Every 300 frames (~5 seconds at 60fps)
-                        this.pylonsRenderLogFrame = 0;
-                        this.pylonsRenderPeakTime = 0; // Reset peak after logging
                     }
                 }
                 
-                // Rad-Field Visual (Pulse Cloud)
+                // Rad-Field Visual (Pulse Cloud) - SIMPLIFIED
                 if (this.weapons.rad > 0) {
                      const radius = (60 + (this.weapons.rad * 15)) * this.weaponStats.rad.area;
                      ctx.save();
                      ctx.translate(this.x, this.y);
                      
-                     // Create 3 concentric ripples that pulse outward
-                     const numRipples = 3;
+                     // PERFORMANCE: Reduced ripples from 3 to 2, removed shadowBlur
+                     const numRipples = 2;
                      for (let i = 0; i < numRipples; i++) {
                          const phase = (state.frameCount * 0.03 + i * (Math.PI * 2 / numRipples)) % (Math.PI * 2);
                          const rippleRadius = radius * (0.3 + (phase / (Math.PI * 2)) * 0.7);
-                         const alpha = 0.3 * (1 - (phase / (Math.PI * 2)));
+                         const alpha = 0.4 * (1 - (phase / (Math.PI * 2))); // Brighter: 0.3 → 0.4
                          
                          ctx.strokeStyle = `rgba(57, 255, 20, ${alpha})`;
                          ctx.lineWidth = 3 + Math.sin(phase) * 2;
-                         ctx.shadowColor = 'rgba(57, 255, 20, 0.6)';
-                         ctx.shadowBlur = 20;
+                         // PERFORMANCE: shadowBlur removed
                          ctx.beginPath();
                          ctx.arc(0, 0, rippleRadius, 0, Math.PI * 2);
                          ctx.stroke();
@@ -6884,7 +6861,7 @@
                     const g = Math.floor(130 + (speedRatio * 90));
                     const b = Math.floor(180 + (speedRatio * 60));
                     
-                    // MINIMAL FILL - just slight tint to show the area
+                    // MINIMAL FILL - MUCH DIMMER
                     const segments = 16; // Smooth curve
                     ctx.beginPath();
                     ctx.moveTo(0, 0); // Center point (ship)
@@ -7199,10 +7176,9 @@
                 if (this.weapons.drones > 0 && this.drones && this.drones.length > 0) {
                     this.drones.forEach((drone, idx) => {
                         ctx.save();
-                        // Drones are at absolute positions, need to translate relative to player
                         ctx.translate(drone.x - this.x, drone.y - this.y);
                         
-                        // Drone facing direction (toward velocity or target)
+                        // Drone facing direction
                         let droneAngle = 0;
                         if (drone.target) {
                             droneAngle = Math.atan2(drone.target.y - drone.y, drone.target.x - drone.x);
@@ -7211,55 +7187,41 @@
                         }
                         ctx.rotate(droneAngle);
                         
-                        // Pulsing glow intensity
                         const glowPulse = 0.7 + Math.sin(state.frameCount * 0.15 + idx * 2) * 0.3;
                         
-                        ctx.shadowBlur = 15 * glowPulse;
-                        ctx.shadowColor = '#00aaff';
+                        // PERFORMANCE: shadowBlur removed
                         
-                        // Drone body (simple clean triangle)
+                        // Drone body (clean triangle)
                         ctx.fillStyle = '#003366';
-                        ctx.strokeStyle = '#00aaff';
+                        ctx.strokeStyle = `rgba(0, 170, 255, ${glowPulse})`;
                         ctx.lineWidth = 2;
                         ctx.beginPath();
-                        ctx.moveTo(10, 0);   // Front point (larger for visibility)
-                        ctx.lineTo(-6, -6);  // Back left
-                        ctx.lineTo(-4, 0);   // Back center indent
-                        ctx.lineTo(-6, 6);   // Back right
+                        ctx.moveTo(10, 0);
+                        ctx.lineTo(-6, -6);
+                        ctx.lineTo(-4, 0);
+                        ctx.lineTo(-6, 6);
                         ctx.closePath();
                         ctx.fill();
                         ctx.stroke();
                         
-                        // Bright core light (pulsing)
+                        // Bright core light
                         ctx.fillStyle = `rgba(0, 221, 255, ${glowPulse})`;
-                        ctx.shadowBlur = 12 * glowPulse;
-                        ctx.shadowColor = '#00ddff';
+                        // PERFORMANCE: shadowBlur removed
                         ctx.beginPath();
                         ctx.arc(0, 0, 3, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Enhanced engine glow when moving
-                        const isMoving = Math.abs(drone.vx) > 0.5 || Math.abs(drone.vy) > 0.5;
-                        if (isMoving) {
-                            const enginePulse = 0.6 + Math.sin(state.frameCount * 0.4 + idx) * 0.4;
-                            ctx.fillStyle = `rgba(0, 170, 255, ${enginePulse * 0.6})`;
-                            ctx.shadowBlur = 15;
-                            ctx.shadowColor = '#00aaff';
-                            ctx.beginPath();
-                            ctx.arc(-5, 0, 5, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
+                        // PERFORMANCE: Removed engine glow (too expensive with shadowBlur)
                         
-                        // Spotting ring - subtle pulsing
-                        const ringPulse = 0.5 + Math.sin(state.frameCount * 0.1 + idx) * 0.2;
+                        // Spotting ring - subtle pulsing (shadowBlur removed for performance)
+                        const ringPulse = 0.6 + Math.sin(state.frameCount * 0.1 + idx) * 0.3; // Brighter: 0.5 → 0.6
                         ctx.strokeStyle = `rgba(0, 170, 255, ${ringPulse})`;
                         ctx.lineWidth = 2;
-                        ctx.shadowBlur = 10;
+                        // PERFORMANCE: shadowBlur removed
                         ctx.beginPath();
                         ctx.arc(0, 0, 14, 0, Math.PI * 2);
                         ctx.stroke();
                         
-                        ctx.shadowBlur = 0;
                         ctx.restore();
                     });
                 }
@@ -7420,11 +7382,11 @@
                     const pulseIntensity = 0.7 + Math.sin(Date.now() * 0.0016) * 0.3; // Use time instead of frameCount
                     const glowRadius = 28;
                     
-                    // Brighter radial glow - visible but soft, no hard edges
+                    // Much dimmer glow - reduced opacity significantly
                     const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, glowRadius);
-                    gradient.addColorStop(0, `rgba(0, 255, 245, ${0.3 * pulseIntensity})`); // Brighter cyan at center
-                    gradient.addColorStop(0.4, `rgba(0, 209, 178, ${0.25 * pulseIntensity})`); 
-                    gradient.addColorStop(0.7, `rgba(0, 209, 178, ${0.15 * pulseIntensity})`);
+                    gradient.addColorStop(0, `rgba(0, 255, 245, ${0.08 * pulseIntensity})`); // Reduced: 0.3 → 0.08
+                    gradient.addColorStop(0.4, `rgba(0, 209, 178, ${0.06 * pulseIntensity})`); // Reduced: 0.25 → 0.06
+                    gradient.addColorStop(0.7, `rgba(0, 209, 178, ${0.04 * pulseIntensity})`); // Reduced: 0.15 → 0.04
                     gradient.addColorStop(1, 'rgba(0, 209, 178, 0)');
                     ctx.fillStyle = gradient;
                     ctx.beginPath();
@@ -11562,6 +11524,11 @@
                 this.life = type === 'seeker' ? 180 : type === 'mine' ? 600 : type === 'gas_grenade' ? 90 : type === 'railgun' ? 45 : type === 'ricochet' ? 180 : 70; // Ricochet now lasts 3 seconds 
                 this.trail = []; this.target = target;
                 
+                // 🎨 VISUAL ENHANCEMENT: Motion trail for fast projectiles
+                this.motionTrail = [];
+                const speed = Math.sqrt(vx * vx + vy * vy);
+                this.hasMotionTrail = speed > 5 && (type === 'ion' || type === 'seeker' || type === 'ricochet');
+                
                 // Mine-specific properties
                 if (type === 'mine') {
                     this.detectionRadius = detectionRadius || 60;
@@ -11737,17 +11704,24 @@
                 if (this.type === 'meteor_warning') {
                     this.life -= dt/16;
                     if (this.life <= 0) {
-                        createExplosion(this.x, this.y, '#00ffcc', 30);
+                        createExplosion(this.x, this.y, '#00ffcc', 25); // Reduced: 30→25
                         entities.particles.push(new Shockwave(this.x, this.y, this.target.radius + 50));
-                        entities.enemies.forEach(e => {
+                        
+                        // PERFORMANCE: Use spatial grid instead of checking all enemies
+                        const mainRadius = this.target.radius;
+                        const splashRadius = mainRadius * 1.5;
+                        const nearbyEnemies = spatialGrid.getNearby(this.x, this.y, splashRadius);
+                        
+                        nearbyEnemies.forEach(e => {
+                            if (e.hp <= 0) return;
                             const mdx = e.x - this.x, mdy = e.y - this.y;
                             const mDistSq = mdx*mdx + mdy*mdy;
-                            const mainRadSq = this.target.radius * this.target.radius;
+                            const mainRadSq = mainRadius * mainRadius;
                             if(mDistSq < mainRadSq) {
                                 // Full damage in main zone
                                 player.dealElementalDamage(e, this.damage, 'meteor', '#00ffcc');
                             } else if (mDistSq < mainRadSq * 2.25) { // (1.5²)
-                                // 50% splash damage in outer zone (50% larger than main zone)
+                                // 50% splash damage in outer zone
                                 player.dealElementalDamage(e, this.damage * 0.5, 'meteor', '#00ffcc');
                             }
                         });
@@ -12159,11 +12133,41 @@
                     }
                 }
                 
+                // 🎨 VISUAL ENHANCEMENT: Track positions for motion trail
+                if (this.hasMotionTrail) {
+                    this.motionTrail.push({x: this.x, y: this.y});
+                    if (this.motionTrail.length > 3) this.motionTrail.shift(); // Keep last 3 positions
+                }
+                
                 this.x += this.vx * (dt/16); this.y += this.vy * (dt/16);
                 this.life -= (dt/16); 
                 return this.life > 0;
             }
             draw(ctx) {
+                // 🎨 VISUAL ENHANCEMENT: Draw motion trail for fast projectiles
+                if (this.hasMotionTrail && this.motionTrail.length > 1) {
+                    ctx.save();
+                    ctx.lineCap = 'round';
+                    for (let i = 1; i < this.motionTrail.length; i++) {
+                        const prev = this.motionTrail[i - 1];
+                        const curr = this.motionTrail[i];
+                        const alpha = i / this.motionTrail.length; // Fade from 0.33 to 1.0
+                        
+                        // Get color from projectile type
+                        let color = '#00aaff'; // Default ion color
+                        if (this.type === 'seeker') color = '#ff00ff';
+                        else if (this.type === 'ricochet') color = '#ff8800';
+                        
+                        ctx.strokeStyle = `rgba(${parseInt(color.slice(1,3), 16)}, ${parseInt(color.slice(3,5), 16)}, ${parseInt(color.slice(5,7), 16)}, ${alpha * 0.5})`;
+                        ctx.lineWidth = 2 * alpha;
+                        ctx.beginPath();
+                        ctx.moveTo(prev.x, prev.y);
+                        ctx.lineTo(curr.x, curr.y);
+                        ctx.stroke();
+                    }
+                    ctx.restore();
+                }
+                
                 if (this.type === 'flak_shell') {
                     // Draw explosive flak shell with rotating segments and glowing trail
                     ctx.save();
@@ -13153,10 +13157,9 @@
                 return this.life>0; 
             }
             draw(ctx) {
+                // PERFORMANCE: Removed shadowBlur (major GPU savings)
                 ctx.globalAlpha=this.life; ctx.strokeStyle=this.color; ctx.lineWidth=3;
-                ctx.shadowBlur = 10; ctx.shadowColor = this.color;
                 ctx.beginPath(); ctx.arc(this.x, this.y, this.r, 0, Math.PI*2); ctx.stroke();
-                ctx.shadowBlur = 0;
                 ctx.globalAlpha=1;
             }
         }
@@ -13684,21 +13687,20 @@
             constructor(x1, y1, x2, y2, color = '#ffeb3b') { this.x1=x1; this.y1=y1; this.x2=x2; this.y2=y2; this.life=8; this.color=color; }
             update(dt = 16) { this.life -= (dt/16); return this.life>0; }
             draw(ctx) {
-                ctx.shadowBlur = 15; ctx.shadowColor = this.color;
-                // Convert hex to rgba properly
+                // PERFORMANCE: Removed shadowBlur (expensive GPU operation)
                 const r = parseInt(this.color.substr(1,2), 16);
                 const g = parseInt(this.color.substr(3,2), 16);
                 const b = parseInt(this.color.substr(5,2), 16);
                 ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${this.life/8})`;
-                ctx.lineWidth = 4;
+                ctx.lineWidth = 3; // Reduced from 4
                 ctx.beginPath(); ctx.moveTo(this.x1,this.y1);
                 const dist = Math.sqrt((this.x2-this.x1)**2 + (this.y2-this.y1)**2);
-                const steps = Math.max(3, Math.floor(dist / 30));
+                const steps = Math.max(2, Math.floor(dist / 40)); // Reduced: 30→40 (fewer segments)
                 for(let i=1; i<steps; i++) {
-                    const t = i / steps; const r = (seededRandom()-0.5) * 40;
+                    const t = i / steps; const r = (seededRandom()-0.5) * 30; // Reduced jitter: 40→30
                     ctx.lineTo(this.x1 + (this.x2-this.x1)*t + r, this.y1 + (this.y2-this.y1)*t + r);
                 }
-                ctx.lineTo(this.x2,this.y2); ctx.stroke(); ctx.shadowBlur = 0;
+                ctx.lineTo(this.x2,this.y2); ctx.stroke();
             }
         }
         
@@ -15713,7 +15715,7 @@
             }
             
             // PERFORMANCE MONITORING - Track entity counts
-            if (!state.performanceMode) state.performanceMode = 'normal'; // normal, reduced, minimal
+            if (!state.performanceMode) state.performanceMode = 'reduced'; // PHASE 1: Default to 'reduced' for FPS gains
             const entityCount = entities.enemies.length + entities.projectiles.length + entities.particles.length;
             
             // Auto-adjust performance based on entity count (REALISTIC THRESHOLDS)
@@ -15722,16 +15724,15 @@
                 state.performanceMode = 'minimal';
             } else if (entityCount > 200) {  // Late game, heavy combat
                 state.performanceMode = 'reduced';
-            } else {  // Early-mid game, normal play
-                state.performanceMode = 'normal';
             }
+            // Keep at 'reduced' for < 200 entities (normal play) for better FPS
             
             // PERFORMANCE HELPERS (non-viewport related)
-            const useShadows = state.performanceMode === 'normal';
+            const useShadows = false; // PHASE 1: Shadows disabled for major FPS gains (~20-30% improvement)
             const particleFactor = {
-                normal: 1.0,
-                reduced: 0.6,   // 40% fewer particles
-                minimal: 0.3    // 70% fewer particles
+                normal: 0.7,    // PHASE 1: Reduced from 1.0
+                reduced: 0.5,   // PHASE 1: Reduced from 0.6
+                minimal: 0.25   // PHASE 1: Reduced from 0.3
             }[state.performanceMode];
             
             // Helper: Apply shadow (respects performance mode with reduced blur in normal)
@@ -16141,6 +16142,7 @@
             
             // Chrono Shield: Player moves at 100% speed even when time is slowed
             const playerDt = (player.activeMod === 'chrono' && player.chronoActive) ? dt : scaledDt;
+            
             player.update(playerDt); player.draw(ctx);
             
             // ULTIMATE CHARGING SYSTEM
@@ -16248,7 +16250,13 @@
                 if (!data.gameTime) data.gameTime = 0;
                 data.gameTime += scaledDt;
                 
-                data.trail.push({ x: player.x, y: player.y, time: data.gameTime });
+                // PERFORMANCE: Only add trail position every 3 frames (reduces array size)
+                if (!data.trailFrameCounter) data.trailFrameCounter = 0;
+                data.trailFrameCounter++;
+                if (data.trailFrameCounter >= 3) {
+                    data.trail.push({ x: player.x, y: player.y, time: data.gameTime });
+                    data.trailFrameCounter = 0;
+                }
                 
                 // Keep only recent positions (within trail duration, using game time)
                 data.trail = data.trail.filter(pos => data.gameTime - pos.time < data.trailDuration);
@@ -17632,6 +17640,9 @@
                 entities.particles = entities.particles.slice(-MAX_PARTICLES);
             }
             
+            // 🎨 VISUAL ENHANCEMENT: Enable additive blending for glowing effects
+            ctx.globalCompositeOperation = 'lighter';
+            
             entities.gasClouds = entities.gasClouds.filter(c => { const a=c.update(scaledDt); if(a) c.draw(ctx); return a; });
             entities.lightnings = entities.lightnings.filter(l => { const a=l.update(scaledDt); if(a) l.draw(ctx); return a; });
             // Hard cap on lightning bolts to prevent Tesla chain storms from piling up
@@ -17640,6 +17651,9 @@
                 entities.lightnings = entities.lightnings.slice(-MAX_LIGHTNINGS);
             }
             entities.texts = entities.texts.filter(t => { const a=t.update(scaledDt); if(a) t.draw(ctx); return a; });
+            
+            // 🎨 VISUAL ENHANCEMENT: Restore normal blending after effects
+            ctx.globalCompositeOperation = 'source-over';
 
             // SKYFALL BEAM RENDERING - Ultra-powerful divine annihilation beam
             if (player.ultimateData.skyfallBeam && player.ultimateData.skyfallBeam.active) {
@@ -17820,137 +17834,107 @@
                 if (horizon.phase === 'pull') {
                     // Slow, elegant build-up
                     const pullProgress = 1 - (horizon.pullTimer / ULTIMATES.event_horizon.pullDuration);
-                    const buildUp = Math.min(1, pullProgress * 1.5); // Reaches full intensity at 66% progress
-                    const radius = 350 + buildUp * 50; // Grows slowly
+                    const buildUp = Math.min(1, pullProgress * 1.5);
+                    const radius = 350 + buildUp * 50;
                     
-                    // Cohesive purple/violet distortion rings (no rainbow)
-                    for (let i = 0; i < 5; i++) {
-                        const ringRadius = radius - (i * 70);
+                    // PERFORMANCE: Reduced rings from 5 to 3, removed shadowBlur
+                    for (let i = 0; i < 3; i++) {
+                        const ringRadius = radius - (i * 100); // Wider spacing
                         if (ringRadius <= 0) continue;
                         
                         const pulse = Math.sin(time * 1.2 + i * 0.8) * 10;
-                        const ringAlpha = (0.35 - i * 0.05) * buildUp;
+                        const ringAlpha = (0.4 - i * 0.08) * buildUp; // Brighter to compensate
                         
-                        // Shades of purple/violet only
                         const purpleR = 120 + i * 25;
                         const purpleB = 255 - i * 20;
                         
                         ctx.strokeStyle = `rgba(${purpleR}, 20, ${purpleB}, ${ringAlpha})`;
                         ctx.lineWidth = 3 - i * 0.4;
-                        ctx.shadowBlur = 15 * buildUp;
-                        ctx.shadowColor = `rgba(${purpleR}, 20, ${purpleB}, 0.5)`;
+                        // PERFORMANCE: shadowBlur removed
                         ctx.beginPath();
                         ctx.arc(horizon.x, horizon.y, ringRadius + pulse, 0, Math.PI * 2);
                         ctx.stroke();
                     }
                     
-                    // Elegant spiral streams flowing inward (fewer, slower)
-                    for (let i = 0; i < 8; i++) {
-                        const spiralAngle = (time * 1.2 + (i * Math.PI * 2 / 8)) % (Math.PI * 2);
+                    // PERFORMANCE: Reduced spiral streams from 8 to 4, simplified rendering
+                    for (let i = 0; i < 4; i++) {
+                        const spiralAngle = (time * 1.2 + (i * Math.PI * 2 / 4)) % (Math.PI * 2);
                         const spiralRadius = radius * 0.6 + Math.sin(time + i) * 25;
                         
                         const x1 = horizon.x + Math.cos(spiralAngle) * spiralRadius;
                         const y1 = horizon.y + Math.sin(spiralAngle) * spiralRadius;
                         
-                        const streamGradient = ctx.createLinearGradient(x1, y1, horizon.x, horizon.y);
-                        streamGradient.addColorStop(0, `rgba(160, 20, 255, 0)`);
-                        streamGradient.addColorStop(0.5, `rgba(140, 40, 255, ${0.3 * buildUp})`);
-                        streamGradient.addColorStop(1, `rgba(120, 60, 255, ${0.15 * buildUp})`);
-                        
-                        ctx.strokeStyle = streamGradient;
+                        // PERFORMANCE: Solid color instead of gradient
+                        ctx.strokeStyle = `rgba(140, 40, 255, ${0.3 * buildUp})`;
                         ctx.lineWidth = 2;
-                        ctx.shadowBlur = 8 * buildUp;
-                        ctx.shadowColor = '#8800ff';
+                        // PERFORMANCE: shadowBlur removed
                         ctx.beginPath();
                         ctx.moveTo(x1, y1);
                         ctx.lineTo(horizon.x, horizon.y);
                         ctx.stroke();
                     }
                     
-                    // Subtle energy particles being drawn in (purple/white only, MORE VISIBLE)
-                    const particleCount = Math.floor(30 * buildUp); // Increased from 20
+                    // PERFORMANCE: Reduced particles from 30 to 12, removed shadowBlur
+                    const particleCount = Math.floor(12 * buildUp);
                     for (let i = 0; i < particleCount; i++) {
-                        const particleAngle = (i / 30) * Math.PI * 2 + time * 1.8;
+                        const particleAngle = (i / 12) * Math.PI * 2 + time * 1.8;
                         const particleDist = 100 + Math.sin(time * 1.3 + i) * 35 - (pullProgress * 45);
                         const px = horizon.x + Math.cos(particleAngle) * particleDist;
                         const py = horizon.y + Math.sin(particleAngle) * particleDist;
                         
-                        const particleSize = (2.5 + Math.sin(time * 3 + i) * 1.2) * buildUp; // Slightly larger
-                        const isWhite = i % 5 === 0;
+                        const particleSize = (3 + Math.sin(time * 3 + i) * 1.5) * buildUp; // Slightly larger
+                        const isWhite = i % 4 === 0;
                         const particleColor = isWhite ? '#ffffff' : '#bb88ff';
                         
                         ctx.fillStyle = particleColor;
-                        ctx.shadowBlur = isWhite ? 10 : 7; // More glow
-                        ctx.shadowColor = particleColor;
+                        // PERFORMANCE: shadowBlur removed
                         ctx.beginPath();
                         ctx.arc(px, py, particleSize, 0, Math.PI * 2);
                         ctx.fill();
                     }
                     
-                    // Small, dense black hole core with PURE BLACK center
+                    // Small, dense black hole core - SIMPLIFIED
                     const voidSize = 30 + Math.sin(time * 1.5) * 4;
                     
-                    // Pure black center circle (no gradient, just solid black)
+                    // Pure black center circle
                     ctx.fillStyle = 'rgba(0, 0, 0, 1)';
-                    ctx.shadowBlur = 0;
                     ctx.beginPath();
-                    ctx.arc(horizon.x, horizon.y, voidSize * 0.5, 0, Math.PI * 2); // Half the radius is pure black
+                    ctx.arc(horizon.x, horizon.y, voidSize * 0.5, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Gradient from black center to purple edge
+                    // PERFORMANCE: Simplified gradient (single instead of nested)
                     const voidGradient = ctx.createRadialGradient(
-                        horizon.x, horizon.y, voidSize * 0.5, // Start gradient at edge of pure black
+                        horizon.x, horizon.y, voidSize * 0.5,
                         horizon.x, horizon.y, voidSize
                     );
                     voidGradient.addColorStop(0, 'rgba(0, 0, 0, 1)');
-                    voidGradient.addColorStop(0.3, 'rgba(10, 0, 25, 0.95)');
-                    voidGradient.addColorStop(0.7, 'rgba(30, 0, 60, 0.7)');
+                    voidGradient.addColorStop(0.5, 'rgba(30, 0, 60, 0.7)');
                     voidGradient.addColorStop(1, 'rgba(70, 0, 120, 0)');
                     
                     ctx.fillStyle = voidGradient;
-                    ctx.shadowBlur = 35 * buildUp;
-                    ctx.shadowColor = '#5500aa';
+                    // PERFORMANCE: shadowBlur removed
                     ctx.beginPath();
                     ctx.arc(horizon.x, horizon.y, voidSize, 0, Math.PI * 2);
                     ctx.fill();
                     
-                    // Brilliant white event horizon ring - the point of no return
+                    // PERFORMANCE: Reduced event horizon rings from 4 to 2, removed shadowBlur
                     const horizonRingPulse = Math.sin(time * 2.5) * 0.25;
-                    for (let ring = 0; ring < 4; ring++) {
-                        const ringOffset = ring * 1.2;
-                        const ringAlpha = (0.85 - ring * 0.16 + horizonRingPulse) * buildUp;
+                    for (let ring = 0; ring < 2; ring++) {
+                        const ringOffset = ring * 2;
+                        const ringAlpha = (0.9 - ring * 0.2 + horizonRingPulse) * buildUp;
                         
                         ctx.strokeStyle = `rgba(255, 255, 255, ${ringAlpha})`;
-                        ctx.lineWidth = 4 - ring * 0.7;
-                        ctx.shadowBlur = 25 + ring * 7;
-                        ctx.shadowColor = '#ffffff';
+                        ctx.lineWidth = 4 - ring * 1;
+                        // PERFORMANCE: shadowBlur removed
                         ctx.beginPath();
                         ctx.arc(horizon.x, horizon.y, voidSize - 2 + ringOffset, 0, Math.PI * 2);
                         ctx.stroke();
                     }
                     
-                    // Soft outer glow - ONLY around the event horizon ring, not covering the black center
-                    const horizonGlowGradient = ctx.createRadialGradient(
-                        horizon.x, horizon.y, voidSize + 10, // Start glow OUTSIDE the event horizon
-                        horizon.x, horizon.y, voidSize + 45
-                    );
-                    horizonGlowGradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * buildUp})`);
-                    horizonGlowGradient.addColorStop(0.4, `rgba(200, 180, 255, ${0.35 * buildUp})`);
-                    horizonGlowGradient.addColorStop(1, 'rgba(120, 0, 200, 0)');
+                    // PERFORMANCE: Removed outer glow gradient (too expensive)
                     
-                    ctx.fillStyle = horizonGlowGradient;
-                    ctx.shadowBlur = 40 * buildUp;
-                    ctx.shadowColor = '#ffffff';
-                    ctx.beginPath();
-                    ctx.arc(horizon.x, horizon.y, voidSize + 45, 0, Math.PI * 2);
-                    ctx.fill();
-                    
-                    ctx.shadowBlur = 0;
-                    
-                    // REDRAW pure black center on TOP of everything (including glow)
-                    // This ensures the black hole core remains visually devoid of light
+                    // Redraw pure black center on top
                     ctx.fillStyle = 'rgba(0, 0, 0, 1)';
-                    ctx.shadowBlur = 0;
                     ctx.beginPath();
                     ctx.arc(horizon.x, horizon.y, voidSize * 0.5, 0, Math.PI * 2);
                     ctx.fill();
@@ -18332,29 +18316,23 @@
             if (player.ultimateActive && player.ultimate === 'adrenaline_surge' && player.ultimateData && player.ultimateData.trail.length > 0) {
                 const trail = player.ultimateData.trail;
                 const trailWidth = player.ultimateData.trailWidth;
-                const color = player.ultimateData.color;
                 const gameTime = player.ultimateData.gameTime || 0;
                 
-                ctx.shadowBlur = 12; // Reduced from 25
-                ctx.shadowColor = color;
+                // PERFORMANCE: Removed shadowBlur (major GPU savings)
                 
-                // Draw trail as connected segments
-                for (let i = 1; i < trail.length; i++) {
-                    const prev = trail[i - 1];
+                // Draw trail as connected segments - SKIP EVERY 3RD for performance
+                for (let i = 3; i < trail.length; i += 3) {
+                    const prev = trail[i - 3];
                     const curr = trail[i];
                     
-                    // Calculate age-based alpha (newer = brighter) using game time - REDUCED
+                    // Calculate age-based alpha
                     const age = gameTime - curr.time;
                     const ageRatio = 1 - (age / player.ultimateData.trailDuration);
-                    const alpha = Math.max(0, ageRatio * 0.4); // Reduced from 0.7
+                    const alpha = Math.max(0, ageRatio * 0.6); // Increased brightness: 0.3 → 0.6
                     
-                    // Draw glowing trail segment
-                    const gradient = ctx.createLinearGradient(prev.x, prev.y, curr.x, curr.y);
-                    gradient.addColorStop(0, `rgba(255, 235, 59, ${alpha * 0.3})`); // Reduced from 0.5
-                    gradient.addColorStop(1, `rgba(255, 235, 59, ${alpha * 0.6})`); // Reduced from 1.0
-                    
-                    ctx.strokeStyle = gradient;
-                    ctx.lineWidth = trailWidth * ageRatio;
+                    // PERFORMANCE: Simple solid color, no gradient
+                    ctx.strokeStyle = `rgba(255, 235, 59, ${alpha})`;
+                    ctx.lineWidth = trailWidth * ageRatio; // Full width (removed 0.8 multiplier)
                     ctx.lineCap = 'round';
                     ctx.beginPath();
                     ctx.moveTo(prev.x, prev.y);
@@ -18362,66 +18340,19 @@
                     ctx.stroke();
                 }
                 
-                // Electric particles along trail
-                const particleInterval = 3; // Every 3rd trail position
-                for (let i = 0; i < trail.length; i += particleInterval) {
-                    const pos = trail[i];
-                    const age = gameTime - pos.time;
-                    const ageRatio = 1 - (age / player.ultimateData.trailDuration);
-                    
-                    if (ageRatio > 0) {
-                        // Sparks
-                        for (let j = 0; j < 2; j++) {
-                            const angle = seededRandom() * Math.PI * 2;
-                            const dist = seededRandom() * trailWidth * 0.5;
-                            const px = pos.x + Math.cos(angle) * dist;
-                            const py = pos.y + Math.sin(angle) * dist;
-                            const sparkSize = 2 + seededRandom() * 3;
-                            
-                            ctx.fillStyle = `rgba(255, 255, 255, ${ageRatio * 0.8})`;
-                            ctx.shadowBlur = 10;
-                            ctx.shadowColor = color;
-                            ctx.beginPath();
-                            ctx.arc(px, py, sparkSize, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
-                    }
-                }
+                // PERFORMANCE: Removed electric particles (too expensive with shadowBlur)
                 
-                ctx.shadowBlur = 0;
-                
-                // Player glow during Adrenaline Surge (use game time for pulse) - VERY SUBTLE
+                // Player glow during Adrenaline Surge - SIMPLIFIED but brighter
                 const pulse = Math.sin(state.gameTime * 0.01) * 0.2 + 0.5;
-                const glowRadius = 40 * pulse; // Reduced from 50
-                const glowGradient = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, glowRadius);
-                glowGradient.addColorStop(0, `rgba(255, 235, 59, ${0.15 * pulse})`); // Reduced from 0.3
-                glowGradient.addColorStop(0.5, `rgba(255, 235, 59, ${0.08 * pulse})`); // Reduced from 0.15
-                glowGradient.addColorStop(1, 'rgba(255, 235, 59, 0)');
+                const glowRadius = 35 * pulse;
                 
-                ctx.fillStyle = glowGradient;
+                // PERFORMANCE: Simple solid circle, no gradient - increased opacity
+                ctx.fillStyle = `rgba(255, 235, 59, ${0.15 * pulse})`; // Increased: 0.06 → 0.15
                 ctx.beginPath();
                 ctx.arc(player.x, player.y, glowRadius, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // Speed lines - REDUCED
-                for (let i = 0; i < 6; i++) { // Reduced from 8
-                    const angle = (i / 6) * Math.PI * 2;
-                    const lineLength = 30 + seededRandom() * 20; // Reduced from 40 + 30
-                    const startX = player.x + Math.cos(angle) * 20; // Reduced from 25
-                    const startY = player.y + Math.sin(angle) * 20;
-                    const endX = startX + Math.cos(angle) * lineLength;
-                    const endY = startY + Math.sin(angle) * lineLength;
-                    
-                    ctx.strokeStyle = `rgba(255, 235, 59, ${0.2 * pulse})`; // Reduced from 0.4
-                    ctx.lineWidth = 1.5; // Reduced from 2
-                    ctx.beginPath();
-                    ctx.moveTo(startX, startY);
-                    ctx.lineTo(endX, endY);
-                    ctx.stroke();
-                }
-                
-                // Clear shadow effects after Adrenaline Surge visuals
-                ctx.shadowBlur = 0;
+                // PERFORMANCE: Removed speed lines (too expensive, 6 draw calls per frame)
             }
 
             // Ward Matrix shield plates effect
@@ -18429,43 +18360,36 @@
                 const data = player.ultimateData;
                 const alivePlates = data.plates.filter(p => p.alive);
                 
-                // Draw connection ring around player (simple, no gradient)
+                // Draw connection ring around player
                 if (alivePlates.length > 0) {
                     const ringPulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.5;
                     
-                    ctx.strokeStyle = `rgba(0, 212, 255, ${0.2 * ringPulse})`;
+                    ctx.strokeStyle = `rgba(0, 212, 255, ${0.25 * ringPulse})`;
                     ctx.lineWidth = 2;
+                    // PERFORMANCE: shadowBlur already disabled globally
                     ctx.beginPath();
                     ctx.arc(player.x, player.y, data.orbitRadius, 0, Math.PI * 2);
                     ctx.stroke();
                 }
                 
-                // Draw each alive plate (simplified for performance)
+                // Draw each alive plate - SIMPLIFIED
                 data.plates.forEach((plate, index) => {
                     if (!plate.alive) return;
                     
                     const plateX = player.x + Math.cos(plate.angle) * data.orbitRadius;
                     const plateY = player.y + Math.sin(plate.angle) * data.orbitRadius;
                     
-                    // Pulsing effect based on time - each plate slightly offset
                     const pulse = 0.7 + Math.sin(state.frameCount * 0.08 + index * 1.0) * 0.3;
                     
                     ctx.save();
                     ctx.translate(plateX, plateY);
-                    ctx.rotate(plate.angle); // Rotate with orbit for proper orientation
+                    ctx.rotate(plate.angle);
                     
-                    // Single outer glow (reduced from multiple layers)
-                    ctx.shadowBlur = 20 * pulse;
-                    ctx.shadowColor = data.color;
+                    // PERFORMANCE: shadowBlur removed (handled globally)
                     
-                    // Draw hexagon with gradient fill
+                    // PERFORMANCE: Solid color hexagon instead of gradient
                     const hexRadius = 16;
-                    const hexGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, hexRadius);
-                    hexGradient.addColorStop(0, `rgba(100, 220, 255, ${0.6 * pulse})`);
-                    hexGradient.addColorStop(0.7, `rgba(0, 212, 255, ${0.4 * pulse})`);
-                    hexGradient.addColorStop(1, `rgba(0, 150, 200, ${0.2 * pulse})`);
-                    
-                    ctx.fillStyle = hexGradient;
+                    ctx.fillStyle = `rgba(0, 212, 255, ${0.5 * pulse})`;
                     ctx.strokeStyle = `rgba(0, 255, 255, ${0.9 * pulse})`;
                     ctx.lineWidth = 2.5;
                     ctx.beginPath();
@@ -18480,44 +18404,22 @@
                     ctx.fill();
                     ctx.stroke();
                     
-                    // Bright energy core
+                    // PERFORMANCE: Simplified core - solid color instead of gradient
                     const coreSize = 7 + Math.sin(state.frameCount * 0.15 + index) * 1.5;
-                    const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, coreSize);
-                    coreGradient.addColorStop(0, `rgba(255, 255, 255, ${pulse})`);
-                    coreGradient.addColorStop(0.5, `rgba(200, 255, 255, ${0.7 * pulse})`);
-                    coreGradient.addColorStop(1, 'rgba(0, 212, 255, 0)');
-                    
-                    ctx.shadowBlur = 12 * pulse;
-                    ctx.shadowColor = '#ffffff';
-                    ctx.fillStyle = coreGradient;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${pulse})`;
                     ctx.beginPath();
                     ctx.arc(0, 0, coreSize, 0, Math.PI * 2);
                     ctx.fill();
                     
                     ctx.restore();
                     
-                    // Occasional healing particles (reduced spawn rate)
-                    if (Math.random() < 0.015) {
+                    // PERFORMANCE: Reduced particle spawn rate: 0.015 → 0.008
+                    if (Math.random() < 0.008) {
                         entities.particles.push(new Particle(plateX, plateY, '#00ff88', 1.5));
                     }
                 });
                 
-                // Player healing aura (single layer, simplified)
-                if (alivePlates.length > 0) {
-                    const healPulse = Math.sin(state.frameCount * 0.05) * 0.3 + 0.7;
-                    const healRadius = 40 * healPulse;
-                    const healGradient = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, healRadius);
-                    healGradient.addColorStop(0, `rgba(0, 255, 136, ${0.25 * healPulse})`);
-                    healGradient.addColorStop(0.6, `rgba(0, 255, 136, ${0.12 * healPulse})`);
-                    healGradient.addColorStop(1, 'rgba(0, 255, 136, 0)');
-                    
-                    ctx.fillStyle = healGradient;
-                    ctx.beginPath();
-                    ctx.arc(player.x, player.y, healRadius, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-                
-                ctx.shadowBlur = 0;
+                // PERFORMANCE: Removed player healing aura gradient (too expensive)
             }
 
             // Phoenix Protocol burning ground effect
@@ -18525,79 +18427,64 @@
                 const burning = player.ultimateData.burningGround;
                 const radius = burning.radius;
                 
-                // SAFETY: Ensure time is valid for all calculations
                 const safeTime = (time !== undefined && !isNaN(time) && isFinite(time)) ? time : 0;
                 
-                // SAFETY: Calculate alpha with fallback for invalid values
                 let alpha = 1.0;
                 if (burning.timer !== undefined && burning.timer !== null && 
                     ULTIMATES.phoenix_protocol.burningGround.duration > 0) {
                     alpha = Math.max(0, Math.min(1, burning.timer / ULTIMATES.phoenix_protocol.burningGround.duration));
                 }
                 
-                // SAFETY: Calculate pulse with fallback for invalid time
                 const pulse = Math.sin(safeTime * 2.5) * 0.25;
                 
-                // Scorched earth gradient (orange/red fire theme)
+                // PERFORMANCE: Simplified gradient (fewer stops)
                 const fireGradient = ctx.createRadialGradient(
                     burning.x, burning.y, 0,
                     burning.x, burning.y, radius
                 );
                 fireGradient.addColorStop(0, `rgba(255, 200, 50, ${Math.max(0, Math.min(1, alpha * 0.7 + pulse))})`);
-                fireGradient.addColorStop(0.3, `rgba(255, 100, 0, ${Math.max(0, Math.min(1, alpha * 0.6))})`);
-                fireGradient.addColorStop(0.6, `rgba(200, 50, 0, ${Math.max(0, Math.min(1, alpha * 0.4))})`);
+                fireGradient.addColorStop(0.5, `rgba(255, 100, 0, ${Math.max(0, Math.min(1, alpha * 0.5))})`);
                 fireGradient.addColorStop(1, 'rgba(100, 0, 0, 0)');
                 
                 ctx.fillStyle = fireGradient;
-                ctx.shadowBlur = 35;
-                ctx.shadowColor = '#ff6600';
+                // PERFORMANCE: shadowBlur removed
                 ctx.beginPath();
                 ctx.arc(burning.x, burning.y, radius, 0, Math.PI * 2);
                 ctx.fill();
                 
-                // Solar flare rings
-                for (let ring = 0; ring < 3; ring++) {
-                    const ringRadius = radius * (0.3 + ring * 0.25) + Math.sin(safeTime * 2 + ring) * 20;
-                    ctx.strokeStyle = `rgba(255, ${150 - ring * 30}, 0, ${alpha * 0.4})`;
+                // PERFORMANCE: Reduced rings from 3 to 2, removed shadowBlur
+                for (let ring = 0; ring < 2; ring++) {
+                    const ringRadius = radius * (0.4 + ring * 0.3) + Math.sin(safeTime * 2 + ring) * 20;
+                    ctx.strokeStyle = `rgba(255, ${150 - ring * 40}, 0, ${alpha * 0.5})`;
                     ctx.lineWidth = 3;
-                    ctx.shadowBlur = 15;
-                    ctx.shadowColor = '#ff8800';
+                    // PERFORMANCE: shadowBlur removed
                     ctx.beginPath();
                     ctx.arc(burning.x, burning.y, ringRadius, 0, Math.PI * 2);
                     ctx.stroke();
                 }
                 
-                // Flame particles dancing
-                for (let i = 0; i < 16; i++) {
-                    const angle = (i / 16) * Math.PI * 2 + safeTime * 0.4;
+                // PERFORMANCE: Reduced flame particles from 16 to 8, removed shadowBlur
+                for (let i = 0; i < 8; i++) {
+                    const angle = (i / 8) * Math.PI * 2 + safeTime * 0.4;
                     const flameDist = radius * (0.5 + Math.sin(safeTime * 1.8 + i) * 0.35);
                     const fx = burning.x + Math.cos(angle) * flameDist;
                     const fy = burning.y + Math.sin(angle) * flameDist;
-                    const flameSize = 4 + Math.sin(safeTime * 5 + i) * 3;
+                    const flameSize = 5 + Math.sin(safeTime * 5 + i) * 4; // Slightly larger
                     
-                    ctx.fillStyle = `rgba(255, ${100 + Math.sin(safeTime * 3 + i) * 100}, 0, ${alpha * 0.8})`;
-                    ctx.shadowBlur = 12;
-                    ctx.shadowColor = '#ff6600';
+                    ctx.fillStyle = `rgba(255, ${100 + Math.sin(safeTime * 3 + i) * 100}, 0, ${alpha * 0.9})`;
+                    // PERFORMANCE: shadowBlur removed
                     ctx.beginPath();
                     ctx.arc(fx, fy, flameSize, 0, Math.PI * 2);
                     ctx.fill();
                 }
                 
-                // Bright pulsing core
+                // PERFORMANCE: Simplified core - solid color instead of gradient
                 const coreSize = 40 + Math.sin(safeTime * 3.5) * 15;
-                const coreGradient = ctx.createRadialGradient(burning.x, burning.y, 0, burning.x, burning.y, coreSize);
-                coreGradient.addColorStop(0, `rgba(255, 255, 200, ${alpha * 0.9})`);
-                coreGradient.addColorStop(0.4, `rgba(255, 180, 50, ${alpha * 0.7})`);
-                coreGradient.addColorStop(1, 'rgba(255, 100, 0, 0)');
-                
-                ctx.fillStyle = coreGradient;
-                ctx.shadowBlur = 35;
-                ctx.shadowColor = '#ffcc00';
+                ctx.fillStyle = `rgba(255, 255, 200, ${alpha * 0.9})`;
+                // PERFORMANCE: shadowBlur removed
                 ctx.beginPath();
                 ctx.arc(burning.x, burning.y, coreSize, 0, Math.PI * 2);
                 ctx.fill();
-                
-                ctx.shadowBlur = 0;
             }
 
             if (player.beamActive && player.beamActiveTime >= 5) {
@@ -22642,6 +22529,86 @@
         document.getElementById('close-stats-btn').addEventListener('click', () => {
             document.getElementById('stats-screen').classList.remove('active');
         });
+        
+        // Graphics Settings handlers
+        const graphicsMenuBtn = document.getElementById('graphics-menu-btn');
+        const graphicsModal = document.getElementById('graphics-settings-modal');
+        const graphicsClose = document.getElementById('graphics-close');
+        const graphicsApply = document.getElementById('graphics-apply');
+        const renderQualitySelect = document.getElementById('render-quality-select');
+        const qualityScaleDisplay = document.getElementById('quality-scale-display');
+        const qualityPixelsDisplay = document.getElementById('quality-pixels-display');
+        const qualityPerformanceDisplay = document.getElementById('quality-performance-display');
+        
+        console.log('Graphics button:', graphicsMenuBtn ? 'found' : 'NOT FOUND');
+        console.log('Graphics modal:', graphicsModal ? 'found' : 'NOT FOUND');
+        
+        if (graphicsMenuBtn && graphicsModal) {
+            // Set initial value from localStorage
+            if (renderQualitySelect) {
+                renderQualitySelect.value = RENDER_SCALE.toString();
+            }
+            
+            // Update quality details display
+            const updateQualityDisplay = () => {
+                const scale = parseFloat(renderQualitySelect.value);
+                
+                // Calculate estimated pixels
+                const renderWidth = Math.floor(window.innerWidth * DPR * scale);
+                const renderHeight = Math.floor(window.innerHeight * DPR * scale);
+                const megapixels = ((renderWidth * renderHeight) / 1000000).toFixed(1);
+                
+                // Update displays
+                if (qualityScaleDisplay) qualityScaleDisplay.textContent = `${scale}x`;
+                if (qualityPixelsDisplay) qualityPixelsDisplay.textContent = `~${megapixels}M`;
+                
+                // Performance label
+                const perfLabels = {
+                    '0.38': 'Best FPS',
+                    '0.45': 'Balanced',
+                    '0.6': 'High Quality',
+                    '0.8': 'Very Sharp',
+                    '1.0': 'Maximum'
+                };
+                if (qualityPerformanceDisplay) {
+                    qualityPerformanceDisplay.textContent = perfLabels[scale.toString()] || 'Custom';
+                }
+            };
+            updateQualityDisplay();
+            
+            graphicsMenuBtn.addEventListener('click', () => {
+                console.log('Graphics button clicked!');
+                graphicsModal.classList.add('active');
+                updateQualityDisplay(); // Refresh on open
+            });
+            
+            if (graphicsClose) {
+                graphicsClose.addEventListener('click', () => {
+                    console.log('Graphics close clicked!');
+                    graphicsModal.classList.remove('active');
+                });
+            }
+            
+            if (graphicsApply) {
+                graphicsApply.addEventListener('click', () => {
+                    const newQuality = parseFloat(renderQualitySelect.value);
+                    localStorage.setItem('renderQuality', newQuality.toString());
+                    console.log(`✅ Render quality saved: ${newQuality}x - Reloading...`);
+                    
+                    // Reload page to apply new render scale
+                    window.location.reload();
+                });
+            }
+            
+            if (renderQualitySelect) {
+                renderQualitySelect.addEventListener('change', () => {
+                    // Update display preview when selection changes
+                    updateQualityDisplay();
+                });
+            }
+        } else {
+            console.error('Graphics settings elements not found!');
+        }
         
         // Ship carousel (currently locked, for future expansion)
         console.log('Initializing ship system...');
