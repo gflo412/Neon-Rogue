@@ -833,6 +833,7 @@
                             <option value="seismic_bomb">Seismic Bomb</option>
                             <option value="phoenix_protocol">Phoenix Protocol</option>
                             <option value="adrenaline_surge">Adrenaline Surge</option>
+                            <option value="ward_matrix">Ward Matrix</option>
                         </select>
                         <div class="flex items-center gap-2 bg-gray-800 border border-gray-600 rounded px-3">
                             <input type="checkbox" id="test-instant-ult" class="w-4 h-4">
@@ -1247,10 +1248,40 @@
 
 
     <script>
+        // RESOLUTION SCALING for performance
+        // This multiplier is applied ON TOP of DPI scaling
+        // 1.0 = Full native resolution (sharp but slow on high-DPI displays)
+        // 0.75 = 75% of native (balanced - good clarity, better FPS)
+        // 0.5 = 50% of native (good performance, still sharper than pre-DPI)
+        // Anything above ~0.38 is sharper than the original blurry setup
+        const RENDER_SCALE = 0.5; // Lowered from 0.75 for better performance
+        
+        // BASE ZOOM - Controls how much world space you see
+        // This will be multiplied by DPI and RENDER_SCALE to compensate
+        const BASE_ZOOM = 0.68;
+        
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d', { alpha: false });
         let width, height;
-        const resize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
+        let DPR = 1; // Store DPR globally so zoom can use it
+        
+        const resize = () => { 
+            const displayWidth = window.innerWidth;
+            const displayHeight = window.innerHeight;
+            DPR = window.devicePixelRatio || 1; // Device pixel ratio (e.g., 2.6x on high-DPI phones)
+            
+            // Calculate actual render resolution: CSS pixels × DPI × render scale
+            // Example: 412 CSS pixels × 2.6 DPI × 0.75 scale = ~803 actual pixels
+            width = canvas.width = Math.floor(displayWidth * DPR * RENDER_SCALE);
+            height = canvas.height = Math.floor(displayHeight * DPR * RENDER_SCALE);
+            
+            // Set canvas display size (always full screen in CSS pixels)
+            canvas.style.width = displayWidth + 'px';
+            canvas.style.height = displayHeight + 'px';
+            
+            console.log(`🎮 Resolution: CSS ${displayWidth}x${displayHeight}, DPR ${DPR.toFixed(2)}x, Scale ${RENDER_SCALE}x`);
+            console.log(`   → Rendering at ${width}x${height} (${(width*height/1000000).toFixed(1)}M pixels/frame)`);
+        };
         window.addEventListener('resize', resize); resize();
 
         // DAMAGE DISPLAY MULTIPLIER
@@ -2343,6 +2374,19 @@
                     const needed = this.maxHp - this.hp;
                     const applied = Math.min(needed, amount);
                     this.hp += applied;
+                    
+                    // Show green healing text
+                    if (applied > 0) {
+                        const healText = new FloatingText(
+                            this.x + (Math.random() - 0.5) * 20,
+                            this.y - 20,
+                            `+${Math.floor(applied)}`,
+                            '#00ff88' // Green color for healing
+                        );
+                        healText.fontSize = 16;
+                        healText.life = 45;
+                        entities.texts.push(healText);
+                    }
                 }
                 // Note: allowOvershield parameter kept for compatibility but no longer used
                 // Shields are now separate system with their own recharge mechanic
@@ -5802,81 +5846,87 @@
                     }
                     
                     // Check each blade for collisions along their length
-                    for (let i = 0; i < numBlades; i++) {
-                        const bladeAngle = this.orbitalAngle + (Math.PI * 2 / numBlades) * i;
-                        
-                        // Blade extends from inner radius to outer radius
-                        const innerX = this.x + Math.cos(bladeAngle) * innerRadius;
-                        const innerY = this.y + Math.sin(bladeAngle) * innerRadius;
-                        const outerX = this.x + Math.cos(bladeAngle) * outerRadius;
-                        const outerY = this.y + Math.sin(bladeAngle) * outerRadius;
-                        
-                        entities.enemies.forEach(e => {
-                            if (e.hp <= 0) return;
+                    // OPTIMIZATION: Skip collision detection if no enemies
+                    if (entities.enemies.length > 0) {
+                        for (let i = 0; i < numBlades; i++) {
+                            const bladeAngle = this.orbitalAngle + (Math.PI * 2 / numBlades) * i;
                             
-                            // Initialize hit tracking if needed (for enemies that spawned after initial loop)
-                            if (!e.orbitalBladeHits) e.orbitalBladeHits = {};
+                            // Blade extends from inner radius to outer radius
+                            const innerX = this.x + Math.cos(bladeAngle) * innerRadius;
+                            const innerY = this.y + Math.sin(bladeAngle) * innerRadius;
+                            const outerX = this.x + Math.cos(bladeAngle) * outerRadius;
+                            const outerY = this.y + Math.sin(bladeAngle) * outerRadius;
                             
-                            // Per-blade cooldown using game time (respects time dilation)
-                            const bladeKey = `blade_${i}`;
-                            const lastHitTime = e.orbitalBladeHits[bladeKey] || 0;
-                            const timeSinceLastHit = state.gameTime - lastHitTime;
-                            if (timeSinceLastHit < 333) return; // 333ms = 0.33 seconds, respects slow motion
+                            // OPTIMIZATION: Only check nearby enemies using spatial grid
+                            const nearbyEnemies = spatialGrid.getNearby(this.x, this.y, outerRadius);
                             
-                            // Check distance to blade line segment (inner to outer)
-                            // Project enemy position onto blade line
-                            const dx = outerX - innerX;
-                            const dy = outerY - innerY;
-                            const length = Math.sqrt(dx * dx + dy * dy);
-                            const ex = e.x - innerX;
-                            const ey = e.y - innerY;
-                            
-                            // Dot product to find closest point on line
-                            const t = Math.max(0, Math.min(1, (ex * dx + ey * dy) / (length * length)));
-                            const closestX = innerX + t * dx;
-                            const closestY = innerY + t * dy;
-                            
-                            const dist = Math.sqrt((e.x - closestX)**2 + (e.y - closestY)**2);
-                            const bladeWidth = 15; // Hit detection width
-                            
-                            if (dist < bladeWidth + e.radius) {
-                                e.orbitalBladeHits[bladeKey] = state.gameTime; // Mark hit time in game milliseconds
+                            nearbyEnemies.forEach(e => {
+                                if (e.hp <= 0) return;
                                 
-                                // Use dealElementalDamage for proper elemental procs
-                                this.dealElementalDamage(e, bladeDamage, 'orbital', '#ff3333');
-                                createExplosion(e.x, e.y, '#ff3333', 12);
+                                // Initialize hit tracking if needed (for enemies that spawned after initial loop)
+                                if (!e.orbitalBladeHits) e.orbitalBladeHits = {};
                                 
-                                // Gold sparks
-                                for (let j = 0; j < 4; j++) {
-                                    const angle = Math.random() * Math.PI * 2;
-                                    entities.particles.push({
-                                        x: e.x,
-                                        y: e.y,
-                                        vx: Math.cos(angle) * 3,
-                                        vy: Math.sin(angle) * 3,
-                                        life: 12,
-                                        maxLife: 12,
-                                        color: '#ffcc00',
-                                        radius: 2,
-                                        update() { 
-                                            this.x += this.vx; 
-                                            this.y += this.vy;
-                                            this.vx *= 0.9;
-                                            this.vy *= 0.9;
-                                            this.life--; 
-                                            return this.life > 0; 
-                                        },
-                                        draw(ctx) {
-                                            const alpha = this.life / this.maxLife;
-                                            ctx.fillStyle = `rgba(255, 204, 0, ${alpha})`;
-                                            ctx.beginPath();
-                                            ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-                                            ctx.fill();
-                                        }
-                                    });
+                                // Per-blade cooldown using game time (respects time dilation)
+                                const bladeKey = `blade_${i}`;
+                                const lastHitTime = e.orbitalBladeHits[bladeKey] || 0;
+                                const timeSinceLastHit = state.gameTime - lastHitTime;
+                                if (timeSinceLastHit < 333) return; // 333ms = 0.33 seconds, respects slow motion
+                                
+                                // Check distance to blade line segment (inner to outer)
+                                // Project enemy position onto blade line
+                                const dx = outerX - innerX;
+                                const dy = outerY - innerY;
+                                const length = Math.sqrt(dx * dx + dy * dy);
+                                const ex = e.x - innerX;
+                                const ey = e.y - innerY;
+                                
+                                // Dot product to find closest point on line
+                                const t = Math.max(0, Math.min(1, (ex * dx + ey * dy) / (length * length)));
+                                const closestX = innerX + t * dx;
+                                const closestY = innerY + t * dy;
+                                
+                                const dist = Math.sqrt((e.x - closestX)**2 + (e.y - closestY)**2);
+                                const bladeWidth = 15; // Hit detection width
+                                
+                                if (dist < bladeWidth + e.radius) {
+                                    e.orbitalBladeHits[bladeKey] = state.gameTime; // Mark hit time in game milliseconds
+                                    
+                                    // Use dealElementalDamage for proper elemental procs
+                                    this.dealElementalDamage(e, bladeDamage, 'orbital', '#ff3333');
+                                    createExplosion(e.x, e.y, '#ff3333', 12);
+                                    
+                                    // Gold sparks
+                                    for (let j = 0; j < 4; j++) {
+                                        const angle = Math.random() * Math.PI * 2;
+                                        entities.particles.push({
+                                            x: e.x,
+                                            y: e.y,
+                                            vx: Math.cos(angle) * 3,
+                                            vy: Math.sin(angle) * 3,
+                                            life: 12,
+                                            maxLife: 12,
+                                            color: '#ffcc00',
+                                            radius: 2,
+                                            update() { 
+                                                this.x += this.vx; 
+                                                this.y += this.vy;
+                                                this.vx *= 0.9;
+                                                this.vy *= 0.9;
+                                                this.life--; 
+                                                return this.life > 0; 
+                                            },
+                                            draw(ctx) {
+                                                const alpha = this.life / this.maxLife;
+                                                ctx.fillStyle = `rgba(255, 204, 0, ${alpha})`;
+                                                ctx.beginPath();
+                                                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                                                ctx.fill();
+                                            }
+                                        });
+                                    }
                                 }
-                            }
-                        });
+                            });
+                        }
                     }
                     
                     // Store for visual
@@ -6907,12 +6957,12 @@
                     ctx.restore();
                 }
                 
-                // ORBITAL BLADESTORM VISUAL (Reaper weapon) - Red sawblade with spiral
+                // ORBITAL BLADESTORM VISUAL (Reaper weapon) - PERFORMANCE OPTIMIZED
                 if (this.weapons.orbital > 0 && this.orbitalRadius) {
                     ctx.save();
                     
                     const outerRadius = this.orbitalRadius;
-                    const innerRadius = this.orbitalInnerRadius || 35; // FIXED inner radius (moved from 25 to 35)
+                    const innerRadius = this.orbitalInnerRadius || 35;
                     const numBlades = this.orbitalBladeCount || 5;
                     const angle = this.orbitalAngle || 0;
                     const bladeLength = this.orbitalBladeLength || 30;
@@ -6920,41 +6970,34 @@
                     for (let i = 0; i < numBlades; i++) {
                         const bladeAngle = angle + (Math.PI * 2 / numBlades) * i;
                         
-                        // Blade orbits at FIXED inner radius - blade extends OUTWARD from here
-                        const orbitRadius = innerRadius; // Fixed - blades grow longer, not move away
+                        const orbitRadius = innerRadius;
                         const bladeX = this.x + Math.cos(bladeAngle) * orbitRadius;
                         const bladeY = this.y + Math.sin(bladeAngle) * orbitRadius;
                         
-                        // MIRRORED blade - wide end OUTWARD, tip INWARD
-                        const bladeWidth = 14; // Width at outer end
-                        
-                        // MORE EXTREME SPIRAL ANGLE - 35 degrees outward
-                        const spiralAngle = 0.61; // ~35 degrees in radians
+                        const bladeWidth = 14;
+                        const spiralAngle = 0.61;
                         const rotationDirection = bladeAngle + Math.PI / 2 + spiralAngle;
                         const radialDirection = bladeAngle;
                         
-                        // MIRRORED triangle vertices - tip points INWARD (toward ship)
-                        const tipX = bladeX - Math.cos(rotationDirection) * bladeLength; // INWARD
+                        // Main blade vertices
+                        const tipX = bladeX - Math.cos(rotationDirection) * bladeLength;
                         const tipY = bladeY - Math.sin(rotationDirection) * bladeLength;
-                        
-                        // Wide base at OUTER edge
                         const base1X = bladeX + Math.cos(radialDirection) * bladeWidth / 2;
                         const base1Y = bladeY + Math.sin(radialDirection) * bladeWidth / 2;
                         const base2X = bladeX - Math.cos(radialDirection) * bladeWidth / 2;
                         const base2Y = bladeY - Math.sin(radialDirection) * bladeWidth / 2;
                         
-                        // RED TRAIL - more prominent
+                        // REDUCED TRAIL - only 2 segments (down from 5)
                         const trailDirection = rotationDirection + Math.PI;
                         
-                        for (let t = 0; t < 5; t++) {
-                            const trailFade = (1 - t / 5);
-                            const trailAlpha = 0.5 * trailFade;
-                            const trailScale = 0.4 + trailFade * 0.6;
+                        for (let t = 0; t < 2; t++) {
+                            const trailFade = (1 - t / 2);
+                            const trailAlpha = 0.4 * trailFade;
+                            const trailScale = 0.5 + trailFade * 0.5;
                             
-                            const trailCenterX = bladeX + Math.cos(trailDirection) * (t + 1) * 8;
-                            const trailCenterY = bladeY + Math.sin(trailDirection) * (t + 1) * 8;
+                            const trailCenterX = bladeX + Math.cos(trailDirection) * (t + 1) * 12;
+                            const trailCenterY = bladeY + Math.sin(trailDirection) * (t + 1) * 12;
                             
-                            // Mirrored trail triangles
                             const tTipX = trailCenterX - Math.cos(rotationDirection) * bladeLength * trailScale;
                             const tTipY = trailCenterY - Math.sin(rotationDirection) * bladeLength * trailScale;
                             const tBase1X = trailCenterX + Math.cos(radialDirection) * bladeWidth / 2 * trailScale;
@@ -6962,11 +7005,8 @@
                             const tBase2X = trailCenterX - Math.cos(radialDirection) * bladeWidth / 2 * trailScale;
                             const tBase2Y = trailCenterY - Math.sin(radialDirection) * bladeWidth / 2 * trailScale;
                             
-                            // Alternate red and gold
-                            const isRed = t % 2 === 0;
-                            ctx.fillStyle = isRed ? `rgba(255, 51, 51, ${trailAlpha})` : `rgba(255, 204, 0, ${trailAlpha})`;
-                            ctx.shadowBlur = 15;
-                            ctx.shadowColor = isRed ? `rgba(255, 51, 51, ${trailAlpha})` : `rgba(255, 204, 0, ${trailAlpha})`;
+                            // No shadow for trails - much faster
+                            ctx.fillStyle = t === 0 ? `rgba(255, 51, 51, ${trailAlpha})` : `rgba(255, 204, 0, ${trailAlpha})`;
                             
                             ctx.beginPath();
                             ctx.moveTo(tTipX, tTipY);
@@ -6976,10 +7016,8 @@
                             ctx.fill();
                         }
                         
-                        // DARK RED BASE
-                        ctx.fillStyle = '#cc0000';
-                        ctx.shadowBlur = 20;
-                        ctx.shadowColor = '#ff0000';
+                        // Simple solid color blade (no gradient - faster)
+                        ctx.fillStyle = '#ff3333';
                         ctx.beginPath();
                         ctx.moveTo(tipX, tipY);
                         ctx.lineTo(base1X, base1Y);
@@ -6987,30 +7025,9 @@
                         ctx.closePath();
                         ctx.fill();
                         
-                        // BRIGHT RED CORE - smaller inner triangle
-                        const innerScale = 0.7;
-                        const iTipX = bladeX - Math.cos(rotationDirection) * bladeLength * innerScale;
-                        const iTipY = bladeY - Math.sin(rotationDirection) * bladeLength * innerScale;
-                        const iBase1X = bladeX + Math.cos(radialDirection) * bladeWidth / 2 * innerScale;
-                        const iBase1Y = bladeY + Math.sin(radialDirection) * bladeWidth / 2 * innerScale;
-                        const iBase2X = bladeX - Math.cos(radialDirection) * bladeWidth / 2 * innerScale;
-                        const iBase2Y = bladeY - Math.sin(radialDirection) * bladeWidth / 2 * innerScale;
-                        
-                        ctx.fillStyle = '#ff3333';
-                        ctx.shadowBlur = 30;
-                        ctx.shadowColor = '#ff3333';
-                        ctx.beginPath();
-                        ctx.moveTo(iTipX, iTipY);
-                        ctx.lineTo(iBase1X, iBase1Y);
-                        ctx.lineTo(iBase2X, iBase2Y);
-                        ctx.closePath();
-                        ctx.fill();
-                        
-                        // GOLD EDGE accent
+                        // Gold edge accent (no shadow)
                         ctx.strokeStyle = '#ffcc00';
                         ctx.lineWidth = 2;
-                        ctx.shadowBlur = 25;
-                        ctx.shadowColor = '#ffcc00';
                         ctx.beginPath();
                         ctx.moveTo(tipX, tipY);
                         ctx.lineTo(base1X, base1Y);
@@ -7019,7 +7036,6 @@
                         ctx.stroke();
                     }
                     
-                    ctx.shadowBlur = 0;
                     ctx.restore();
                 }
 
@@ -7322,7 +7338,7 @@
                     });
                 }
                 
-                // DRAW EMP FIELDS (if Disruptor)
+                // DRAW EMP FIELDS (if Disruptor) - PERFORMANCE OPTIMIZED
                 if (this.empFields && this.empFields.length > 0) {
                     this.empFields.forEach(field => {
                         ctx.save();
@@ -7330,43 +7346,34 @@
                         
                         const alpha = field.life / 150;
                         const pulse = 0.7 + Math.sin(state.frameCount * 0.1) * 0.3;
-                        const time = state.frameCount * 0.05;
                         
-                        // Multiple expanding rings for depth
-                        for (let i = 0; i < 3; i++) {
-                            const ringPhase = (time + i * 0.3) % 1;
-                            const ringRadius = field.radius * (0.4 + ringPhase * 0.6);
-                            const ringAlpha = alpha * (1 - ringPhase) * 0.4;
-                            
-                            ctx.strokeStyle = `rgba(168, 85, 247, ${ringAlpha})`;
-                            ctx.lineWidth = 2;
-                            ctx.shadowBlur = 10;
-                            ctx.shadowColor = '#a855f7';
-                            ctx.beginPath();
-                            ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
-                            ctx.stroke();
-                        }
+                        // Single outer ring (reduced from 3 rings)
+                        const ringPhase = (state.frameCount * 0.05) % 1;
+                        const ringRadius = field.radius * (0.5 + ringPhase * 0.5);
+                        const ringAlpha = alpha * (1 - ringPhase) * 0.5;
                         
-                        // Inner radial gradient glow with more intensity variation
+                        ctx.strokeStyle = `rgba(168, 85, 247, ${ringAlpha})`;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+                        ctx.stroke();
+                        
+                        // Simplified radial gradient glow (reduced stops for better performance)
                         const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, field.radius);
-                        gradient.addColorStop(0, `rgba(192, 132, 252, ${alpha * 0.4 * pulse})`);
-                        gradient.addColorStop(0.3, `rgba(168, 85, 247, ${alpha * 0.25 * pulse})`);
-                        gradient.addColorStop(0.6, `rgba(168, 85, 247, ${alpha * 0.1})`);
+                        gradient.addColorStop(0, `rgba(192, 132, 252, ${alpha * 0.3 * pulse})`);
+                        gradient.addColorStop(0.5, `rgba(168, 85, 247, ${alpha * 0.15})`);
                         gradient.addColorStop(1, 'rgba(168, 85, 247, 0)');
                         ctx.fillStyle = gradient;
                         ctx.beginPath();
                         ctx.arc(0, 0, field.radius, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        // Central core pulse
-                        ctx.fillStyle = `rgba(192, 132, 252, ${alpha * pulse * 0.6})`;
-                        ctx.shadowBlur = 25;
-                        ctx.shadowColor = '#a855f7';
+                        // Central core pulse (no shadow for performance)
+                        ctx.fillStyle = `rgba(192, 132, 252, ${alpha * pulse * 0.5})`;
                         ctx.beginPath();
-                        ctx.arc(0, 0, 8 * pulse, 0, Math.PI * 2);
+                        ctx.arc(0, 0, 6 * pulse, 0, Math.PI * 2);
                         ctx.fill();
                         
-                        ctx.shadowBlur = 0;
                         ctx.restore();
                     });
                 }
@@ -7808,6 +7815,22 @@
                 
                 chargeTime: 85, // Base 85 seconds
                 damageChargeBonus: 0.00022 // 0.022% per 100 damage
+            },
+            ward_matrix: {
+                id: 'ward_matrix',
+                name: 'Ward Matrix',
+                desc: 'Deploy 5 shield plates that heal and intercept projectiles. Each plate heals 1% HP/sec.',
+                icon: 'fa-shield',
+                color: '#00d4ff',
+                
+                plateCount: 5, // Reduced from 6 to 5
+                healPerPlatePerSecond: 1, // Reduced from 2% to 1% per plate
+                duration: 10000, // 10 seconds
+                orbitRadius: 70, // Distance from player
+                orbitSpeed: 0.08, // Rotation speed
+                
+                chargeTime: 90, // Base 90 seconds
+                damageChargeBonus: 0.0002 // 0.02% per 100 damage
             }
         };
         
@@ -7848,6 +7871,12 @@
             // Adrenaline Surge doesn't need a target - self-buff ultimate
             if (player.ultimate === 'adrenaline_surge') {
                 executeAdrenalineSurge();
+                return;
+            }
+            
+            // Ward Matrix doesn't need a target - defensive ultimate
+            if (player.ultimate === 'ward_matrix') {
+                executeWardMatrix();
                 return;
             }
             
@@ -8880,6 +8909,58 @@
             createExplosion(player.x, player.y, ultimateData.color, 50);
             
             console.log('⚡ Adrenaline Surge: 3x speed, 3x fire rate, invulnerable for 4 seconds');
+        }
+        
+        function executeWardMatrix() {
+            console.log('🛡️ Ward Matrix activating!');
+            
+            const ultimateData = ULTIMATES.ward_matrix;
+            
+            // Camera stays on player (no panning needed)
+            state.cameraLocked = false;
+            
+            // Initialize Ward Matrix state
+            player.ultimateData = {
+                duration: ultimateData.duration,
+                timer: ultimateData.duration, // Countdown timer
+                healTickTimer: 1000, // Heal every second
+                
+                // Shield plates
+                plates: [],
+                plateCount: ultimateData.plateCount,
+                orbitRadius: ultimateData.orbitRadius,
+                orbitSpeed: ultimateData.orbitSpeed,
+                
+                // Healing
+                healPerPlatePerSecond: ultimateData.healPerPlatePerSecond,
+                
+                color: ultimateData.color
+            };
+            
+            // Create shield plates
+            for (let i = 0; i < ultimateData.plateCount; i++) {
+                const angle = (i / ultimateData.plateCount) * Math.PI * 2;
+                player.ultimateData.plates.push({
+                    angle: angle,
+                    alive: true,
+                    id: i
+                });
+            }
+            
+            // Visual feedback - shield deployment
+            createExplosion(player.x, player.y, ultimateData.color, 40);
+            
+            // Spawn visual particles for each plate
+            for (let i = 0; i < ultimateData.plateCount; i++) {
+                const angle = (i / ultimateData.plateCount) * Math.PI * 2;
+                const x = player.x + Math.cos(angle) * ultimateData.orbitRadius;
+                const y = player.y + Math.sin(angle) * ultimateData.orbitRadius;
+                for (let j = 0; j < 8; j++) {
+                    entities.particles.push(new Particle(x, y, ultimateData.color, 2));
+                }
+            }
+            
+            console.log(`🛡️ Ward Matrix: ${ultimateData.plateCount} plates deployed, healing ${ultimateData.healPerPlatePerSecond * ultimateData.plateCount}% HP/sec`);
         }
         
         class Enemy {
@@ -13827,7 +13908,7 @@
             entities = { enemies: [], projectiles: [], enemyProjectiles: [], particles: [], pickups: [], texts: [], lightnings: [], gasClouds: [] };
             state.score=0; state.level=1; state.xp=0; state.xpToNext=10; 
             state.startTime=Date.now(); state.screen='game'; state.rerolls=3;
-            state.paused = false; state.timeScale = 1.0; state.pendingLevelUps = 0; state.zoom = 0.70; 
+            state.paused = false; state.timeScale = 1.0; state.pendingLevelUps = 0; state.zoom = BASE_ZOOM * RENDER_SCALE * DPR; 
             state.upgradeQueue = []; // Reset upgrade queue 
             state.bossActive = false; state.bossWave = 0; state.pendingSwap = null;
             state.bossTimer = 0; state.gameTime = 0; state.spawnTimer = 0;
@@ -14895,7 +14976,7 @@
             const finalBossY = bossY + 200; // Spawn 200 units SOUTH (positive Y = down in world space)
             
             // Gradually zoom out camera for boss fight
-            state.targetZoom = 0.60; // Zoom out from 0.70 to 0.60
+            state.targetZoom = (BASE_ZOOM - 0.10) * RENDER_SCALE * DPR; // Zoom out further for boss
             
             const boss = {
                 x: finalBossX,
@@ -15697,7 +15778,7 @@
             // Health Regeneration handled in player.update() - removed duplicate system here
             
             // Smooth zoom interpolation for boss fight
-            if (!state.targetZoom) state.targetZoom = 0.70; // Default zoom
+            if (!state.targetZoom) state.targetZoom = BASE_ZOOM * RENDER_SCALE * DPR; // Default zoom adjusted for DPI and render scale
             state.zoom += (state.targetZoom - state.zoom) * 0.02; // Slow interpolation
             
             ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -16184,6 +16265,60 @@
                 // Check if ultimate is done
                 if (data.timer <= 0) {
                     console.log('⚡ Adrenaline Surge complete');
+                    player.ultimateActive = false;
+                    player.ultimateData = {};
+                    
+                    // Check for queued upgrades
+                    checkQueuedUpgrades();
+                }
+            }
+            
+            // WARD MATRIX UPDATE
+            if (player.ultimateActive && player.ultimate === 'ward_matrix' && player.ultimateData) {
+                const data = player.ultimateData;
+                const ultimateData = ULTIMATES.ward_matrix;
+                
+                // Update timer (game time)
+                data.timer -= scaledDt;
+                
+                // Update plate angles (rotation)
+                data.plates.forEach(plate => {
+                    if (plate.alive) {
+                        plate.angle += data.orbitSpeed * (scaledDt / 16);
+                    }
+                });
+                
+                // Healing tick
+                data.healTickTimer -= scaledDt;
+                if (data.healTickTimer <= 0) {
+                    data.healTickTimer = 1000; // Reset to 1 second
+                    
+                    // Count alive plates
+                    const alivePlates = data.plates.filter(p => p.alive).length;
+                    
+                    if (alivePlates > 0) {
+                        // Heal player based on number of alive plates
+                        const healAmount = (player.maxHp * data.healPerPlatePerSecond * alivePlates) / 100;
+                        player.heal(healAmount, false); // Now shows healing text!
+                        
+                        // Visual feedback - small pulse on player
+                        if (Math.random() < 0.3) { // 30% chance per tick
+                            for (let i = 0; i < 3; i++) {
+                                entities.particles.push(new Particle(
+                                    player.x + (Math.random() - 0.5) * 30,
+                                    player.y + (Math.random() - 0.5) * 30,
+                                    '#00ff88',
+                                    1
+                                ));
+                            }
+                        }
+                    }
+                }
+                
+                // Check if all plates destroyed or timer expired
+                const alivePlates = data.plates.filter(p => p.alive).length;
+                if (alivePlates === 0 || data.timer <= 0) {
+                    console.log('🛡️ Ward Matrix complete');
                     player.ultimateActive = false;
                     player.ultimateData = {};
                     
@@ -18289,6 +18424,102 @@
                 ctx.shadowBlur = 0;
             }
 
+            // Ward Matrix shield plates effect
+            if (player.ultimateActive && player.ultimate === 'ward_matrix' && player.ultimateData) {
+                const data = player.ultimateData;
+                const alivePlates = data.plates.filter(p => p.alive);
+                
+                // Draw connection ring around player (simple, no gradient)
+                if (alivePlates.length > 0) {
+                    const ringPulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.5;
+                    
+                    ctx.strokeStyle = `rgba(0, 212, 255, ${0.2 * ringPulse})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, data.orbitRadius, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+                
+                // Draw each alive plate (simplified for performance)
+                data.plates.forEach((plate, index) => {
+                    if (!plate.alive) return;
+                    
+                    const plateX = player.x + Math.cos(plate.angle) * data.orbitRadius;
+                    const plateY = player.y + Math.sin(plate.angle) * data.orbitRadius;
+                    
+                    // Pulsing effect based on time - each plate slightly offset
+                    const pulse = 0.7 + Math.sin(state.frameCount * 0.08 + index * 1.0) * 0.3;
+                    
+                    ctx.save();
+                    ctx.translate(plateX, plateY);
+                    ctx.rotate(plate.angle); // Rotate with orbit for proper orientation
+                    
+                    // Single outer glow (reduced from multiple layers)
+                    ctx.shadowBlur = 20 * pulse;
+                    ctx.shadowColor = data.color;
+                    
+                    // Draw hexagon with gradient fill
+                    const hexRadius = 16;
+                    const hexGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, hexRadius);
+                    hexGradient.addColorStop(0, `rgba(100, 220, 255, ${0.6 * pulse})`);
+                    hexGradient.addColorStop(0.7, `rgba(0, 212, 255, ${0.4 * pulse})`);
+                    hexGradient.addColorStop(1, `rgba(0, 150, 200, ${0.2 * pulse})`);
+                    
+                    ctx.fillStyle = hexGradient;
+                    ctx.strokeStyle = `rgba(0, 255, 255, ${0.9 * pulse})`;
+                    ctx.lineWidth = 2.5;
+                    ctx.beginPath();
+                    for (let i = 0; i < 6; i++) {
+                        const angle = (i / 6) * Math.PI * 2;
+                        const x = Math.cos(angle) * hexRadius;
+                        const y = Math.sin(angle) * hexRadius;
+                        if (i === 0) ctx.moveTo(x, y);
+                        else ctx.lineTo(x, y);
+                    }
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Bright energy core
+                    const coreSize = 7 + Math.sin(state.frameCount * 0.15 + index) * 1.5;
+                    const coreGradient = ctx.createRadialGradient(0, 0, 0, 0, 0, coreSize);
+                    coreGradient.addColorStop(0, `rgba(255, 255, 255, ${pulse})`);
+                    coreGradient.addColorStop(0.5, `rgba(200, 255, 255, ${0.7 * pulse})`);
+                    coreGradient.addColorStop(1, 'rgba(0, 212, 255, 0)');
+                    
+                    ctx.shadowBlur = 12 * pulse;
+                    ctx.shadowColor = '#ffffff';
+                    ctx.fillStyle = coreGradient;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, coreSize, 0, Math.PI * 2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                    
+                    // Occasional healing particles (reduced spawn rate)
+                    if (Math.random() < 0.015) {
+                        entities.particles.push(new Particle(plateX, plateY, '#00ff88', 1.5));
+                    }
+                });
+                
+                // Player healing aura (single layer, simplified)
+                if (alivePlates.length > 0) {
+                    const healPulse = Math.sin(state.frameCount * 0.05) * 0.3 + 0.7;
+                    const healRadius = 40 * healPulse;
+                    const healGradient = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, healRadius);
+                    healGradient.addColorStop(0, `rgba(0, 255, 136, ${0.25 * healPulse})`);
+                    healGradient.addColorStop(0.6, `rgba(0, 255, 136, ${0.12 * healPulse})`);
+                    healGradient.addColorStop(1, 'rgba(0, 255, 136, 0)');
+                    
+                    ctx.fillStyle = healGradient;
+                    ctx.beginPath();
+                    ctx.arc(player.x, player.y, healRadius, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+                
+                ctx.shadowBlur = 0;
+            }
+
             // Phoenix Protocol burning ground effect
             if (player.ultimateData && player.ultimateData.burningGround && player.ultimateData.burningGround.active) {
                 const burning = player.ultimateData.burningGround;
@@ -18710,6 +18941,46 @@
 
 
             entities.enemyProjectiles = entities.enemyProjectiles.filter(ep => {
+                // WARD MATRIX INTERCEPTION - Check if projectile hits any shield plate
+                if (player.ultimateActive && player.ultimate === 'ward_matrix' && player.ultimateData) {
+                    const data = player.ultimateData;
+                    const ultimateData = ULTIMATES.ward_matrix;
+                    
+                    // Check each alive plate
+                    for (let plate of data.plates) {
+                        if (!plate.alive) continue;
+                        
+                        // Calculate plate position
+                        const plateX = player.x + Math.cos(plate.angle) * data.orbitRadius;
+                        const plateY = player.y + Math.sin(plate.angle) * data.orbitRadius;
+                        
+                        // Check collision with projectile (smaller 22 unit detection radius - reduced from 30)
+                        const dx = ep.x - plateX;
+                        const dy = ep.y - plateY;
+                        const distSq = dx * dx + dy * dy;
+                        const plateHitRadius = 22; // Reduced from 30
+                        
+                        if (distSq < plateHitRadius * plateHitRadius) {
+                            // Plate intercepts projectile!
+                            plate.alive = false;
+                            
+                            // Visual feedback - enhanced explosion
+                            createExplosion(plateX, plateY, data.color, 25);
+                            createExplosion(plateX, plateY, '#ffffff', 15);
+                            for (let i = 0; i < 16; i++) {
+                                entities.particles.push(new Particle(plateX, plateY, data.color, 2.5));
+                            }
+                            // Add some white spark particles
+                            for (let i = 0; i < 8; i++) {
+                                entities.particles.push(new Particle(plateX, plateY, '#ffffff', 2));
+                            }
+                            
+                            // Destroy projectile
+                            return false;
+                        }
+                    }
+                }
+                
                 // Early culling for projectiles far from player
                 const roughDx = Math.abs(ep.x - player.x);
                 const roughDy = Math.abs(ep.y - player.y);
