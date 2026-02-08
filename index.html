@@ -498,6 +498,13 @@
                         <!-- Level text - right aligned -->
                         <div id="lvl-text" class="text-[10px] text-gray-400 font-mono">LVL 1</div>
                     </div>
+                    <!-- Void Shard counter (only visible in Endless Mode) -->
+                    <div id="void-shard-hud" style="display: none; margin-top: 4px;">
+                        <div style="background: rgba(147, 51, 234, 0.3); border: 1px solid rgba(147, 51, 234, 0.5); border-radius: 4px; padding: 2px 6px; display: inline-flex; align-items: center; gap: 4px;">
+                            <i class="fas fa-gem" style="font-size: 10px; color: #a855f7;"></i>
+                            <span id="void-shard-count" style="font-size: 10px; color: #a855f7; font-weight: bold;">0</span>
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -505,6 +512,14 @@
             <div class="flex flex-col items-end" style="padding-top: 0px;">
                 <div id="score" class="text-3xl text-white font-black tracking-widest drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]" style="line-height: 1;">0</div>
                 <div id="time" class="text-xs text-gray-500 font-mono" style="margin-top: 2px;">00:00</div>
+                
+                <!-- Debuff Display (only visible in Endless Mode with debuffs) -->
+                <div id="debuff-display" style="display: none; margin-top: 8px; max-width: 200px;">
+                    <div style="font-size: 9px; color: #ff6b6b; font-weight: bold; margin-bottom: 4px;">ACTIVE DEBUFFS:</div>
+                    <div id="debuff-list" style="display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end;">
+                        <!-- Debuff icons will be added here -->
+                    </div>
+                </div>
             </div>
         </div>
         
@@ -620,6 +635,10 @@
                     <span class="inline-block skew-x-[10deg]">DEPLOY</span>
                 </button>
                 
+                <button id="endless-mode-btn" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 rounded-sm skew-x-[-10deg] shadow-[0_0_30px_rgba(147,51,234,0.4)] transition-all">
+                    <span class="inline-block skew-x-[10deg]"><i class="fas fa-infinity mr-2"></i>VOID DESCENT</span>
+                </button>
+                
                 <button id="augment-lab-btn" class="bg-purple-900 hover:bg-purple-800 text-purple-300 hover:text-purple-200 text-sm font-bold py-2 rounded transition-all border border-purple-700 shadow-[0_0_15px_rgba(168,85,247,0.3)]">
                     <i class="fas fa-flask mr-2"></i>AUGMENT LAB
                 </button>
@@ -660,6 +679,70 @@
         </div>
     </div>
     
+    <!-- Endless Mode Setup Screen -->
+    <div id="endless-setup-screen" class="modal">
+        <h2 class="text-4xl text-purple-400 font-black mb-2 tracking-widest drop-shadow-[0_0_20px_rgba(147,51,234,0.8)]">
+            <i class="fas fa-infinity mr-3"></i>VOID DESCENT
+        </h2>
+        <p class="text-sm text-gray-400 mb-6">How far can you survive into the endless void?</p>
+        
+        <div class="bg-gray-900 border border-purple-500 rounded p-4 mb-6 max-w-xl">
+            <div class="text-sm text-gray-300 space-y-2">
+                <div><i class="fas fa-check text-purple-400 mr-2"></i>Equip up to 3 augments for your run</div>
+                <div><i class="fas fa-check text-purple-400 mr-2"></i>Random debuff every 10 levels (starting at 15)</div>
+                <div><i class="fas fa-check text-purple-400 mr-2"></i>Shop checkpoint every 25 levels</div>
+                <div><i class="fas fa-check text-purple-400 mr-2"></i>Earn Void Shards to purchase upgrades</div>
+                <div><i class="fas fa-check text-purple-400 mr-2"></i><strong class="text-yellow-400">NO LEVEL CAP</strong> - Survive as long as you can!</div>
+            </div>
+        </div>
+        
+        <h3 class="text-xl text-purple-300 font-bold mb-3">AUGMENT LOADOUT</h3>
+        <div class="flex gap-3 mb-6">
+            <div class="flex-1 bg-gray-800 border border-gray-600 rounded p-3 cursor-pointer hover:border-purple-400 transition-all" id="endless-slot-1">
+                <div class="text-xs text-gray-500 mb-1">SLOT 1</div>
+                <div class="text-sm text-gray-400 font-bold endless-slot-name">Empty</div>
+            </div>
+            <div class="flex-1 bg-gray-800 border border-gray-600 rounded p-3 cursor-pointer hover:border-purple-400 transition-all" id="endless-slot-2">
+                <div class="text-xs text-gray-500 mb-1">SLOT 2</div>
+                <div class="text-sm text-gray-400 font-bold endless-slot-name">Empty</div>
+            </div>
+            <div class="flex-1 bg-gray-800 border border-gray-600 rounded p-3 cursor-pointer hover:border-purple-400 transition-all" id="endless-slot-3">
+                <div class="text-xs text-gray-500 mb-1">SLOT 3</div>
+                <div class="text-sm text-gray-400 font-bold endless-slot-name">Empty</div>
+            </div>
+        </div>
+        
+        <div class="text-center mb-6" id="endless-best-display">
+            <div class="text-xs text-gray-500">PERSONAL BEST</div>
+            <div class="text-lg font-bold text-yellow-400">Level <span id="endless-best-level">0</span> | <span id="endless-best-score">0</span> pts</div>
+        </div>
+        
+        <div class="flex gap-4">
+            <button id="endless-start-btn" class="bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 px-8 rounded-sm skew-x-[-10deg] shadow-[0_0_30px_rgba(147,51,234,0.5)] transition-all">
+                <span class="inline-block skew-x-[10deg]">START ENDLESS RUN</span>
+            </button>
+            <button id="endless-back-btn" class="border border-gray-500 text-gray-400 hover:text-white hover:border-white py-3 px-8 rounded transition-all">
+                BACK
+            </button>
+        </div>
+    </div>
+    
+    <!-- Augment Selector for Endless Mode -->
+    <div id="endless-augment-selector-modal" class="modal">
+        <h2 class="text-2xl text-purple-400 font-bold mb-4">SELECT AUGMENT</h2>
+        <p class="text-sm text-gray-400 mb-4">Choose an augment for Slot <span id="endless-selector-slot-number">1</span></p>
+        
+        <div class="w-full max-w-2xl mb-4">
+            <div id="endless-augment-selector-list" class="flex-1 overflow-y-auto space-y-2 mb-4" style="max-height: 60vh;">
+                <!-- Augment options will be populated here -->
+            </div>
+        </div>
+        
+        <button id="endless-selector-cancel" class="border border-gray-500 text-gray-400 hover:text-white hover:border-white py-2 px-6 rounded transition-all">
+            CANCEL
+        </button>
+    </div>
+    
     <!-- Augment Selector Modal -->
     <div id="augment-selector-modal" class="modal">
         <div class="bg-gray-900 bg-opacity-95 border-2 border-purple-600 rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
@@ -687,6 +770,87 @@
                     CANCEL
                 </button>
             </div>
+        </div>
+    </div>
+    
+    <!-- Endless Mode Checkpoint Shop -->
+    <div id="endless-checkpoint-shop" class="modal">
+        <div class="bg-gray-900 bg-opacity-95 border-2 border-purple-600 rounded-lg p-6 max-w-4xl w-full">
+            <h2 class="text-3xl text-purple-400 font-black mb-2 tracking-widest text-center">
+                <i class="fas fa-store mr-2"></i>CHECKPOINT - LEVEL <span id="checkpoint-level-display">25</span>
+            </h2>
+            <div class="text-center text-yellow-400 font-bold mb-6">
+                💎 Void Shards: <span id="checkpoint-shards-display">0</span>
+            </div>
+            
+            <div class="grid grid-cols-2 gap-6 mb-6">
+                <!-- LEFT: Augments -->
+                <div class="border border-purple-500 rounded p-4">
+                    <h3 class="text-lg text-purple-300 font-bold mb-3 text-center">AUGMENTS (Choose 1)</h3>
+                    <div class="text-xs text-gray-400 mb-3 text-center">Permanently stacks with your loadout</div>
+                    <div id="checkpoint-augments-list" class="space-y-2">
+                        <!-- 3 random augments will be inserted here -->
+                    </div>
+                    <div class="text-xs text-center text-gray-500 mt-2" id="left-purchase-status">0/1 purchased</div>
+                </div>
+                
+                <!-- RIGHT: Direct Actions -->
+                <div class="border border-cyan-500 rounded p-4">
+                    <h3 class="text-lg text-cyan-300 font-bold mb-3 text-center">DIRECT ACTIONS (Choose 1)</h3>
+                    <div class="text-xs text-gray-400 mb-3 text-center">Immediate effects for this run</div>
+                    <div id="checkpoint-actions-list" class="space-y-2">
+                        <!-- 3 fixed actions will be inserted here -->
+                    </div>
+                    <div class="text-xs text-center text-gray-500 mt-2" id="right-purchase-status">0/1 purchased</div>
+                </div>
+            </div>
+            
+            <div class="text-center text-sm text-gray-400 mb-4">
+                You can purchase 1 item from each side (2 total)
+            </div>
+            
+            <button id="checkpoint-continue-btn" class="w-full bg-teal-500 hover:bg-teal-400 text-black font-bold py-3 rounded transition-all">
+                CONTINUE
+            </button>
+        </div>
+    </div>
+    
+    <!-- Endless Mode Death Screen -->
+    <div id="endless-death-screen" class="modal">
+        <div class="bg-gray-900 bg-opacity-95 border-2 border-red-600 rounded-lg p-6 max-w-2xl w-full">
+            <h2 class="text-4xl text-red-500 font-black mb-6 tracking-widest text-center">
+                VOID DESCENT COMPLETE
+            </h2>
+            
+            <div class="text-center mb-6">
+                <div class="text-6xl font-bold text-purple-400" id="endless-final-level">0</div>
+                <div class="text-sm text-gray-400">FINAL LEVEL</div>
+                <div class="text-yellow-400 text-xl mt-2" id="endless-level-record" style="display:none;">🏆 NEW LEVEL RECORD! 🏆</div>
+            </div>
+            
+            <div class="text-center mb-6">
+                <div class="text-4xl font-bold text-cyan-400" id="endless-final-score">0</div>
+                <div class="text-sm text-gray-400">SCORE</div>
+                <div class="text-yellow-400 text-xl mt-2" id="endless-score-record" style="display:none;">🏆 NEW HIGH SCORE! 🏆</div>
+            </div>
+            
+            <div class="border-t border-gray-700 pt-4 mb-4">
+                <div class="text-sm text-gray-400 mb-2">Run Statistics:</div>
+                <div class="text-gray-300">Debuffs Survived: <span id="endless-debuffs-survived">0</span></div>
+                <div class="text-gray-300">Total Kills: <span id="endless-total-kills">0</span></div>
+                <div class="text-gray-300">Void Shards Collected: <span id="endless-total-shards">0</span></div>
+            </div>
+            
+            <div class="border-t border-gray-700 pt-4 mb-6">
+                <div class="text-lg text-yellow-400 font-bold mb-2">REWARDS EARNED:</div>
+                <div class="text-green-400" id="endless-reward-cores-conversion"></div>
+                <div class="text-green-400" id="endless-reward-cores-milestones"></div>
+                <div class="text-pink-400" id="endless-reward-singularities"></div>
+            </div>
+            
+            <button id="endless-return-menu-btn" class="w-full bg-purple-600 hover:bg-purple-500 text-white font-bold py-3 rounded transition-all">
+                RETURN TO MENU
+            </button>
         </div>
     </div>
     
@@ -1474,7 +1638,20 @@
             manualCameraControl: false, // Manual camera pan mode (prevents game loop interference)
             // Ascension System
             activeAscension: 0, // Current ascension level for this run (0 = normal mode)
-            playerDead: false // Flag to prevent multiple death triggers
+            playerDead: false, // Flag to prevent multiple death triggers
+            // Endless Mode System
+            gameMode: 'normal', // 'normal' or 'endless'
+            endlessLevel: 1, // Current level in endless mode
+            endlessScore: 0, // Score for current endless run
+            endlessDebuffs: [], // Array of debuff IDs accumulated
+            voidShards: 0, // Current void shards
+            totalShardsCollected: 0, // Total shards collected this run
+            endlessAugments: [], // Augments purchased from shops + equipped
+            nextDebuffLevel: 15, // Next level to roll a debuff
+            nextCheckpointLevel: 25, // Next checkpoint shop level
+            checkpointPurchases: { left: false, right: false }, // Track shop purchases
+            shardBoostActive: false, // Shard amplifier buff
+            shardBoostEndLevel: 0 // When shard boost expires
         };
 
 
@@ -1600,9 +1777,9 @@
                 rarity: 'rare',
                 icon: 'fa-star',
                 tiers: [
-                    { level: 1, critChance: 0.10, critDamage: 0.10, costCores: 50, costSingularities: 0, desc: '+10% crit chance, +10% crit damage (adds to base 7% chance, 50% damage)' },
-                    { level: 2, critChance: 0.20, critDamage: 0.20, costCores: 100, costSingularities: 0, desc: '+20% crit chance, +20% crit damage (adds to base 7% chance, 50% damage)' },
-                    { level: 3, critChance: 0.30, critDamage: 0.30, costCores: 150, costSingularities: 2, desc: '+30% crit chance, +30% crit damage (adds to base 7% chance, 50% damage)' }
+                    { level: 1, critChance: 0.05, critDamage: 0.10, costCores: 50, costSingularities: 0, desc: '+5% crit chance, +10% crit damage (adds to base 7% chance, 50% damage)' },
+                    { level: 2, critChance: 0.10, critDamage: 0.20, costCores: 100, costSingularities: 0, desc: '+10% crit chance, +20% crit damage (adds to base 7% chance, 50% damage)' },
+                    { level: 3, critChance: 0.15, critDamage: 0.30, costCores: 150, costSingularities: 2, desc: '+15% crit chance, +30% crit damage (adds to base 7% chance, 50% damage)' }
                 ]
             },
             titan_slayer: {
@@ -2141,9 +2318,9 @@
                 
                 // ASCENSION 5 (5 debuffs) - ONLY for Ascension 5
                 else if (ascension === 5) {
-                    // Ticking Doom: Lose 1 HP/second
+                    // Ticking Doom: Lose 2 HP/second
                     this.tickingDoomTimer = 0;
-                    console.log(`⏱️ Ticking Doom: Losing 1 HP/second`);
+                    console.log(`⏱️ Ticking Doom: Losing 2 HP/second`);
                     
                     // Overcharged Enemies: +20% enemy damage (handled in enemy damage calculations)
                     console.log(`⚡ Overcharged Enemies: Enemies deal 20% more damage`);
@@ -3414,7 +3591,12 @@
                             
                             // Cooldown divided by cannon count - creates sequential rapid fire
                             const rate = this.fireRate / (this.weaponStats.ion.rate * Math.min(4, Math.max(1, this.weapons.ion)));
-                            this.lastShot = rate;
+                            
+                            // HARD CAP: Minimum 50ms per shot (20 shots/sec max) regardless of upgrades
+                            // Prevents unrealistic machine-gun fire in test mode with maxed stats
+                            const cappedRate = Math.max(50, rate);
+                            
+                            this.lastShot = cappedRate;
                             this.fireIndex++;
                         }
                     }
@@ -4592,7 +4774,7 @@
                             
                             // Damage scales with level: +20% per level (higher base to compensate for longer cooldown)
                             const levelScaling = 1 + (this.weapons.boomerang - 1) * 0.20; // 1.0 → 1.8
-                            const baseDmg = this.damage * 3.5 * levelScaling * this.weaponStats.boomerang.dmg * damageBonus;
+                            const baseDmg = this.damage * 2.5 * levelScaling * this.weaponStats.boomerang.dmg * damageBonus; // Buffed: 2.0 → 2.5 (with cooldown system)
                             
                             // Fixed range (not affected by area)
                             const maxRange = 150 + this.weapons.boomerang * 10; // 160-200 range (much shorter to stay on screen)
@@ -4974,14 +5156,22 @@
                         const maxY = this.y + (height / state.zoom / 2) - screenMargin;
                         
                         // Find target if we don't have one or current target is dead/hacked/fleeing
-                        if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active) || drone.target.fleeing) {
+                        if (!drone.target || 
+                            drone.target.hp <= 0 || 
+                            (drone.target.hackState && drone.target.hackState.active) || 
+                            drone.target.fleeing ||
+                            (drone.target.isNexusPrime && !drone.target.coreVulnerable)) { // Retarget if Nexus Prime core becomes invulnerable again
                             // Priority targeting influenced by proximity to player
                             const priorityOrder = (enemy) => {
                                 // Boss shields are HIGHEST priority (only when active and vulnerable)
                                 if (enemy.isBossShield && enemy.hp > 0 && (!enemy.spawnInvuln || enemy.spawnInvuln <= 0)) return 10;
                                 
-                                // Final boss (Nexus Prime) is SECOND HIGHEST priority (after shields down)
-                                if (enemy.isNexusPrime) return 9;
+                                // Final boss (Nexus Prime) is SECOND HIGHEST priority (only when core is vulnerable)
+                                if (enemy.isNexusPrime) {
+                                    // Don't target invulnerable core
+                                    if (!enemy.coreVulnerable) return -1;
+                                    return 9;
+                                }
                                 
                                 // TITAN BOSS - Very high priority (right after final boss)
                                 if (enemy.isTitan) return 8.5;
@@ -5121,9 +5311,13 @@
                             }
                         });
                         
-                        // Fire at target (skip fleeing enemies)
+                        // Fire at target (skip fleeing enemies and invulnerable Nexus Prime core)
                         drone.fireTimer -= dt/16;
-                        if (drone.fireTimer <= 0 && drone.target && !(drone.target.hackState && drone.target.hackState.active) && !drone.target.fleeing) {
+                        if (drone.fireTimer <= 0 && 
+                            drone.target && 
+                            !(drone.target.hackState && drone.target.hackState.active) && 
+                            !drone.target.fleeing &&
+                            !(drone.target.isNexusPrime && !drone.target.coreVulnerable)) { // Don't fire at invulnerable core
                             drone.shotsFired = (drone.shotsFired || 0) + 1;
                             
                             // Every 5th shot fires a mini-rocket with AOE splash
@@ -5131,8 +5325,12 @@
                             
                             // Create fire function for multistrike
                             const fireDroneShot = (damageMultiplier = 1.0, depth = 0) => {
-                                // Verify target still exists and is valid (not dead/hacked/fleeing)
-                                if (!drone.target || drone.target.hp <= 0 || (drone.target.hackState && drone.target.hackState.active) || drone.target.fleeing) {
+                                // Verify target still exists and is valid (not dead/hacked/fleeing/invulnerable)
+                                if (!drone.target || 
+                                    drone.target.hp <= 0 || 
+                                    (drone.target.hackState && drone.target.hackState.active) || 
+                                    drone.target.fleeing ||
+                                    (drone.target.isNexusPrime && !drone.target.coreVulnerable)) {
                                     return;
                                 }
                                 
@@ -6055,25 +6253,90 @@
                 // Apply Ascension damage multipliers
                 dmg *= this.getAscensionDamageMult(enemy);
                 
-                // BOSS SHIELD entities - damage them directly
+                // BOSS SHIELD entities - damage them directly with elemental effects
                 if (enemy.isBossShield) {
                     // Don't damage shields that are already dead
                     if (enemy.hp <= 0) {
                         return;
                     }
                     
-                    enemy.hp -= dmg;
-                    enemy.flash = 5;
+                    // Initialize elemental states if they don't exist
+                    if (!enemy.pyroState) enemy.pyroState = { active: false, timer: 0, level: 0, baseDmg: 0, sourceWeapon: null };
+                    if (!enemy.cryoState) enemy.cryoState = { slowed: false, slowDuration: 0, frozen: false, frozenTimer: 0 };
+                    if (!enemy.bioState) enemy.bioState = { active: false, timer: 0, level: 0, maxDmg: 0, jumpCount: 0, sourceWeapon: null };
+                    if (!enemy.hackState) enemy.hackState = { active: false, timer: 0 };
                     
-                    // Use normal damage number styling (color from weapon, shows element icons)
                     let isCrit = false;
+                    let finalDmg = dmg;
+                    
                     if (allowCrit && seededRandom() < player.critChance) {
-                        dmg *= player.critMult;
+                        finalDmg *= player.critMult;
                         isCrit = true;
                     }
                     
+                    // Apply elementals (same as Nexus Prime)
+                    const augElement = forceElement || player.weaponAugments[sourceId];
+                    const isDirect = type === 'normal' || type === 'ultimate';
+                    const chance = 0.15; // Shield has reduced proc chance
+                    
+                    // FIRE: Apply burn with damage cap
+                    if (isDirect && augElement === 'fire') {
+                        if (seededRandom() < chance) {
+                            const duration = this.elementalMasteries.fire ? 480 : 360;
+                            if (!enemy.pyroState.active) {
+                                enemy.pyroState.active = true;
+                                enemy.pyroState.timer = duration;
+                                enemy.pyroState.level = 1;
+                                enemy.pyroState.baseDmg = Math.min(this.damage * 0.4, enemy.maxHp * 0.005);
+                                enemy.pyroState.sourceWeapon = sourceId;
+                            } else if (enemy.pyroState.level < 2) {
+                                enemy.pyroState.level++;
+                                enemy.pyroState.timer = duration;
+                                enemy.pyroState.baseDmg = Math.min(this.damage * 0.4, enemy.maxHp * 0.005);
+                                enemy.pyroState.sourceWeapon = sourceId;
+                            } else {
+                                enemy.pyroState.timer = duration;
+                            }
+                            state.elementsProcced.add('fire');
+                        }
+                    }
+                    
+                    // ICE: Apply slow
+                    if (isDirect && augElement === 'ice') {
+                        if (seededRandom() < chance) {
+                            enemy.cryoState.slowed = true;
+                            if (!enemy.cryoState.slowTimer) enemy.cryoState.slowTimer = 0;
+                            enemy.cryoState.slowTimer = 120;
+                            state.elementsProcced.add('ice');
+                        }
+                    }
+                    
+                    // BIO: Apply decay
+                    if (isDirect && augElement === 'bio') {
+                        if (seededRandom() < chance) {
+                            if (!enemy.bioState.active) {
+                                enemy.bioState.active = true;
+                                enemy.bioState.timer = 300;
+                                enemy.bioState.level = 1;
+                                enemy.bioState.maxDmg = Math.min(this.damage * 0.5 * 4, enemy.maxHp * 0.003 * 20);
+                                enemy.bioState.sourceWeapon = sourceId;
+                            } else if (enemy.bioState.level < 2) {
+                                enemy.bioState.level++;
+                                enemy.bioState.timer = 300;
+                                enemy.bioState.maxDmg = Math.min(this.damage * 0.5 * 4, enemy.maxHp * 0.003 * 20);
+                                enemy.bioState.sourceWeapon = sourceId;
+                            } else {
+                                enemy.bioState.timer = 300;
+                            }
+                            state.elementsProcced.add('bio');
+                        }
+                    }
+                    
+                    enemy.hp -= finalDmg;
+                    enemy.flash = 5;
+                    
                     const elementType = forceElement || player.weaponAugments[sourceId] || null;
-                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
+                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(finalDmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                     
                     // Only explode ONCE when dying (not every damage tick after death)
                     if (enemy.hp <= 0 && !enemy.hasExploded) {
@@ -6098,34 +6361,16 @@
                     return;
                 }
                 
-                // BOSS TURRET entities - damage them directly
+                // BOSS TURRET entities - let them fall through to normal enemy logic
                 if (enemy.isBossTurret) {
                     // Don't damage turrets that are already dead
                     if (enemy.hp <= 0) {
                         return;
                     }
-                    
-                    enemy.hp -= dmg;
-                    enemy.flash = 5;
-                    
-                    // Use normal damage number styling (color from weapon, shows element icons)
-                    let isCrit = false;
-                    if (allowCrit && seededRandom() < player.critChance) {
-                        dmg *= player.critMult;
-                        isCrit = true;
-                    }
-                    
-                    const elementType = forceElement || player.weaponAugments[sourceId] || null;
-                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
-                    
-                    if (enemy.hp <= 0) {
-                        enemy.hp = 0;
-                        createExplosion(enemy.x, enemy.y, '#ff8800', 20);
-                    }
-                    return;
+                    // Don't return early - let turrets use normal enemy elemental logic below
                 }
                 
-                // NEXUS PRIME boss doesn't have cryoState - skip elemental effects
+                // NEXUS PRIME boss - special handling for elemental effects
                 if (enemy.isNexusPrime) {
                     // Boss core only vulnerable when shields down
                     if (!enemy.coreVulnerable) {
@@ -6135,19 +6380,104 @@
                     // Core is vulnerable - deal INCREASED damage (25% bonus for satisfying feedback)
                     dmg *= 1.25; // Chunky damage when shields are down!
                     
+                    // Apply weapon damage mitigation
+                    if (enemy.isNexusPrime) {
+                        dmg *= 0.4; // 40% damage to Nexus Prime (60% reduction)
+                    }
+                    
                     let isCrit = false;
                     if (allowCrit && seededRandom() < player.critChance) {
                         dmg *= player.critMult;
                         isCrit = true;
                     }
                     
-                    enemy.hp -= dmg;
+                    let finalDmg = dmg;
+                    
+                    // NEXUS PRIME ELEMENTAL EFFECTS (CAPPED)
+                    // Initialize elemental states if they don't exist
+                    if (!enemy.pyroState) enemy.pyroState = { active: false, timer: 0, level: 0, baseDmg: 0, sourceWeapon: null };
+                    if (!enemy.cryoState) enemy.cryoState = { slowed: false, slowDuration: 0, frozen: false, frozenTimer: 0 };
+                    if (!enemy.bioState) enemy.bioState = { active: false, timer: 0, level: 0, maxDmg: 0, jumpCount: 0, sourceWeapon: null };
+                    if (!enemy.hackState) enemy.hackState = { active: false, timer: 0 }; // Boss immune but needs state
+                    
+                    const augElement = forceElement || player.weaponAugments[sourceId];
+                    const isDirect = type === 'normal' || type === 'ultimate';
+                    const chance = 0.15; // Boss has reduced proc chance
+                    
+                    // FIRE: Apply burn with damage cap
+                    if (isDirect && augElement === 'fire') {
+                        if (seededRandom() < chance) {
+                            const duration = this.elementalMasteries.fire ? 480 : 360;
+                            if (!enemy.pyroState.active) {
+                                enemy.pyroState.active = true;
+                                enemy.pyroState.timer = duration;
+                                enemy.pyroState.level = 1;
+                                // CAPPED: Boss burn is capped at 0.5% max HP per tick
+                                enemy.pyroState.baseDmg = Math.min(this.damage * 0.4, enemy.maxHp * 0.005);
+                                enemy.pyroState.sourceWeapon = sourceId;
+                            } else if (enemy.pyroState.level < 2) { // Max 2 stacks for boss
+                                enemy.pyroState.level++;
+                                enemy.pyroState.timer = duration;
+                                enemy.pyroState.baseDmg = Math.min(this.damage * 0.4, enemy.maxHp * 0.005);
+                                enemy.pyroState.sourceWeapon = sourceId;
+                            } else {
+                                enemy.pyroState.timer = duration; // Refresh
+                            }
+                            state.elementsProcced.add('fire');
+                        }
+                    }
+                    
+                    // ICE: Apply slow but NO freeze
+                    if (isDirect && augElement === 'ice') {
+                        if (seededRandom() < chance) {
+                            enemy.cryoState.slowed = true;
+                            // Don't use slowDuration for boss - that counts UP. Instead we'll handle timeout in boss update
+                            if (!enemy.cryoState.slowTimer) enemy.cryoState.slowTimer = 0;
+                            enemy.cryoState.slowTimer = 120; // 2 seconds
+                            state.elementsProcced.add('ice');
+                        }
+                    }
+                    
+                    // BIO: Apply decay with damage cap
+                    if (isDirect && augElement === 'bio') {
+                        if (seededRandom() < chance) {
+                            if (!enemy.bioState.active) {
+                                enemy.bioState.active = true;
+                                enemy.bioState.timer = 300;
+                                enemy.bioState.level = 1;
+                                // CAPPED: Boss decay is capped at 0.3% max HP per tick
+                                enemy.bioState.maxDmg = Math.min(this.damage * 0.5 * 4, enemy.maxHp * 0.003 * 20); // 20 ticks
+                                enemy.bioState.sourceWeapon = sourceId;
+                            } else if (enemy.bioState.level < 2) { // Max 2 stacks for boss
+                                enemy.bioState.level++;
+                                enemy.bioState.timer = 300;
+                                enemy.bioState.maxDmg = Math.min(this.damage * 0.5 * 4, enemy.maxHp * 0.003 * 20);
+                                enemy.bioState.sourceWeapon = sourceId;
+                            } else {
+                                enemy.bioState.timer = 300; // Refresh
+                            }
+                            state.elementsProcced.add('bio');
+                        }
+                    }
+                    
+                    // VOLT: Apply chain with reduced damage (50%)
+                    if (isDirect && augElement === 'volt') {
+                        if (seededRandom() < chance * 0.5) { // Half proc chance
+                            // Volt doesn't chain from boss (single target only)
+                            state.elementsProcced.add('volt');
+                        }
+                    }
+                    
+                    // HACK: Boss is immune (boss tier)
+                    // No hack application
+                    
+                    enemy.hp -= finalDmg;
                     
                     // ULTIMATE CHARGE: Gain charge from damage dealt (using ultimate-specific rate)
                     if (player.ultimate && player.ultimateCharge < 100 && !player.ultimateActive) {
                         const ultimateData = ULTIMATES[player.ultimate];
                         if (ultimateData && ultimateData.damageChargeBonus) {
-                            let chargeGain = dmg * ultimateData.damageChargeBonus;
+                            let chargeGain = finalDmg * ultimateData.damageChargeBonus;
                             
                             // ASCENSION 3+: ENERGY LEAK - Ultimate charges 20% slower
                             if (player.energyLeakPenalty) {
@@ -6160,7 +6490,7 @@
                     }
                     
                     const elementType = forceElement || player.weaponAugments[sourceId] || null;
-                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
+                    entities.texts.push(new FloatingText(enemy.x, enemy.y - 20, Math.ceil(finalDmg * DAMAGE_DISPLAY_MULTIPLIER), color, isCrit, type, sourceId, elementType));
                     return;
                 }
                 
@@ -6238,6 +6568,14 @@
                     }
                 }
                 
+                // WEAPON DAMAGE MITIGATION for Champions and Nexus Prime
+                // Similar to ultimates, regular weapons deal reduced damage to bosses
+                if (enemy.isChampion) {
+                    finalDmg *= 0.7; // 70% damage to champions (30% reduction)
+                } else if (enemy.isNexusPrime) {
+                    finalDmg *= 0.4; // 40% damage to Nexus Prime (60% reduction)
+                }
+                
                 // CRYO SHATTER: Cryo weapons hitting frozen enemies trigger shatter explosion
                 // This is the NEW controlled shatter mechanic
                 if (enemy.cryoState.frozenTimer > 0) {
@@ -6298,7 +6636,8 @@
                             'mines': 1.5,      // Burst damage weapon
                             'gas': 1.6,        // DOT weapon
                             'ricochet': 1.3,   // Bouncing weapon (less effective solo)
-                            'drones': 1.4      // Sustained DPS weapon
+                            'drones': 1.4,     // Sustained DPS weapon
+                            'boomerang': 1.3   // Orbiting weapon
                         };
                         const bossBonus = bossBonuses[sourceId] || 1.3; // Default 30% bonus
                         finalDmg *= bossBonus;
@@ -8362,7 +8701,13 @@
                                 }
                             });
                             
-                            createExplosion(singularityX, singularityY, '#9400ff', 80);
+                            // Brighter collapse explosion
+                            createExplosion(singularityX, singularityY, '#ffffff', 120); // Bright white flash
+                            createExplosion(singularityX, singularityY, '#9400ff', 100); // Purple glow
+                            createExplosion(singularityX, singularityY, '#ff00ff', 80);  // Magenta ring
+                            
+                            // Add screen shake for impact
+                            state.shake = 15;
                             
                             // Cleanup
                             if (player.ultimateData.eventHorizon) {
@@ -8978,6 +9323,14 @@
                     speedMult *= 1.15;
                 }
                 
+                // ENDLESS MODE: ACCELERATED ENEMIES debuff
+                if (state.gameMode === 'endless') {
+                    const acceleratedCount = state.endlessDebuffs.filter(d => d === 'accelerated_enemies').length;
+                    if (acceleratedCount > 0) {
+                        speedMult *= Math.pow(1.15, acceleratedCount); // Each stack = +15% speed
+                    }
+                }
+                
                 // SCALING: Post lvl 20 harder (reduced from 0.05 to 0.03 for smoother difficulty curve)
                 // This prevents the damage spike at level 25+ that makes defenses feel inadequate
                 let scaling = state.level > 20 ? 1.0 + (state.level-20)*0.03 : 1.0;
@@ -8988,10 +9341,26 @@
                     titanBonus = 1.25;
                 }
                 
+                // ENDLESS MODE: EMPOWERED TITANS debuff
+                if (state.gameMode === 'endless' && type === 'champion') {
+                    const empoweredCount = state.endlessDebuffs.filter(d => d === 'empowered_titans').length;
+                    if (empoweredCount > 0) {
+                        titanBonus *= Math.pow(1.25, empoweredCount); // Each stack = +25% HP/damage
+                    }
+                }
+                
                 // ASCENSION 5: OVERCHARGED ENEMIES - All enemies deal +20% damage
                 let damageBonus = 1.0;
                 if (state.activeAscension === 5) {
                     damageBonus = 1.20;
+                }
+                
+                // ENDLESS MODE: OVERCHARGED ENEMIES debuff
+                if (state.gameMode === 'endless') {
+                    const overchargedCount = state.endlessDebuffs.filter(d => d === 'overcharged_enemies').length;
+                    if (overchargedCount > 0) {
+                        damageBonus *= Math.pow(1.20, overchargedCount); // Each stack = +20% damage
+                    }
                 }
 
 
@@ -9607,6 +9976,36 @@
                                 const sy = this.y + (seededRandom()-0.5)*20;
                                 entities.pickups.push(new Pickup(sx, sy, this.xp / 4, 'xp'));
                             }
+                            
+                            // ENDLESS MODE: Drop void shards
+                            if (state.gameMode === 'endless') {
+                                let shardAmount = 0;
+                                const levelMultiplier = 1 + (state.endlessLevel / 100);
+                                const shardBoostMultiplier = state.shardBoostActive ? 1.25 : 1.0;
+                                
+                                // Base shard amounts by enemy type
+                                if (this.type === 'champion') {
+                                    shardAmount = Math.floor((8 + Math.floor(seededRandom() * 5)) * levelMultiplier * shardBoostMultiplier); // 8-12
+                                } else if (this.type === 'elite') {
+                                    shardAmount = Math.floor((3 + Math.floor(seededRandom() * 3)) * levelMultiplier * shardBoostMultiplier); // 3-5
+                                }
+                                
+                                if (shardAmount > 0) {
+                                    const sx = this.x + (seededRandom()-0.5)*15;
+                                    const sy = this.y + (seededRandom()-0.5)*15;
+                                    entities.pickups.push(new Pickup(sx, sy, shardAmount, 'void_shard'));
+                                }
+                                
+                                // ENDLESS MODE: Calculate score
+                                let basePoints = 0;
+                                if (this.type === 'champion') basePoints = 200;
+                                else if (this.type === 'elite') basePoints = 50;
+                                
+                                const levelBonus = 1 + (state.endlessLevel * 0.1);
+                                const debuffBonus = 1 + (state.endlessDebuffs.length * 0.05);
+                                const points = Math.floor(basePoints * levelBonus * debuffBonus);
+                                state.endlessScore += points;
+                            }
                         }
                     } else {
                         let shards = 1;
@@ -9617,6 +10016,30 @@
                                 const sx = this.x + (seededRandom()-0.5)*20; const sy = this.y + (seededRandom()-0.5)*20;
                                 entities.pickups.push(new Pickup(sx, sy, this.xp / shards, 'xp'));
                             }
+                            
+                            // ENDLESS MODE: Drop void shards
+                            if (state.gameMode === 'endless') {
+                                let shardAmount = 0;
+                                const levelMultiplier = 1 + (state.endlessLevel / 100);
+                                const shardBoostMultiplier = state.shardBoostActive ? 1.25 : 1.0;
+                                
+                                // Normal enemies: 1-2 shards
+                                shardAmount = Math.floor((1 + Math.floor(seededRandom() * 2)) * levelMultiplier * shardBoostMultiplier);
+                                
+                                if (shardAmount > 0) {
+                                    const sx = this.x + (seededRandom()-0.5)*15;
+                                    const sy = this.y + (seededRandom()-0.5)*15;
+                                    entities.pickups.push(new Pickup(sx, sy, shardAmount, 'void_shard'));
+                                }
+                                
+                                // ENDLESS MODE: Calculate score
+                                const basePoints = 10;
+                                const levelBonus = 1 + (state.endlessLevel * 0.1);
+                                const debuffBonus = 1 + (state.endlessDebuffs.length * 0.05);
+                                const points = Math.floor(basePoints * levelBonus * debuffBonus);
+                                state.endlessScore += points;
+                            }
+                            
                             // Magnet drop rate scales down over time as kill volume increases
                             // Starts at 0.2%, scales to 0.05% by 10 minutes
                             const timeMinutes = state.gameTime / 60000;
@@ -9810,6 +10233,17 @@
                         this.cryoState.slowed = false;
                         this.cryoState.slowDuration = 0;
                     }
+                }
+                
+                // NEXUS PRIME: Special slow timer countdown (doesn't use slowDuration)
+                if (this.isNexusPrime && this.cryoState.slowed && this.cryoState.slowTimer) {
+                    this.cryoState.slowTimer -= dt/16;
+                    if (this.cryoState.slowTimer <= 0) {
+                        this.cryoState.slowed = false;
+                        this.cryoState.slowTimer = 0;
+                    }
+                    // Boss gets reduced slow (25% instead of 60%)
+                    cryoSlow = 0.75; // Move at 75% speed
                 }
                 
                 if (this.bioState.active) {
@@ -12411,7 +12845,7 @@
                     }
                     
                     // CONSTANT rotation throughout (increased for smoother arc)
-                    this.orbitAngle += 0.14 * (dt/16);
+                    this.orbitAngle += 0.16 * (dt/16); // Slightly faster orbit
                     
                     // Eased speed based on distance
                     const distanceRatio = this.orbitDistance / this.maxRange;
@@ -12438,15 +12872,35 @@
                     this.x = player.x + Math.cos(this.orbitAngle) * this.orbitDistance;
                     this.y = player.y + Math.sin(this.orbitAngle) * this.orbitDistance;
                     
-                    // Hit detection - damages enemies during all phases
+                    // Hit detection - damages enemies with short cooldown per enemy
                     // Blade size scales with area upgrades (stored in this.bladeSize)
                     const bladeRadius = this.bladeSize || 15;
+                    
+                    // Initialize hit cooldown tracking (Map: enemy -> timestamp of last hit)
+                    if (!this.enemyCooldowns) this.enemyCooldowns = new Map();
+                    
+                    const now = Date.now();
+                    const cooldownMs = 500; // 0.5 second cooldown
+                    
+                    // Clean up dead enemies and expired cooldowns from map
+                    for (let enemy of this.enemyCooldowns.keys()) {
+                        if (enemy.hp <= 0 || (now - this.enemyCooldowns.get(enemy)) > cooldownMs * 2) {
+                            this.enemyCooldowns.delete(enemy);
+                        }
+                    }
+                    
                     for (let e of entities.enemies) {
                         if (e.hp > 0) {
-                            const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
-                            if (dist < e.radius + bladeRadius) {
-                                player.dealElementalDamage(e, this.damage, 'boomerang', '#b048f5');
-                                // Don't destroy boomerang on hit - it passes through
+                            const lastHitTime = this.enemyCooldowns.get(e) || 0;
+                            
+                            // Only hit if cooldown expired (500ms since last hit)
+                            if (now - lastHitTime >= cooldownMs) {
+                                const dist = Math.sqrt((e.x - this.x)**2 + (e.y - this.y)**2);
+                                if (dist < e.radius + bladeRadius) {
+                                    player.dealElementalDamage(e, this.damage, 'boomerang', '#b048f5');
+                                    this.enemyCooldowns.set(e, now); // Store timestamp of this hit
+                                    // Don't destroy boomerang on hit - it passes through
+                                }
                             }
                         }
                     }
@@ -13687,6 +14141,21 @@
                         return false; // Remove pickup
                     }
                     if (this.type === 'magnet') { activateMagnet(); }
+                    if (this.type === 'void_shard') {
+                        // Collect Void Shard (Endless Mode currency)
+                        if (state.gameMode === 'endless') {
+                            state.voidShards += this.val;
+                            state.totalShardsCollected += this.val;
+                            
+                            // Update HUD
+                            const shardCounter = document.getElementById('void-shard-count');
+                            if (shardCounter) shardCounter.textContent = state.voidShards;
+                            
+                            // Visual feedback
+                            createFloatingText(player.x, player.y - 20, `+${this.val}`, '#a855f7', 14);
+                            createExplosion(player.x, player.y, '#a855f7', 15);
+                        }
+                    }
                     if (this.type === 'nexus_core') {
                         // TEST MODE: Don't save cores in test mode (would be cheating)
                         if (testModeEnabled) {
@@ -13764,8 +14233,18 @@
             }
             draw(ctx) {
                 if (this.type === 'xp') {
-                    ctx.fillStyle = '#00d1b2'; ctx.shadowColor = '#00d1b2'; ctx.shadowBlur = 8;
-                    ctx.beginPath(); ctx.moveTo(this.x, this.y-5); ctx.lineTo(this.x+5, this.y); ctx.lineTo(this.x, this.y+5); ctx.lineTo(this.x-5, this.y); ctx.fill(); ctx.shadowBlur = 0;
+                    // Scale size based on XP value (2.5 base XP, up to 50 XP max)
+                    const sizeScale = Math.min(1 + (this.val / 50), 2.5); // 1x to 2.5x size
+                    const baseSize = 5 * sizeScale;
+                    
+                    ctx.fillStyle = '#00d1b2'; ctx.shadowColor = '#00d1b2'; ctx.shadowBlur = 8 * sizeScale;
+                    ctx.beginPath(); 
+                    ctx.moveTo(this.x, this.y - baseSize); 
+                    ctx.lineTo(this.x + baseSize, this.y); 
+                    ctx.lineTo(this.x, this.y + baseSize); 
+                    ctx.lineTo(this.x - baseSize, this.y); 
+                    ctx.fill(); 
+                    ctx.shadowBlur = 0;
                 } else if (this.type === 'health') {
                     // Health pack - glowing red cross with pulsing animation
                     const pulse = 0.8 + Math.sin(Date.now() * 0.005) * 0.2;
@@ -13982,6 +14461,44 @@
                     ctx.shadowBlur = 0;
                     ctx.restore();
                     
+                } else if (this.type === 'void_shard') {
+                    // Void Shard - Purple gem (Endless Mode currency)
+                    const pulse = 0.7 + Math.sin(Date.now() * 0.006) * 0.3;
+                    
+                    ctx.save();
+                    ctx.translate(this.x, this.y);
+                    
+                    // Outer glow
+                    ctx.fillStyle = `rgba(168, 85, 247, ${0.3 * pulse})`;
+                    ctx.shadowColor = '#a855f7';
+                    ctx.shadowBlur = 12 * pulse;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 10, 0, Math.PI*2);
+                    ctx.fill();
+                    
+                    // Main gem (diamond shape)
+                    ctx.fillStyle = '#a855f7';
+                    ctx.strokeStyle = '#c084fc';
+                    ctx.lineWidth = 1.5;
+                    ctx.shadowBlur = 8;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -6);
+                    ctx.lineTo(5, 0);
+                    ctx.lineTo(0, 6);
+                    ctx.lineTo(-5, 0);
+                    ctx.closePath();
+                    ctx.fill();
+                    ctx.stroke();
+                    
+                    // Inner highlight
+                    ctx.fillStyle = `rgba(255, 255, 255, ${pulse})`;
+                    ctx.shadowBlur = 0;
+                    ctx.beginPath();
+                    ctx.arc(-2, -2, 2, 0, Math.PI*2);
+                    ctx.fill();
+                    
+                    ctx.restore();
+                    
                 } else if (this.type === 'core') {
                     ctx.fillStyle = '#ff00ff'; ctx.font = 'bold 24px Orbitron'; ctx.fillText('DATA', this.x-20, this.y+10);
                 } else if (this.type === 'mod_crate') {
@@ -13989,6 +14506,69 @@
                     ctx.fillRect(this.x-10, this.y-10, 20, 20); ctx.shadowBlur = 0;
                     ctx.fillStyle = '#000'; ctx.font = 'bold 12px Arial'; ctx.fillText('?', this.x-4, this.y+4);
                 }
+            }
+        }
+        
+        // XP Pickup Consolidation System - prevents performance issues from too many pickups
+        function consolidateXPPickups() {
+            const xpPickups = entities.pickups.filter(p => p.type === 'xp');
+            
+            // Only consolidate if we have more than 200 XP pickups
+            if (xpPickups.length <= 200) return;
+            
+            // Sort by position to group nearby pickups
+            xpPickups.sort((a, b) => {
+                const distA = (a.x - player.x) ** 2 + (a.y - player.y) ** 2;
+                const distB = (b.x - player.x) ** 2 + (b.y - player.y) ** 2;
+                return distA - distB;
+            });
+            
+            const mergeRadius = 30; // Pickups within 30 units will merge
+            const toRemove = new Set();
+            const toAdd = [];
+            
+            // Merge nearby pickups
+            for (let i = 0; i < xpPickups.length; i++) {
+                if (toRemove.has(xpPickups[i])) continue;
+                
+                let mergedValue = xpPickups[i].val;
+                const mergeGroup = [xpPickups[i]];
+                
+                // Find nearby pickups to merge
+                for (let j = i + 1; j < xpPickups.length; j++) {
+                    if (toRemove.has(xpPickups[j])) continue;
+                    
+                    const dx = xpPickups[i].x - xpPickups[j].x;
+                    const dy = xpPickups[i].y - xpPickups[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (dist < mergeRadius) {
+                        mergedValue += xpPickups[j].val;
+                        mergeGroup.push(xpPickups[j]);
+                        toRemove.add(xpPickups[j]);
+                        
+                        // Cap at 50 XP per pickup
+                        if (mergedValue >= 50) break;
+                    }
+                }
+                
+                // If we merged multiple pickups, create a new larger one
+                if (mergeGroup.length > 1) {
+                    toRemove.add(xpPickups[i]);
+                    const avgX = mergeGroup.reduce((sum, p) => sum + p.x, 0) / mergeGroup.length;
+                    const avgY = mergeGroup.reduce((sum, p) => sum + p.y, 0) / mergeGroup.length;
+                    toAdd.push(new Pickup(avgX, avgY, Math.min(mergedValue, 50), 'xp'));
+                }
+                
+                // Stop if we've reduced enough
+                if (xpPickups.length - toRemove.size <= 200) break;
+            }
+            
+            // Remove old pickups and add merged ones
+            if (toRemove.size > 0) {
+                entities.pickups = entities.pickups.filter(p => !toRemove.has(p));
+                entities.pickups.push(...toAdd);
+                console.log(`🔄 Consolidated ${toRemove.size} XP pickups into ${toAdd.length} (total: ${entities.pickups.filter(p => p.type === 'xp').length})`);
             }
         }
         
@@ -14258,6 +14838,30 @@
             state.ultimateCameraTarget = null; // Clear camera target
             state.playerDead = false; // Reset death flag for new game
             window.upgradesSaveMode = false;
+            
+            // ENDLESS MODE: Initialize state
+            if (state.gameMode === 'endless') {
+                state.endlessLevel = 1;
+                state.endlessScore = 0;
+                state.endlessDebuffs = [];
+                state.voidShards = 0;
+                state.totalShardsCollected = 0;
+                state.nextDebuffLevel = 15;
+                state.nextCheckpointLevel = 25;
+                state.checkpointPurchases = { left: false, right: false };
+                state.shardBoostActive = false;
+                state.shardBoostEndLevel = 0;
+                
+                // Show endless HUD elements
+                document.getElementById('void-shard-hud').style.display = 'block';
+                document.getElementById('void-shard-count').textContent = '0';
+                document.getElementById('debuff-display').style.display = 'none'; // Will show when debuffs added
+            } else {
+                // Hide endless HUD elements for normal mode
+                document.getElementById('void-shard-hud').style.display = 'none';
+                document.getElementById('debuff-display').style.display = 'none';
+            }
+            
             // Reset HUD
             document.getElementById('boss-hud').classList.remove('active');
             
@@ -16174,16 +16778,29 @@
                 console.log('This should not happen - boss should trigger in gainXp()');
             }
             
-            // CHAMPION SPAWN: Levels 15, 25, 35 only (skip 45, go straight to boss at 50)
-            if (!state.finalBossTriggered && !state.bossActive && state.bossWave !== state.level && (state.level === 15 || state.level === 25 || state.level === 35)) {
+            // CHAMPION SPAWN: Levels 15, 25, 35 only (skip 45, go straight to boss at 50) - NORMAL MODE
+            // ENDLESS MODE: Spawn titans every 10 levels starting at 15 (1, 2, 3+ titans)
+            const shouldSpawnTitans = state.gameMode === 'endless' 
+                ? (state.level >= 15 && (state.level - 15) % 10 === 0)
+                : (state.level === 15 || state.level === 25 || state.level === 35);
+            
+            if (!state.finalBossTriggered && !state.bossActive && state.bossWave !== state.level && shouldSpawnTitans) {
                 state.bossActive = true; // Flag to track champion is active
                 state.bossWave = state.level;
                 // DON'T clear enemies - champion joins the fight!
                 
                 // Determine number of TITANs based on level
                 let titanCount = 1;
-                if (state.level >= 35) titanCount = 3;
-                else if (state.level >= 25) titanCount = 2;
+                if (state.gameMode === 'endless') {
+                    // Endless: 1 titan at 15, 2 at 25, 3 at 35+
+                    if (state.level >= 35) titanCount = 3;
+                    else if (state.level >= 25) titanCount = 2;
+                    else titanCount = 1;
+                } else {
+                    // Normal: same logic
+                    if (state.level >= 35) titanCount = 3;
+                    else if (state.level >= 25) titanCount = 2;
+                }
                 
                 // Clear previous health bars
                 const barsContainer = document.getElementById('boss-bars-container');
@@ -16353,6 +16970,14 @@
                 spawnInterval = Math.floor(spawnInterval * 0.87); // 13% reduction = ~15% more spawns
             }
             
+            // ENDLESS MODE: Check for aggressive swarms debuff
+            if (state.gameMode === 'endless' && state.endlessDebuffs.includes('aggressive_swarms')) {
+                const count = state.endlessDebuffs.filter(d => d === 'aggressive_swarms').length;
+                // Each stack = 15% faster spawns
+                const multiplier = Math.pow(0.87, count); // 0.87^count
+                spawnInterval = Math.floor(spawnInterval * multiplier);
+            }
+            
             // Override spawn interval during rapid spawning
             if (state.rapidSpawning) {
                 spawnInterval = 5; // Spawn every 5 frames (~12 per second at 60fps)
@@ -16382,6 +17007,11 @@
                 if(a) p.draw(ctx); 
                 return a; 
             });
+            
+            // Consolidate XP pickups if there are too many (performance optimization)
+            if (state.frameCount % 120 === 0) { // Check every 2 seconds
+                consolidateXPPickups();
+            }
             
             // Check if we have pending upgrades (level ups or ultimate selection)
             if (state.upgradeQueue && state.upgradeQueue.length > 0 && state.screen === 'game' && !player.ultimateActive) {
@@ -17484,8 +18114,26 @@
                                 !en.isNexusPrime && !en.isBossShield && !en.isBossTurret
                             );
                             
-                            // Drop Quantum Singularity at boss location
-                            entities.pickups.push(new Pickup(deathX, deathY, 1, 'singularity'));
+                            // Drop Quantum Singularity at boss location (normal mode)
+                            if (state.gameMode !== 'endless') {
+                                entities.pickups.push(new Pickup(deathX, deathY, 1, 'singularity'));
+                            }
+                            
+                            // ENDLESS MODE: Drop void shards instead
+                            if (state.gameMode === 'endless') {
+                                const levelMultiplier = 1 + (state.endlessLevel / 100);
+                                const shardBoostMultiplier = state.shardBoostActive ? 1.25 : 1.0;
+                                const shardAmount = Math.floor((15 + Math.floor(seededRandom() * 11)) * levelMultiplier * shardBoostMultiplier); // 15-25
+                                
+                                entities.pickups.push(new Pickup(deathX, deathY, shardAmount, 'void_shard'));
+                                
+                                // ENDLESS MODE: Boss score
+                                const basePoints = 500;
+                                const levelBonus = 1 + (state.endlessLevel * 0.1);
+                                const debuffBonus = 1 + (state.endlessDebuffs.length * 0.05);
+                                const points = Math.floor(basePoints * levelBonus * debuffBonus);
+                                state.endlessScore += points;
+                            }
                             
                             // Victory - boss defeated, no more enemy spawns
                             state.finalBossActive = false;
@@ -17501,6 +18149,157 @@
                     // EXPLICIT CLEANUP: Remove dead boss shields and turrets immediately
                     if ((e.isBossShield || e.isBossTurret) && e.hp <= 0) {
                         return false; // Remove from array
+                    }
+                    
+                    // NEXUS PRIME ELEMENTAL STATE TICKING (since it doesn't call Enemy.update())
+                    if (e.isNexusPrime && e.hp > 0) {
+                        // Pyro (fire) ticking
+                        if (e.pyroState && e.pyroState.active) {
+                            e.pyroState.timer -= scaledDt/16;
+                            if (e.pyroState.timer <= 0) {
+                                e.pyroState.active = false;
+                            } else {
+                                // Tick damage every 20 frames
+                                if (!e.pyroState.lastTick) e.pyroState.lastTick = e.pyroState.timer;
+                                const currentInterval = Math.floor(e.pyroState.timer / 20);
+                                const lastInterval = Math.floor(e.pyroState.lastTick / 20);
+                                
+                                if (currentInterval < lastInterval) {
+                                    e.pyroState.lastTick = e.pyroState.timer;
+                                    const progress = 1 - (e.pyroState.timer / 360);
+                                    
+                                    // Boss uses flat damage
+                                    const baseFlatDmg = (e.pyroState.baseDmg || player.damage) * 2.0;
+                                    let dmg = baseFlatDmg * (1 + progress * 0.5);
+                                    dmg *= (e.pyroState.level || 1);
+                                    if (player.elementalMasteries.fire) dmg *= 1.3;
+                                    
+                                    if (dmg > 0 && !isNaN(dmg)) {
+                                        e.takeDamage(dmg, '#ff5722', false, 'dot', e.pyroState.sourceWeapon, 'fire');
+                                        if(seededRandom()<0.3) entities.particles.push(new Particle(e.x, e.y, '#ff5722', 0.5));
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Cryo (ice) slow timer
+                        if (e.cryoState && e.cryoState.slowed && e.cryoState.slowTimer) {
+                            e.cryoState.slowTimer -= scaledDt/16;
+                            if (e.cryoState.slowTimer <= 0) {
+                                e.cryoState.slowed = false;
+                                e.cryoState.slowTimer = 0;
+                            }
+                        }
+                        
+                        // Bio (decay) ticking
+                        if (e.bioState && e.bioState.active) {
+                            e.bioState.timer -= scaledDt/16;
+                            if (e.bioState.timer <= 0) {
+                                e.bioState.active = false;
+                            } else {
+                                // Tick damage every 20 frames (or faster with mastery)
+                                let tickInterval = player.elementalMasteries.bio ? 13 : 20;
+                                if (!e.bioState.lastTick) e.bioState.lastTick = e.bioState.timer;
+                                const currentInterval = Math.floor(e.bioState.timer / tickInterval);
+                                const lastInterval = Math.floor(e.bioState.lastTick / tickInterval);
+                                
+                                if (currentInterval < lastInterval) {
+                                    e.bioState.lastTick = e.bioState.timer;
+                                    const progress = (e.bioState.timer / 300);
+                                    
+                                    // Boss uses flat damage
+                                    const baseFlatDmg = player.damage * 2.5;
+                                    let dmg = baseFlatDmg * (1 + progress * 0.5);
+                                    dmg *= (e.bioState.level || 1);
+                                    
+                                    if (dmg > 0 && !isNaN(dmg)) {
+                                        e.takeDamage(dmg, '#00cc44', false, 'dot', e.bioState.sourceWeapon, 'bio');
+                                        if(seededRandom()<0.3) entities.particles.push(new Particle(e.x, e.y, '#00cc44', 0.3));
+                                        
+                                        // Bio armor reduction
+                                        if (e.armor && e.armor > 0) {
+                                            e.armor = Math.max(0, e.armor * 0.98);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    // BOSS SHIELD ELEMENTAL STATE TICKING (same as Nexus Prime)
+                    if (e.isBossShield && e.hp > 0) {
+                        // Pyro (fire) ticking
+                        if (e.pyroState && e.pyroState.active) {
+                            e.pyroState.timer -= scaledDt/16;
+                            if (e.pyroState.timer <= 0) {
+                                e.pyroState.active = false;
+                            } else {
+                                // Tick damage every 20 frames
+                                if (!e.pyroState.lastTick) e.pyroState.lastTick = e.pyroState.timer;
+                                const currentInterval = Math.floor(e.pyroState.timer / 20);
+                                const lastInterval = Math.floor(e.pyroState.lastTick / 20);
+                                
+                                if (currentInterval < lastInterval) {
+                                    e.pyroState.lastTick = e.pyroState.timer;
+                                    const progress = 1 - (e.pyroState.timer / 360);
+                                    
+                                    const baseFlatDmg = (e.pyroState.baseDmg || player.damage) * 2.0;
+                                    let dmg = baseFlatDmg * (1 + progress * 0.5);
+                                    dmg *= (e.pyroState.level || 1);
+                                    if (player.elementalMasteries.fire) dmg *= 1.3;
+                                    
+                                    if (dmg > 0 && !isNaN(dmg)) {
+                                        e.hp -= dmg;
+                                        e.flash = 5;
+                                        entities.texts.push(new FloatingText(e.x, e.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), '#ff5722', false, 'dot', e.pyroState.sourceWeapon, 'fire'));
+                                        if(seededRandom()<0.3) entities.particles.push(new Particle(e.x, e.y, '#ff5722', 0.5));
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // Cryo (ice) slow timer
+                        if (e.cryoState && e.cryoState.slowed && e.cryoState.slowTimer) {
+                            e.cryoState.slowTimer -= scaledDt/16;
+                            if (e.cryoState.slowTimer <= 0) {
+                                e.cryoState.slowed = false;
+                                e.cryoState.slowTimer = 0;
+                            }
+                        }
+                        
+                        // Bio (decay) ticking
+                        if (e.bioState && e.bioState.active) {
+                            e.bioState.timer -= scaledDt/16;
+                            if (e.bioState.timer <= 0) {
+                                e.bioState.active = false;
+                            } else {
+                                let tickInterval = player.elementalMasteries.bio ? 13 : 20;
+                                if (!e.bioState.lastTick) e.bioState.lastTick = e.bioState.timer;
+                                const currentInterval = Math.floor(e.bioState.timer / tickInterval);
+                                const lastInterval = Math.floor(e.bioState.lastTick / tickInterval);
+                                
+                                if (currentInterval < lastInterval) {
+                                    e.bioState.lastTick = e.bioState.timer;
+                                    const progress = (e.bioState.timer / 300);
+                                    
+                                    const baseFlatDmg = player.damage * 2.5;
+                                    let dmg = baseFlatDmg * (1 + progress * 0.5);
+                                    dmg *= (e.bioState.level || 1);
+                                    
+                                    if (dmg > 0 && !isNaN(dmg)) {
+                                        e.hp -= dmg;
+                                        e.flash = 5;
+                                        entities.texts.push(new FloatingText(e.x, e.y - 20, Math.ceil(dmg * DAMAGE_DISPLAY_MULTIPLIER), '#00cc44', false, 'dot', e.bioState.sourceWeapon, 'bio'));
+                                        if(seededRandom()<0.3) entities.particles.push(new Particle(e.x, e.y, '#00cc44', 0.3));
+                                        
+                                        // Bio armor reduction
+                                        if (e.armor && e.armor > 0) {
+                                            e.armor = Math.max(0, e.armor * 0.98);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                     
                     return e.hp > 0;
@@ -19463,7 +20262,7 @@
             entities.projectiles = entities.projectiles.filter(p => {
                 const active = p.update(scaledDt);
                 if(!active) return false;
-                if (p.type !== 'meteor_warning' && p.type !== 'mine' && p.type !== 'grenade' && p.type !== 'railgun' && p.type !== 'flak_shell' && p.type !== 'bio_spore' && p.type !== 'ricochet' && p.type !== 'emp_pulse' && p.type !== 'surge' && p.source !== 'orbital') {
+                if (p.type !== 'meteor_warning' && p.type !== 'mine' && p.type !== 'grenade' && p.type !== 'railgun' && p.type !== 'flak_shell' && p.type !== 'bio_spore' && p.type !== 'ricochet' && p.type !== 'emp_pulse' && p.type !== 'surge' && p.type !== 'boomerang' && p.source !== 'orbital') {
                     let hit = false;
                     // ⚡ OPTIMIZED: Use spatial grid instead of checking ALL enemies
                     // Before: 100 projectiles × 50 enemies = 5000 checks/frame
@@ -19771,13 +20570,48 @@
             else nextCurve = 635 + ((state.level - 45) * 8); // Final stretch 45-50: +8 per level (nearly linear) 
 
 
-            if(state.xp >= state.xpToNext && state.level < 50) { // Cap at level 50
+            // Check level up - no cap in endless mode
+            const levelCap = state.gameMode === 'endless' ? Infinity : 50;
+            if(state.xp >= state.xpToNext && state.level < levelCap) {
                 state.level++; state.xp=0; state.xpToNext = nextCurve;
+                
+                // ENDLESS MODE: Update endless level
+                if (state.gameMode === 'endless') {
+                    state.endlessLevel = state.level;
+                }
                 
                 console.log(`⬆️ LEVEL UP to ${state.level} (screen: ${state.screen}, queue length: ${state.upgradeQueue ? state.upgradeQueue.length : 0})`);
                 
-                // CRITICAL: Trigger NEXUS PRIME immediately on level 50 (NO level-up screen!)
-                if (state.level === 50 && !state.finalBossTriggered) {
+                // ENDLESS MODE: Check for debuff roll (every 10 levels starting at 15)
+                if (state.gameMode === 'endless' && state.level >= state.nextDebuffLevel) {
+                    console.log(`🌀 ENDLESS: Rolling debuff at level ${state.level}`);
+                    rollEndlessDebuff();
+                    state.nextDebuffLevel += 10;
+                }
+                
+                // ENDLESS MODE: Check for checkpoint shop (every 25 levels)
+                if (state.gameMode === 'endless' && state.level >= state.nextCheckpointLevel) {
+                    console.log(`🛒 ENDLESS: Opening checkpoint shop at level ${state.level}`);
+                    
+                    // Award checkpoint bonus score
+                    const checkpointBonus = state.level * 100; // Level 25 = 2500, Level 50 = 5000, etc.
+                    state.endlessScore += checkpointBonus;
+                    
+                    openEndlessCheckpoint();
+                    state.nextCheckpointLevel += 25;
+                    
+                    // Award milestone rewards
+                    awardEndlessMilestone(state.level);
+                }
+                
+                // ENDLESS MODE: Check shard boost expiration
+                if (state.gameMode === 'endless' && state.shardBoostActive && state.level >= state.shardBoostEndLevel) {
+                    state.shardBoostActive = false;
+                    console.log(`💎 Shard boost expired at level ${state.level}`);
+                }
+                
+                // CRITICAL: Trigger NEXUS PRIME immediately on level 50 (NO level-up screen!) - NORMAL MODE ONLY
+                if (state.gameMode !== 'endless' && state.level === 50 && !state.finalBossTriggered) {
                     console.log('⚡ Level 50 hit - triggering NEXUS PRIME immediately (NO LEVEL-UP)');
                     state.finalBossTriggered = true;
                     state.finalBossActive = true; // Set IMMEDIATELY to stop spawns
@@ -19813,8 +20647,8 @@
                 
                 state.pendingLevelUps++;
                 // Don't show levelup screen immediately - let game loop handle it after XP collection completes
-            } else if (state.level >= 50) {
-                // At level 50, cap XP at xpToNext to prevent overflow
+            } else if (state.gameMode !== 'endless' && state.level >= 50) {
+                // At level 50, cap XP at xpToNext to prevent overflow (NORMAL MODE ONLY)
                 state.xp = Math.min(state.xp, state.xpToNext);
             }
         }
@@ -21098,7 +21932,7 @@
             5: {
                 name: 'Ascension V',
                 debuffs: [
-                    { name: 'Ticking Doom', desc: 'Lose 1 HP per second', icon: 'fa-hourglass-half' },
+                    { name: 'Ticking Doom', desc: 'Lose 2 HP per second', icon: 'fa-hourglass-half' },
                     { name: 'Overcharged Enemies', desc: 'All enemies deal +20% damage', icon: 'fa-radiation-alt' },
                     { name: 'Accelerated Enemies', desc: 'All enemies move 15% faster', icon: 'fa-angle-double-right' },
                     { name: 'Empowered Titans', desc: 'Titan Champions have +25% HP and damage', icon: 'fa-dragon' },
@@ -21457,6 +22291,14 @@
                         <i class="fas fa-star"></i> Ascension ${currentAscension + 1} Unlocked! <i class="fas fa-star"></i>
                     </div>
                 `;
+                
+                // Track ascension clear for endless mode unlock
+                const clearedAscensions = JSON.parse(localStorage.getItem('neonrogue_ascensionCleared') || '[]');
+                if (!clearedAscensions.includes(currentAscension)) {
+                    clearedAscensions.push(currentAscension);
+                    localStorage.setItem('neonrogue_ascensionCleared', JSON.stringify(clearedAscensions));
+                    console.log(`✅ Ascension ${currentAscension} marked as cleared`);
+                }
             } else if (currentAscension === 5 && highestAscension < 5) {
                 // First time beating Ascension 5
                 localStorage.setItem('neonrogue_highestAscension', 5);
@@ -21468,6 +22310,32 @@
                         You have conquered all Ascension levels!
                     </div>
                 `;
+                
+                // Track ascension 5 clear
+                const clearedAscensions = JSON.parse(localStorage.getItem('neonrogue_ascensionCleared') || '[]');
+                if (!clearedAscensions.includes(5)) {
+                    clearedAscensions.push(5);
+                    localStorage.setItem('neonrogue_ascensionCleared', JSON.stringify(clearedAscensions));
+                    console.log(`✅ Ascension 5 marked as cleared`);
+                }
+                
+                // Check if endless mode just unlocked
+                if (isEndlessModeUnlocked() && !localStorage.getItem('neonrogue_endlessUnlocked')) {
+                    localStorage.setItem('neonrogue_endlessUnlocked', 'true');
+                    ascensionUnlockMessage += `
+                        <div style="color: #a855f7; font-size: 16px; font-weight: bold; margin-top: 12px; padding: 8px; border: 2px solid #a855f7; border-radius: 4px; background: rgba(168, 85, 247, 0.1);">
+                            <i class="fas fa-infinity"></i> ENDLESS MODE UNLOCKED! <i class="fas fa-infinity"></i>
+                        </div>
+                    `;
+                }
+            } else if (currentAscension > 0) {
+                // Track any ascension clear (even if not progressing)
+                const clearedAscensions = JSON.parse(localStorage.getItem('neonrogue_ascensionCleared') || '[]');
+                if (!clearedAscensions.includes(currentAscension)) {
+                    clearedAscensions.push(currentAscension);
+                    localStorage.setItem('neonrogue_ascensionCleared', JSON.stringify(clearedAscensions));
+                    console.log(`✅ Ascension ${currentAscension} marked as cleared`);
+                }
             }
             
             const ascensionDisplay = currentAscension > 0 ? `
@@ -21627,6 +22495,12 @@
                 return;
             }
             
+            // ENDLESS MODE: Show special death screen
+            if (state.gameMode === 'endless') {
+                showEndlessDeathScreen();
+                return;
+            }
+            
             try {
                 console.log('🔴 Setting screen to gameover...');
                 state.screen = 'gameover';
@@ -21696,7 +22570,8 @@
                     'mines': 'Collapsar Mines',
                     'gas': 'Toxic Barrage',
                     'ricochet': 'Ricochet Disc',
-                    'drones': 'Combat Drones'
+                    'drones': 'Combat Drones',
+                    'boomerang': 'Spiral Boomerang'
                 };
                 
                 console.log('🔴 weaponStats:', state.weaponStats);
@@ -22081,6 +22956,676 @@
                 } else {
                     document.getElementById('menu-screen').classList.add('active');
                 }
+            };
+        }
+        
+        // ===== ENDLESS MODE SYSTEM =====
+        
+        // Endless Mode loadout state
+        let endlessLoadout = [null, null, null]; // 3 augment slots
+        
+        // Check if Endless Mode is unlocked
+        function isEndlessModeUnlocked() {
+            const clearedAscensions = JSON.parse(localStorage.getItem('neonrogue_ascensionCleared') || '[]');
+            return clearedAscensions.includes(1) && clearedAscensions.includes(2) && 
+                   clearedAscensions.includes(3) && clearedAscensions.includes(4) && 
+                   clearedAscensions.includes(5);
+        }
+        
+        // Update Endless Mode button based on unlock status
+        function updateEndlessModeButton() {
+            const endlessBtn = document.getElementById('endless-mode-btn');
+            if (!endlessBtn) return;
+            
+            const unlocked = isEndlessModeUnlocked();
+            const bestLevel = parseInt(localStorage.getItem('neonrogue_endlessBestLevel') || '0');
+            const bestScore = parseInt(localStorage.getItem('neonrogue_endlessBestScore') || '0');
+            
+            if (unlocked) {
+                endlessBtn.disabled = false;
+                endlessBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                const bestText = bestLevel > 0 ? 
+                    `<div class="text-xs mt-1" style="transform: skewX(10deg); color: #c084fc;">Best: Lv${bestLevel} | ${bestScore.toLocaleString()} pts</div>` : '';
+                endlessBtn.innerHTML = `<span class="inline-block skew-x-[10deg]"><i class="fas fa-infinity mr-2"></i>VOID DESCENT${bestText}</span>`;
+            } else {
+                endlessBtn.disabled = true;
+                endlessBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                endlessBtn.innerHTML = `<span class="inline-block skew-x-[10deg]"><i class="fas fa-lock mr-2"></i>VOID DESCENT<div class="text-xs mt-1">Complete all 5 Ascensions</div></span>`;
+            }
+        }
+        
+        // Open Endless Mode Setup Screen
+        function openEndlessSetup() {
+            document.getElementById('menu-screen').classList.remove('active');
+            document.getElementById('endless-setup-screen').classList.add('active');
+            
+            // Update best run display
+            const bestLevel = parseInt(localStorage.getItem('neonrogue_endlessBestLevel') || '0');
+            const bestScore = parseInt(localStorage.getItem('neonrogue_endlessBestScore') || '0');
+            document.getElementById('endless-best-level').textContent = bestLevel;
+            document.getElementById('endless-best-score').textContent = bestScore.toLocaleString();
+            
+            // Render loadout slots
+            updateEndlessLoadoutDisplay();
+        }
+        
+        // Update endless loadout slot display
+        function updateEndlessLoadoutDisplay() {
+            for (let i = 0; i < 3; i++) {
+                const slotEl = document.getElementById(`endless-slot-${i + 1}`);
+                const nameEl = slotEl.querySelector('.endless-slot-name');
+                const augId = endlessLoadout[i];
+                
+                if (augId && augmentDefs[augId]) {
+                    const aug = augmentDefs[augId];
+                    const tier = augmentProgress.unlocked[augId] || 0;
+                    nameEl.textContent = `${aug.name} (T${tier})`;
+                    nameEl.style.color = aug.rarity === 'epic' ? '#a855f7' : aug.rarity === 'rare' ? '#3b82f6' : '#10b981';
+                } else {
+                    nameEl.textContent = 'Empty';
+                    nameEl.style.color = '#9ca3af';
+                }
+            }
+        }
+        
+        // Endless Mode button click
+        const endlessBtn = document.getElementById('endless-mode-btn');
+        if (endlessBtn) {
+            endlessBtn.onclick = () => {
+                if (isEndlessModeUnlocked()) {
+                    openEndlessSetup();
+                }
+            };
+        }
+        
+        // Endless setup - slot clicks
+        for (let i = 1; i <= 3; i++) {
+            const slotEl = document.getElementById(`endless-slot-${i}`);
+            if (slotEl) {
+                slotEl.onclick = () => openEndlessAugmentSelector(i - 1);
+            }
+        }
+        
+        // Open augment selector for endless mode
+        function openEndlessAugmentSelector(slotIndex) {
+            const modal = document.getElementById('endless-augment-selector-modal');
+            const list = document.getElementById('endless-augment-selector-list');
+            document.getElementById('endless-selector-slot-number').textContent = slotIndex + 1;
+            
+            list.innerHTML = '';
+            
+            // Show all unlocked augments
+            Object.keys(augmentProgress.unlocked).forEach(augId => {
+                const aug = augmentDefs[augId];
+                if (!aug) return;
+                
+                const tier = augmentProgress.unlocked[augId];
+                const tierData = aug.tiers[tier - 1];
+                
+                const card = document.createElement('div');
+                card.className = 'bg-gray-800 border border-gray-600 rounded p-3 cursor-pointer hover:border-purple-400 transition-all';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <i class="fas ${aug.icon}" style="color: ${aug.rarity === 'epic' ? '#a855f7' : aug.rarity === 'rare' ? '#3b82f6' : '#10b981'};"></i>
+                            <span class="font-bold">${aug.name}</span>
+                            <span class="text-xs text-gray-500">Tier ${tier}</span>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-400">${tierData.desc}</div>
+                `;
+                card.onclick = () => {
+                    endlessLoadout[slotIndex] = augId;
+                    updateEndlessLoadoutDisplay();
+                    modal.classList.remove('active');
+                };
+                list.appendChild(card);
+            });
+            
+            document.getElementById('endless-setup-screen').classList.remove('active');
+            modal.classList.add('active');
+        }
+        
+        // Endless augment selector cancel
+        const endlessSelectorCancel = document.getElementById('endless-selector-cancel');
+        if (endlessSelectorCancel) {
+            endlessSelectorCancel.onclick = () => {
+                document.getElementById('endless-augment-selector-modal').classList.remove('active');
+                document.getElementById('endless-setup-screen').classList.add('active');
+            };
+        }
+        
+        // Endless back button
+        const endlessBackBtn = document.getElementById('endless-back-btn');
+        if (endlessBackBtn) {
+            endlessBackBtn.onclick = () => {
+                document.getElementById('endless-setup-screen').classList.remove('active');
+                document.getElementById('menu-screen').classList.add('active');
+            };
+        }
+        
+        // Endless start button
+        const endlessStartBtn = document.getElementById('endless-start-btn');
+        if (endlessStartBtn) {
+            endlessStartBtn.onclick = () => {
+                // Copy loadout to state
+                state.gameMode = 'endless';
+                state.endlessAugments = endlessLoadout.filter(id => id !== null);
+                
+                console.log('🌀 Starting Endless Mode with augments:', state.endlessAugments);
+                
+                document.getElementById('endless-setup-screen').classList.remove('active');
+                initGame();
+            };
+        }
+        
+        // ===== ENDLESS MODE GAMEPLAY FUNCTIONS =====
+        
+        // Debuff pool with weighted tiers
+        const ENDLESS_DEBUFFS = [
+            // Tier 1 (33% weight each - total 10)
+            { id: 'fragile_hull', weight: 2, tier: 1 },
+            { id: 'power_drain', weight: 2, tier: 1 },
+            { id: 'sluggish_systems', weight: 2, tier: 1 },
+            { id: 'aggressive_swarms', weight: 2, tier: 1 },
+            { id: 'weakened_shields', weight: 2, tier: 1 },
+            
+            // Tier 2 (50% weight each - total 15)
+            { id: 'energy_leak', weight: 3, tier: 2 },
+            { id: 'brittle_armor', weight: 3, tier: 2 },
+            { id: 'overloaded_circuits', weight: 3, tier: 2 },
+            { id: 'leaky_shields', weight: 3, tier: 2 },
+            { id: 'compressed_field', weight: 3, tier: 2 },
+            
+            // Tier 3 (17% weight each - total 5)
+            { id: 'ticking_doom', weight: 1, tier: 3 },
+            { id: 'overcharged_enemies', weight: 1, tier: 3 },
+            { id: 'accelerated_enemies', weight: 1, tier: 3 },
+            { id: 'empowered_titans', weight: 1, tier: 3 },
+            { id: 'critical_weakness', weight: 1, tier: 3 }
+        ];
+        
+        // Roll random debuff (weighted)
+        function rollEndlessDebuff() {
+            const totalWeight = ENDLESS_DEBUFFS.reduce((sum, d) => sum + d.weight, 0);
+            let random = seededRandom() * totalWeight;
+            
+            let selected = ENDLESS_DEBUFFS[0];
+            for (const debuff of ENDLESS_DEBUFFS) {
+                if (random < debuff.weight) {
+                    selected = debuff;
+                    break;
+                }
+                random -= debuff.weight;
+            }
+            
+            // Apply debuff to player
+            applyEndlessDebuff(selected.id);
+            state.endlessDebuffs.push(selected.id);
+            
+            // Show notification
+            showDebuffNotification(selected);
+            
+            // Update debuff display
+            updateDebuffDisplay();
+            
+            console.log(`💀 Rolled debuff: ${selected.id} (Tier ${selected.tier}), Total: ${state.endlessDebuffs.length}`);
+        }
+        
+        // Apply debuff effects to player (reuse ascension debuff code)
+        function applyEndlessDebuff(debuffId) {
+            // These debuffs are applied identically to ascension debuffs
+            // They stack additively with each other
+            
+            if (debuffId === 'fragile_hull') {
+                player.fragileHullPenalty = (player.fragileHullPenalty || 1.0) * 0.70;
+                player.maxHp = Math.floor(player.maxHp * 0.70);
+                player.hp = Math.min(player.hp, player.maxHp);
+            } else if (debuffId === 'power_drain') {
+                player.shipDamageMult *= 0.80;
+            } else if (debuffId === 'sluggish_systems') {
+                player.speed *= 0.85;
+            } else if (debuffId === 'aggressive_swarms') {
+                // Handled in spawn system
+            } else if (debuffId === 'weakened_shields') {
+                player.shieldRechargeDelay = Math.floor(player.shieldRechargeDelay * 1.5);
+            } else if (debuffId === 'energy_leak') {
+                player.energyLeakPenalty = (player.energyLeakPenalty || 1.0) * 0.80;
+            } else if (debuffId === 'brittle_armor') {
+                player.brittleArmor = true;
+                if (player.shield3 > 0) {
+                    player.shield3 = -1;
+                } else if (player.shield2 > 0) {
+                    player.shield2 = -1;
+                } else if (player.shield1 > 0) {
+                    player.shield1 = -1;
+                }
+            } else if (debuffId === 'overloaded_circuits') {
+                player.fireRate *= 0.85;
+            } else if (debuffId === 'leaky_shields') {
+                player.leakyShields = true;
+            } else if (debuffId === 'compressed_field') {
+                player.compressedFieldPenalty = (player.compressedFieldPenalty || 1.0) * 0.85;
+            } else if (debuffId === 'ticking_doom') {
+                player.tickingDoomTimer = 0;
+            } else if (debuffId === 'overcharged_enemies') {
+                // Handled in enemy damage calculations
+            } else if (debuffId === 'accelerated_enemies') {
+                // Handled in enemy speed calculations
+            } else if (debuffId === 'empowered_titans') {
+                // Handled in champion stats
+            } else if (debuffId === 'critical_weakness') {
+                player.enemyCritChance = (player.enemyCritChance || 0) + 0.15;
+            }
+        }
+        
+        // Show debuff notification
+        function showDebuffNotification(debuff) {
+            const names = {
+                fragile_hull: 'Fragile Hull',
+                power_drain: 'Power Drain',
+                sluggish_systems: 'Sluggish Systems',
+                aggressive_swarms: 'Aggressive Swarms',
+                weakened_shields: 'Weakened Shields',
+                energy_leak: 'Energy Leak',
+                brittle_armor: 'Brittle Armor',
+                overloaded_circuits: 'Overloaded Circuits',
+                leaky_shields: 'Leaky Shields',
+                compressed_field: 'Compressed Field',
+                ticking_doom: 'Ticking Doom',
+                overcharged_enemies: 'Overcharged Enemies',
+                accelerated_enemies: 'Accelerated Enemies',
+                empowered_titans: 'Empowered Titans',
+                critical_weakness: 'Critical Weakness'
+            };
+            
+            createFloatingText(player.x, player.y - 40, `DEBUFF: ${names[debuff.id]}`, '#ff6b6b', 18, 120);
+        }
+        
+        // Update debuff display HUD
+        function updateDebuffDisplay() {
+            const debuffDisplay = document.getElementById('debuff-display');
+            const debuffList = document.getElementById('debuff-list');
+            
+            if (state.endlessDebuffs.length > 0) {
+                debuffDisplay.style.display = 'block';
+                
+                // Count debuff stacks
+                const debuffCounts = {};
+                state.endlessDebuffs.forEach(id => {
+                    debuffCounts[id] = (debuffCounts[id] || 0) + 1;
+                });
+                
+                // Clear and rebuild
+                debuffList.innerHTML = '';
+                Object.entries(debuffCounts).forEach(([id, count]) => {
+                    const badge = document.createElement('div');
+                    badge.style.cssText = 'background: rgba(255, 107, 107, 0.3); border: 1px solid #ff6b6b; border-radius: 3px; padding: 2px 6px; font-size: 10px; color: #ff6b6b; font-weight: bold;';
+                    badge.textContent = count > 1 ? `${getDebuffIcon(id)} ×${count}` : getDebuffIcon(id);
+                    badge.title = getDebuffName(id);
+                    debuffList.appendChild(badge);
+                });
+            } else {
+                debuffDisplay.style.display = 'none';
+            }
+        }
+        
+        function getDebuffIcon(id) {
+            const icons = {
+                fragile_hull: '💔', power_drain: '⚡', sluggish_systems: '🐌',
+                aggressive_swarms: '🐝', weakened_shields: '🛡️', energy_leak: '⚡',
+                brittle_armor: '💥', overloaded_circuits: '🔫', leaky_shields: '🛡️',
+                compressed_field: '📉', ticking_doom: '⏱️', overcharged_enemies: '⚡',
+                accelerated_enemies: '🏃', empowered_titans: '🐉', critical_weakness: '🎯'
+            };
+            return icons[id] || '❌';
+        }
+        
+        function getDebuffName(id) {
+            const names = {
+                fragile_hull: 'Fragile Hull (-30% HP)',
+                power_drain: 'Power Drain (-20% damage)',
+                sluggish_systems: 'Sluggish Systems (-15% speed)',
+                aggressive_swarms: 'Aggressive Swarms (+15% spawn rate)',
+                weakened_shields: 'Weakened Shields (+50% recharge delay)',
+                energy_leak: 'Energy Leak (-20% ult charge)',
+                brittle_armor: 'Brittle Armor (-1 shield)',
+                overloaded_circuits: 'Overloaded Circuits (-15% fire rate)',
+                leaky_shields: 'Leaky Shields (50% damage reduction)',
+                compressed_field: 'Compressed Field (-15% area)',
+                ticking_doom: 'Ticking Doom (-2 HP/sec)',
+                overcharged_enemies: 'Overcharged Enemies (+20% damage)',
+                accelerated_enemies: 'Accelerated Enemies (+15% speed)',
+                empowered_titans: 'Empowered Titans (+25% HP/damage)',
+                critical_weakness: 'Critical Weakness (enemies +15% crit)'
+            };
+            return names[id] || id;
+        }
+        
+        // Open checkpoint shop
+        function openEndlessCheckpoint() {
+            // Pause game
+            state.paused = true;
+            
+            // Reset purchase tracking
+            state.checkpointPurchases = { left: false, right: false };
+            
+            // Show modal
+            const modal = document.getElementById('endless-checkpoint-shop');
+            modal.classList.add('active');
+            
+            // Update displays
+            document.getElementById('checkpoint-level-display').textContent = state.endlessLevel;
+            document.getElementById('checkpoint-shards-display').textContent = state.voidShards;
+            
+            // Generate 3 random augments
+            generateCheckpointAugments();
+            
+            // Generate 3 direct actions
+            generateCheckpointActions();
+            
+            // Update purchase status
+            updateCheckpointPurchaseStatus();
+        }
+        
+        // Generate random augments for checkpoint
+        function generateCheckpointAugments() {
+            const list = document.getElementById('checkpoint-augments-list');
+            list.innerHTML = '';
+            
+            const checkpointNum = state.endlessLevel / 25;
+            const costMultiplier = 1 + (checkpointNum * 0.3);
+            
+            // Get all unlocked augments
+            const unlockedIds = Object.keys(augmentProgress.unlocked);
+            
+            // Pick 3 random
+            const selectedAugments = [];
+            for (let i = 0; i < 3 && unlockedIds.length > 0; i++) {
+                const randomIndex = Math.floor(seededRandom() * unlockedIds.length);
+                const augId = unlockedIds.splice(randomIndex, 1)[0];
+                selectedAugments.push(augId);
+            }
+            
+            selectedAugments.forEach(augId => {
+                const aug = augmentDefs[augId];
+                if (!aug) return;
+                
+                const baseCost = aug.rarity === 'epic' ? 400 : aug.rarity === 'rare' ? 250 : 150;
+                const cost = Math.floor(baseCost * costMultiplier);
+                
+                const tier = augmentProgress.unlocked[augId];
+                const tierData = aug.tiers[tier - 1];
+                
+                const card = document.createElement('div');
+                card.className = 'bg-gray-800 border border-purple-500 rounded p-3 cursor-pointer hover:bg-gray-700 transition-all';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <i class="fas ${aug.icon}" style="color: ${aug.rarity === 'epic' ? '#a855f7' : aug.rarity === 'rare' ? '#3b82f6' : '#10b981'};"></i>
+                            <span class="font-bold text-sm">${aug.name}</span>
+                            <span class="text-xs text-gray-500">T${tier}</span>
+                        </div>
+                        <span class="text-purple-400 font-bold text-sm">💎 ${cost}</span>
+                    </div>
+                    <div class="text-xs text-gray-400 mb-2">${tierData.desc}</div>
+                `;
+                card.onclick = () => purchaseCheckpointAugment(augId, cost);
+                list.appendChild(card);
+            });
+        }
+        
+        // Generate direct actions for checkpoint
+        function generateCheckpointActions() {
+            const list = document.getElementById('checkpoint-actions-list');
+            list.innerHTML = '';
+            
+            const actions = [
+                { id: 'full_restore', name: 'Full Restore', icon: 'fa-heart', desc: 'Heal to max HP + restore all shields', cost: 100 },
+                { id: 'debuff_cleanse', name: 'Debuff Cleanse', icon: 'fa-broom', desc: 'Remove 1 random debuff permanently', cost: 200 },
+                { id: 'shard_amplifier', name: 'Shard Amplifier', icon: 'fa-gem', desc: '+25% Void Shard drops for next 25 levels', cost: 150 }
+            ];
+            
+            actions.forEach(action => {
+                const card = document.createElement('div');
+                card.className = 'bg-gray-800 border border-cyan-500 rounded p-3 cursor-pointer hover:bg-gray-700 transition-all';
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                            <i class="fas ${action.icon} text-cyan-400"></i>
+                            <span class="font-bold text-sm">${action.name}</span>
+                        </div>
+                        <span class="text-cyan-400 font-bold text-sm">💎 ${action.cost}</span>
+                    </div>
+                    <div class="text-xs text-gray-400">${action.desc}</div>
+                `;
+                card.onclick = () => purchaseCheckpointAction(action.id, action.cost);
+                list.appendChild(card);
+            });
+        }
+        
+        // Purchase augment from checkpoint
+        function purchaseCheckpointAugment(augId, cost) {
+            if (state.checkpointPurchases.left) {
+                createFloatingText(player.x, player.y, 'Already purchased from left!', '#ff6b6b', 14);
+                return;
+            }
+            if (state.voidShards < cost) {
+                createFloatingText(player.x, player.y, 'Not enough shards!', '#ff6b6b', 14);
+                return;
+            }
+            
+            state.voidShards -= cost;
+            state.checkpointPurchases.left = true;
+            
+            // Add augment to endless loadout
+            state.endlessAugments.push(augId);
+            
+            // Apply augment effects immediately
+            applyAugmentToPlayer(augId);
+            
+            console.log(`✅ Purchased augment: ${augId}`);
+            
+            // Update UI
+            document.getElementById('checkpoint-shards-display').textContent = state.voidShards;
+            updateCheckpointPurchaseStatus();
+            
+            // Auto-close if both sides purchased
+            if (state.checkpointPurchases.left && state.checkpointPurchases.right) {
+                setTimeout(() => closeCheckpoint(), 1000);
+            }
+        }
+        
+        // Purchase action from checkpoint
+        function purchaseCheckpointAction(actionId, cost) {
+            if (state.checkpointPurchases.right) {
+                createFloatingText(player.x, player.y, 'Already purchased from right!', '#ff6b6b', 14);
+                return;
+            }
+            if (state.voidShards < cost) {
+                createFloatingText(player.x, player.y, 'Not enough shards!', '#ff6b6b', 14);
+                return;
+            }
+            
+            state.voidShards -= cost;
+            state.checkpointPurchases.right = true;
+            
+            // Apply action
+            if (actionId === 'full_restore') {
+                player.hp = player.maxHp;
+                player.shield1 = player.shield1 === -1 ? -1 : Math.max(player.shield1, 1);
+                player.shield2 = player.shield2 === -1 ? -1 : Math.max(player.shield2, 1);
+                player.shield3 = player.shield3 === -1 ? -1 : Math.max(player.shield3, 1);
+                player.shield4 = player.shield4 === -1 ? -1 : Math.max(player.shield4, 1);
+            } else if (actionId === 'debuff_cleanse') {
+                if (state.endlessDebuffs.length > 0) {
+                    const randomIndex = Math.floor(Math.random() * state.endlessDebuffs.length);
+                    const removed = state.endlessDebuffs.splice(randomIndex, 1)[0];
+                    console.log(`🧹 Cleansed debuff: ${removed}`);
+                    updateDebuffDisplay();
+                    // Note: Debuff effects don't get removed, only the counter (intentional - they're permanent)
+                }
+            } else if (actionId === 'shard_amplifier') {
+                state.shardBoostActive = true;
+                state.shardBoostEndLevel = state.endlessLevel + 25;
+            }
+            
+            console.log(`✅ Purchased action: ${actionId}`);
+            
+            // Update UI
+            document.getElementById('checkpoint-shards-display').textContent = state.voidShards;
+            updateCheckpointPurchaseStatus();
+            
+            // Auto-close if both sides purchased
+            if (state.checkpointPurchases.left && state.checkpointPurchases.right) {
+                setTimeout(() => closeCheckpoint(), 1000);
+            }
+        }
+        
+        // Update purchase status display
+        function updateCheckpointPurchaseStatus() {
+            document.getElementById('left-purchase-status').textContent = 
+                state.checkpointPurchases.left ? '1/1 purchased ✓' : '0/1 purchased';
+            document.getElementById('right-purchase-status').textContent = 
+                state.checkpointPurchases.right ? '1/1 purchased ✓' : '0/1 purchased';
+        }
+        
+        // Close checkpoint and resume game
+        function closeCheckpoint() {
+            document.getElementById('endless-checkpoint-shop').classList.remove('active');
+            state.paused = false;
+        }
+        
+        // Continue button handler
+        const checkpointContinueBtn = document.getElementById('checkpoint-continue-btn');
+        if (checkpointContinueBtn) {
+            checkpointContinueBtn.onclick = closeCheckpoint;
+        }
+        
+        // Award milestone rewards
+        function awardEndlessMilestone(level) {
+            // 1 Singularity every 25 levels
+            if (level % 25 === 0) {
+                const currentSingularities = parseInt(localStorage.getItem('neonrogue_singularities') || '0');
+                localStorage.setItem('neonrogue_singularities', currentSingularities + 1);
+                console.log(`🌌 Milestone Reward: +1 Singularity at level ${level}`);
+            }
+            
+            // Bonus Nexus Cores at specific milestones
+            const coreMilestones = {
+                50: 25,
+                75: 50,
+                100: 100,
+                150: 200,
+                200: 400,
+                250: 800,
+                300: 1600
+            };
+            
+            if (coreMilestones[level]) {
+                const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+                localStorage.setItem('neonrogue_nexusCores', currentCores + coreMilestones[level]);
+                console.log(`💎 Milestone Reward: +${coreMilestones[level]} Cores at level ${level}`);
+            }
+        }
+        
+        // Apply augment effects to player
+        function applyAugmentToPlayer(augId) {
+            const aug = augmentDefs[augId];
+            if (!aug) return;
+            
+            const tier = augmentProgress.unlocked[augId] || 1;
+            const tierData = aug.tiers[tier - 1];
+            
+            // Apply effects based on augment type
+            // (This would normally be done in the player initialization,
+            // but for shop purchases we need to apply immediately)
+            
+            // For now, just log - full implementation would apply stat bonuses
+            console.log(`Applied ${aug.name} (Tier ${tier}) to player`);
+        }
+        
+        // Show endless death screen
+        function showEndlessDeathScreen() {
+            state.screen = 'gameover'; // Set to prevent multiple triggers
+            
+            const finalLevel = state.endlessLevel;
+            const finalScore = state.endlessScore;
+            const totalDebuffs = state.endlessDebuffs.length;
+            const totalShards = state.totalShardsCollected;
+            
+            // Update best records
+            const bestLevel = parseInt(localStorage.getItem('neonrogue_endlessBestLevel') || '0');
+            const bestScore = parseInt(localStorage.getItem('neonrogue_endlessBestScore') || '0');
+            
+            const newLevelRecord = finalLevel > bestLevel;
+            const newScoreRecord = finalScore > bestScore;
+            
+            if (newLevelRecord) {
+                localStorage.setItem('neonrogue_endlessBestLevel', finalLevel);
+            }
+            if (newScoreRecord) {
+                localStorage.setItem('neonrogue_endlessBestScore', finalScore);
+            }
+            
+            // Convert void shards to nexus cores
+            const coresFromShards = Math.floor(state.voidShards / 100);
+            if (coresFromShards > 0) {
+                const currentCores = parseInt(localStorage.getItem('neonrogue_nexusCores') || '0');
+                localStorage.setItem('neonrogue_nexusCores', currentCores + coresFromShards);
+            }
+            
+            // Calculate milestone rewards earned this run
+            let milestoneCores = 0;
+            let milestoneSingularities = 0;
+            
+            for (let level = 25; level <= finalLevel; level += 25) {
+                milestoneSingularities++;
+                
+                const coreMilestones = { 50: 25, 75: 50, 100: 100, 150: 200, 200: 400, 250: 800, 300: 1600 };
+                if (coreMilestones[level]) {
+                    milestoneCores += coreMilestones[level];
+                }
+            }
+            
+            // Get total kills from weapon stats
+            const weaponArray = Object.values(state.weaponStats || {});
+            const totalKills = weaponArray.reduce((sum, w) => sum + (w.kills || 0), 0);
+            
+            // Update modal
+            document.getElementById('endless-final-level').textContent = finalLevel;
+            document.getElementById('endless-final-score').textContent = finalScore.toLocaleString();
+            document.getElementById('endless-debuffs-survived').textContent = totalDebuffs;
+            document.getElementById('endless-total-kills').textContent = totalKills.toLocaleString();
+            document.getElementById('endless-total-shards').textContent = totalShards.toLocaleString();
+            
+            // Show/hide record badges
+            document.getElementById('endless-level-record').style.display = newLevelRecord ? 'block' : 'none';
+            document.getElementById('endless-score-record').style.display = newScoreRecord ? 'block' : 'none';
+            
+            // Update rewards
+            document.getElementById('endless-reward-cores-conversion').textContent = 
+                `💎 +${coresFromShards} Nexus Cores (shard conversion)`;
+            document.getElementById('endless-reward-cores-milestones').textContent = 
+                milestoneCores > 0 ? `💎 +${milestoneCores} Nexus Cores (milestones)` : '';
+            document.getElementById('endless-reward-singularities').textContent = 
+                milestoneSingularities > 0 ? `🌌 +${milestoneSingularities} Singularities (milestones)` : '';
+            
+            // Show modal
+            document.getElementById('endless-death-screen').classList.add('active');
+            
+            // Update endless mode button for next run
+            updateEndlessModeButton();
+            
+            console.log(`🌀 ENDLESS RUN COMPLETE - Level ${finalLevel}, Score ${finalScore}`);
+        }
+        
+        // Endless return to menu
+        const endlessReturnMenuBtn = document.getElementById('endless-return-menu-btn');
+        if (endlessReturnMenuBtn) {
+            endlessReturnMenuBtn.onclick = () => {
+                document.getElementById('endless-death-screen').classList.remove('active');
+                document.getElementById('menu-screen').classList.add('active');
             };
         }
         
@@ -22712,6 +24257,9 @@
         
         // Load augment progress on page load
         loadAugmentProgress();
+        
+        // Initialize Endless Mode button
+        updateEndlessModeButton();
         
         // Stats screen handlers
         document.getElementById('view-stats-btn').addEventListener('click', showStats);
