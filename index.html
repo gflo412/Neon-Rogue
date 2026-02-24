@@ -1017,6 +1017,7 @@
                                 <option value="">-- Slot 1 (Starting Weapon) --</option>
                             </select>
                             <select id="test-element-1" class="w-32 bg-gray-800 text-white border border-gray-600 rounded px-2 py-2 font-mono text-xs">
+                                <option value="none">None</option>
                                 <option value="random">Random</option>
                                 <option value="fire">🔥 Fire</option>
                                 <option value="ice">❄️ Ice</option>
@@ -1031,6 +1032,7 @@
                                 <option value="">-- Slot 2 --</option>
                             </select>
                             <select id="test-element-2" class="w-32 bg-gray-800 text-white border border-gray-600 rounded px-2 py-2 font-mono text-xs">
+                                <option value="none">None</option>
                                 <option value="random">Random</option>
                                 <option value="fire">🔥 Fire</option>
                                 <option value="ice">❄️ Ice</option>
@@ -1045,6 +1047,7 @@
                                 <option value="">-- Slot 3 --</option>
                             </select>
                             <select id="test-element-3" class="w-32 bg-gray-800 text-white border border-gray-600 rounded px-2 py-2 font-mono text-xs">
+                                <option value="none">None</option>
                                 <option value="random">Random</option>
                                 <option value="fire">🔥 Fire</option>
                                 <option value="ice">❄️ Ice</option>
@@ -1059,6 +1062,7 @@
                                 <option value="">-- Slot 4 --</option>
                             </select>
                             <select id="test-element-4" class="w-32 bg-gray-800 text-white border border-gray-600 rounded px-2 py-2 font-mono text-xs">
+                                <option value="none">None</option>
                                 <option value="random">Random</option>
                                 <option value="fire">🔥 Fire</option>
                                 <option value="ice">❄️ Ice</option>
@@ -1863,7 +1867,9 @@
             drones: { id: 'drones', type: 'weapon', name: 'Combat Drones', icon: 'fa-fighter-jet', desc: 'Autonomous drones fire at nearby enemies.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             mines: { id: 'mines', type: 'weapon', name: 'Collapsar Mines', icon: 'fa-gem', desc: 'Hovering mines pull enemies in before detonating.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             gas: { id: 'gas', type: 'weapon', name: 'Toxic Barrage', icon: 'fa-cloud', desc: 'Carpets enemy clusters with poison clouds.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            boomerang: { id: 'boomerang', type: 'weapon', name: 'Spiral Boomerang', icon: 'fa-sync', desc: 'Throws boomerangs that spiral outward then orbit back to you.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] }
+            boomerang: { id: 'boomerang', type: 'weapon', name: 'Spiral Boomerang', icon: 'fa-sync', desc: 'Throws boomerangs that spiral outward then orbit back to you.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            gravity: { id: 'gravity', type: 'weapon', name: 'Gravity Lens', icon: 'fa-circle', desc: 'Fires graviton orbs that curve toward enemies. On hit, implode and pull nearby foes together.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            warp: { id: 'warp', type: 'weapon', name: 'Warp Sling', icon: 'fa-crosshairs', desc: 'Teleports an explosive charge to the densest enemy cluster. Higher levels add chain blinks.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] }
         };
 
 
@@ -2338,7 +2344,7 @@
                     this.shipSpeedMult = 1.0;
                 }
 
-                this.weapons = { ion: 0, turret: 0, emp: 0, barrier: 0, orbital: 0, surge: 0, shield: 0, tesla: 0, seeker: 0, rad: 0, beam: 0, whip: 0, meteor: 0, railgun: 0, flak: 0, pylons: 0, mines: 0, gas: 0, ricochet: 0, drones: 0, boomerang: 0 };
+                this.weapons = { ion: 0, turret: 0, emp: 0, barrier: 0, orbital: 0, surge: 0, shield: 0, tesla: 0, seeker: 0, rad: 0, beam: 0, whip: 0, meteor: 0, railgun: 0, flak: 0, pylons: 0, mines: 0, gas: 0, ricochet: 0, drones: 0, boomerang: 0, gravity: 0, warp: 0 };
                 this.weaponOrder = []; // Track order weapons were acquired (for slot display)
                 
                 // Set starting weapon based on ship
@@ -2466,6 +2472,8 @@
                 this.gasTimer = 0; this.maxGasTimer = 390; // 6.5 seconds base lob rate (since clouds last 5s)
                 this.boomerangTimer = 0; this.maxBoomerangTimer = 210; // 3.5 second base cooldown
                 this.ricochetTimer = 0;
+                this.gravityTimer = 0; this.maxGravityTimer = 130; // ~2.2s base cooldown
+                this.warpTimer = 0; this.maxWarpTimer = 180; // 3s base cooldown
                 this.drones = []; // Will be initialized when drones weapon is acquired
                 
                 // CATALYST ship-specific properties
@@ -4211,6 +4219,7 @@
                             const viewRight = viewLeft + viewWidth;
                             const viewTop = -camY / state.zoom;
                             const viewBottom = viewTop + viewHeight;
+                            const insetX = viewWidth * 0.15, insetY = viewHeight * 0.15;
                             
                             // Use spatial grid for candidate lookup
                             const viewCenterX = (viewLeft + viewRight) / 2;
@@ -4219,7 +4228,7 @@
                             const allVisible = spatialGrid.getNearby(this.x, this.y, viewSearchRadius * 1.5);
                             const visibleEnemies = allVisible.filter(e => {
                                 if (e.hp <= 0) return false;
-                                return e.x >= viewLeft && e.x <= viewRight && e.y >= viewTop && e.y <= viewBottom;
+                                return e.x >= viewLeft + insetX && e.x <= viewRight - insetX && e.y >= viewTop + insetY && e.y <= viewBottom - insetY;
                             });
                             
                             if (visibleEnemies.length === 0) return false;
@@ -5151,6 +5160,255 @@
                         this.boomerangTimer = this.maxBoomerangTimer;
                     }
                 }
+
+
+                // GRAVITY LENS - Fires graviton orbs that curve toward enemies; on expire/hit implode and pull
+                if (this.weapons.gravity > 0) {
+                    this.gravityTimer -= (dt/16) * fireRateMult;
+                    if (this.gravityTimer <= 0) {
+                        const fireGravity = (damageBonus = 1.0, depth = 0) => {
+                            // Always 1 orb — damage and area scale steadily with each level
+                            const levelScaling = 1.0 + (this.weapons.gravity - 1) * 0.18; // stronger per-level damage growth
+
+                            // Target densest ON-SCREEN cluster (same viewport filter as seeker/warp)
+                            const camX = state.camera.x, camY = state.camera.y;
+                            const viewLeft = -camX / state.zoom, viewTop = -camY / state.zoom;
+                            const viewRight = viewLeft + width / state.zoom, viewBottom = viewTop + height / state.zoom;
+                            const insetX = (viewRight - viewLeft) * 0.15, insetY = (viewBottom - viewTop) * 0.15;
+                            const viewSearchRadius = Math.max(viewRight - viewLeft, viewBottom - viewTop) / 2;
+                            const allVisible = spatialGrid.getNearby(this.x, this.y, viewSearchRadius * 1.5);
+                            const visibleEnemies = allVisible.filter(e =>
+                                e.hp > 0 && e.x >= viewLeft + insetX && e.x <= viewRight - insetX && e.y >= viewTop + insetY && e.y <= viewBottom - insetY
+                            );
+                            if (visibleEnemies.length === 0) return false;
+
+                            // Priority targeting hierarchy — mirrors drone/seeker system
+                            const gravityPriority = e => {
+                                if (e.hackState && e.hackState.active) return -1; // never target hacked
+                                if (e.fleeing) return -1;
+                                if (e.isBossShield && e.hp > 0 && (!e.spawnInvuln || e.spawnInvuln <= 0)) return 10;
+                                if (e.isNexusPrime) return e.coreVulnerable ? 9 : -1;
+                                if (e.isTitan) return 8.5;
+                                if (e.isBossTurret) return 5;
+                                if (e.isChampion) return 7;
+                                if (e.type === 'tank') return 5;
+                                return 1;
+                            };
+
+                            // Filter out untargetable enemies
+                            const targetableEnemies = visibleEnemies.filter(e => gravityPriority(e) >= 0);
+                            if (targetableEnemies.length === 0) return false;
+
+                            // Check for high-priority targets first (shields, boss, titan, champion)
+                            const highPriority = targetableEnemies.filter(e => gravityPriority(e) >= 7);
+
+                            // Pick best target: high-priority pool first, otherwise densest cluster
+                            let bestTarget = null, bestCount = 0, bestDist = Infinity;
+                            const clusterR = 150;
+                            const searchPool = highPriority.length > 0 ? highPriority : targetableEnemies;
+                            for (let vi = 0; vi < searchPool.length; vi++) {
+                                const e = searchPool[vi];
+                                const nearby = spatialGrid.getNearby(e.x, e.y, clusterR);
+                                let count = 0;
+                                for (let ni = 0; ni < nearby.length; ni++) { if (nearby[ni].hp > 0) count++; }
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                const dist = dx*dx + dy*dy;
+                                if (count > bestCount || (count === bestCount && dist < bestDist)) {
+                                    bestCount = count; bestDist = dist; bestTarget = e;
+                                }
+                            }
+                            if (!bestTarget) bestTarget = visibleEnemies[0];
+
+                            const baseDmg = this.damage * 1.65 * levelScaling * this.weaponStats.gravity.dmg * damageBonus;
+                            // Area grows slightly per level (5px) plus area stat multiplier; travel pull grows very slightly
+                            const implodeRadius = (55 + this.weapons.gravity * 5) * this.weaponStats.gravity.area;
+                            const travelPullRadius = 80 + this.weapons.gravity * 4;
+
+                            const angle = Math.atan2(bestTarget.y - this.y, bestTarget.x - this.x);
+                            const speed = 2.5;
+                            const spawnOffset = 22; // just outside ship radius
+                            const proj = new Projectile(
+                                this.x + Math.cos(angle) * spawnOffset,
+                                this.y + Math.sin(angle) * spawnOffset,
+                                Math.cos(angle) * speed, Math.sin(angle) * speed,
+                                baseDmg, 0, 'gravity_orb', bestTarget, 'gravity'
+                            );
+                            proj.implodeRadius = implodeRadius;
+                            proj.travelPullRadius = travelPullRadius;
+                            proj.curveStrength = 0.06 + this.weapons.gravity * 0.005;
+                            entities.projectiles.push(proj);
+
+                            checkMultistrike(fireGravity, 1.25, depth);
+                            return true;
+                        };
+
+                        const didFire = fireGravity();
+                        if (didFire) {
+                            this.maxGravityTimer = Math.max(50, (130 - this.weapons.gravity * 7) / this.weaponStats.gravity.rate);
+                            this.gravityTimer = this.maxGravityTimer;
+                        } else {
+                            this.gravityTimer = 10;
+                        }
+                    }
+                }
+
+
+                // WARP SLING - Teleports explosive charge to densest cluster; chains blinks at higher levels
+                if (this.weapons.warp > 0) {
+                    this.warpTimer -= (dt/16) * fireRateMult;
+                    if (this.warpTimer <= 0) {
+                        const fireWarp = (damageBonus = 1.0, depth = 0) => {
+                            // Target ONLY on-screen enemies (same viewport logic as seeker)
+                            const camX = state.camera.x;
+                            const camY = state.camera.y;
+                            const viewWidth = width / state.zoom;
+                            const viewHeight = height / state.zoom;
+                            const viewLeft = -camX / state.zoom;
+                            const viewRight = viewLeft + viewWidth;
+                            const viewTop = -camY / state.zoom;
+                            const viewBottom = viewTop + viewHeight;
+                            const insetX = viewWidth * 0.15, insetY = viewHeight * 0.15;
+                            const viewSearchRadius = Math.max(viewRight - viewLeft, viewBottom - viewTop) / 2;
+
+                            const allVisible = spatialGrid.getNearby(this.x, this.y, viewSearchRadius * 1.5);
+                            const visibleEnemies = allVisible.filter(e => {
+                                if (e.hp <= 0) return false;
+                                return e.x >= viewLeft + insetX && e.x <= viewRight - insetX && e.y >= viewTop + insetY && e.y <= viewBottom - insetY;
+                            });
+
+                            if (visibleEnemies.length === 0) return false;
+
+                            // Priority targeting hierarchy — mirrors drone/seeker system
+                            const warpPriority = e => {
+                                if (e.hackState && e.hackState.active) return -1;
+                                if (e.fleeing) return -1;
+                                if (e.isBossShield && e.hp > 0 && (!e.spawnInvuln || e.spawnInvuln <= 0)) return 10;
+                                if (e.isNexusPrime) return e.coreVulnerable ? 9 : -1;
+                                if (e.isTitan) return 8.5;
+                                if (e.isBossTurret) return 5;
+                                if (e.isChampion) return 7;
+                                if (e.type === 'tank') return 5;
+                                return 1;
+                            };
+
+                            const targetableEnemies = visibleEnemies.filter(e => warpPriority(e) >= 0);
+                            if (targetableEnemies.length === 0) return false;
+                            const highPriority = targetableEnemies.filter(e => warpPriority(e) >= 7);
+
+                            // Find densest cluster among targetable enemies, high-priority pool first
+                            const clusterRadius = 150;
+                            let bestTarget = null, bestCount = 0, bestDist = Infinity;
+                            const warpSearchPool = highPriority.length > 0 ? highPriority : targetableEnemies;
+                            for (let vi = 0; vi < warpSearchPool.length; vi++) {
+                                const e = warpSearchPool[vi];
+                                const nearby = spatialGrid.getNearby(e.x, e.y, clusterRadius);
+                                let count = 0;
+                                for (let ni = 0; ni < nearby.length; ni++) { if (nearby[ni].hp > 0) count++; }
+                                const dx = e.x - this.x, dy = e.y - this.y;
+                                const dist = Math.sqrt(dx*dx + dy*dy);
+                                if (count > bestCount || (count === bestCount && dist < bestDist)) {
+                                    bestCount = count; bestDist = dist; bestTarget = e;
+                                }
+                            }
+                            if (!bestTarget) bestTarget = visibleEnemies[0];
+
+                            // Level 1: 1 blink, level 3: 2 blinks (chain), level 5: 3 blinks (chain)
+                            const blinkCount = this.weapons.warp >= 5 ? 3 : this.weapons.warp >= 3 ? 2 : 1;
+                            const levelScaling = 1.0 + (this.weapons.warp - 1) * 0.08;
+                            const blastRadius = (72 + this.weapons.warp * 5) * this.weaponStats.warp.area;
+                            const baseDmg = this.damage * 2.7 * levelScaling * this.weaponStats.warp.dmg * damageBonus;
+
+                            // Player-side suck-in effect — longer/slower start, follows player
+                            if (!player.warpFlashes) player.warpFlashes = [];
+                            player.warpFlashes.push({ x: this.x, y: this.y, radius: 48, life: 366, maxLife: 366, isMuzzle: true, followPlayer: true });
+
+                            const jx = bestTarget.x + (seededRandom()-0.5)*30;
+                            const jy = bestTarget.y + (seededRandom()-0.5)*30;
+                            if (!player.warpTrails) player.warpTrails = [];
+                            if (!player.warpOrbs) player.warpOrbs = [];
+                            if (!player.warpQueue) player.warpQueue = [];
+
+                            // Frame-based queue — all delays in ms, tick with scaledDt, fully framerate + time-dilation aware
+                            const suckInMs = 366;   // ~22 frames @ 60fps — matches muzzle flash duration
+                            const orbMs = 233;      // ~14 frames @ 60fps — orb travel duration
+
+                            // Spawn orb from player's LIVE position after suck-in completes
+                            player.warpQueue.push({
+                                delay: suckInMs,
+                                fn: () => {
+                                    player.warpOrbs.push({
+                                        startX: player.x, startY: player.y,
+                                        endX: jx, endY: jy,
+                                        life: orbMs, maxLife: orbMs
+                                    });
+                                }
+                            });
+
+                            const hitSet = new Set();
+                            const queueBlink = (cx, cy, blinkIndex, delay, prevX, prevY) => {
+                                player.warpQueue.push({
+                                    delay,
+                                    fn: () => {
+                                        if (prevX !== undefined) {
+                                        }
+                                        player.warpFlashes.push({ x: cx, y: cy, radius: blastRadius, life: 466, maxLife: 466, riftSeed: Math.random() * Math.PI * 2 });
+                                        createExplosion(cx, cy, '#00d4ff', 14);
+                                        const nearby = spatialGrid.getNearby(cx, cy, blastRadius);
+                                        for (let ni = 0; ni < nearby.length; ni++) {
+                                            const e = nearby[ni];
+                                            if (e.hp <= 0 || hitSet.has(e)) continue;
+                                            const dx = e.x - cx, dy = e.y - cy;
+                                            if (dx*dx + dy*dy <= blastRadius*blastRadius) {
+                                                hitSet.add(e);
+                                                player.dealElementalDamage(e, baseDmg, 'warp', '#00d4ff');
+                                            }
+                                        }
+                                        if (blinkIndex < blinkCount - 1) {
+                                            let chainTarget = null, chainBest = 0, chainDist = Infinity;
+                                            for (let vi = 0; vi < visibleEnemies.length; vi++) {
+                                                const e = visibleEnemies[vi];
+                                                if (hitSet.has(e) || e.hp <= 0) continue;
+                                                if (e.hackState && e.hackState.active) continue;
+                                                if (e.fleeing) continue;
+                                                if (e.isNexusPrime && !e.coreVulnerable) continue;
+                                                const nearby2 = spatialGrid.getNearby(e.x, e.y, clusterRadius);
+                                                let cnt = 0;
+                                                for (let ni = 0; ni < nearby2.length; ni++) { if (nearby2[ni].hp > 0 && !hitSet.has(nearby2[ni])) cnt++; }
+                                                const ddx = e.x - cx, ddy = e.y - cy;
+                                                const d = Math.sqrt(ddx*ddx + ddy*ddy);
+                                                if (cnt > chainBest || (cnt === chainBest && d < chainDist)) {
+                                                    chainBest = cnt; chainDist = d; chainTarget = e;
+                                                }
+                                            }
+                                            if (!chainTarget) chainTarget = visibleEnemies.find(e => e.hp > 0 && !hitSet.has(e) && !(e.hackState && e.hackState.active) && !e.fleeing && !(e.isNexusPrime && !e.coreVulnerable));
+                                            const nx = chainTarget ? chainTarget.x + (seededRandom()-0.5)*30 : cx + (seededRandom()-0.5)*100;
+                                            const ny = chainTarget ? chainTarget.y + (seededRandom()-0.5)*30 : cy + (seededRandom()-0.5)*100;
+                                            // Spawn a new orb from THIS detonation point to the next target
+                                            player.warpOrbs.push({ startX: cx, startY: cy, endX: nx, endY: ny, life: orbMs, maxLife: orbMs });
+                                            // Next blink fires orbMs from now (relative delay, not absolute)
+                                            queueBlink(nx, ny, blinkIndex + 1, orbMs, cx, cy);
+                                        }
+                                    }
+                                });
+                            };
+
+                            // First blink fires exactly when orb arrives
+                            queueBlink(jx, jy, 0, suckInMs + orbMs, undefined, undefined);
+
+                            checkMultistrike(fireWarp, 1.25, depth);
+                            return true;
+                        };
+
+                        const didFire = fireWarp();
+                        if (didFire) {
+                            this.maxWarpTimer = Math.max(60, 180 / this.weaponStats.warp.rate);
+                            this.warpTimer = this.maxWarpTimer;
+                        } else {
+                            this.warpTimer = 10;
+                        }
+                    }
+                }
+
 
                 // ELEMENTAL SURGE (Catalyst weapon) - Cycling elemental orbs
                 if (this.weapons.surge > 0) {
@@ -6368,7 +6626,7 @@
 
             getActiveWeaponCount() {
                 let c = 0; 
-                const keys = ['ion', 'turret', 'emp', 'barrier', 'orbital', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones', 'surge', 'boomerang'];
+                const keys = ['ion', 'turret', 'emp', 'barrier', 'orbital', 'beam', 'seeker', 'rad', 'tesla', 'whip', 'meteor', 'railgun', 'flak', 'pylons', 'mines', 'gas', 'ricochet', 'drones', 'surge', 'boomerang', 'gravity', 'warp'];
                 keys.forEach(k => { if(this.weapons[k] > 0) c++; });
                 return c;
             }
@@ -12074,7 +12332,7 @@
             constructor(x, y, vx, vy, damage, pierce, type, target, source, detectionRadius) {
                 this.x = x; this.y = y; this.vx = vx; this.vy = vy;
                 this.damage = damage; this.pierce = pierce; this.type = type; this.source = source;
-                this.life = type === 'seeker' ? 180 : type === 'mine' ? 600 : type === 'gas_grenade' ? 90 : type === 'railgun' ? 45 : type === 'ricochet' ? 180 : 70; // Ricochet now lasts 3 seconds 
+                this.life = type === 'seeker' ? 180 : type === 'mine' ? 600 : type === 'gas_grenade' ? 90 : type === 'railgun' ? 45 : type === 'ricochet' ? 180 : type === 'gravity_orb' ? 200 : 70; // Ricochet now lasts 3 seconds 
                 this.trail = []; this.target = target;
                 
                 // Mine-specific properties
@@ -12459,7 +12717,7 @@
                 
                 // Remove old trail points based on time (not count)
                 // Seeker: 0.25s trail, Ricochet: 0.4s trail (subtle glowing line with fade), Others: 0.1s trail
-                const maxAge = this.type === 'seeker' ? 250 : this.type === 'ricochet' ? 400 : 100;
+                const maxAge = this.type === 'seeker' ? 250 : this.type === 'ricochet' ? 400 : this.type === 'gravity_orb' ? 300 : 100;
                 const now = Date.now();
                 while (this.trail.length > 0 && (now - this.trail[0].time) > maxAge) {
                     this.trail.shift();
@@ -12479,6 +12737,120 @@
                             const targetVy = Math.sin(angle) * this.speed;
                             this.vx = this.vx + (targetVx - this.vx) * steerStrength;
                             this.vy = this.vy + (targetVy - this.vy) * steerStrength;
+                        }
+                    }
+                }
+
+                // GRAVITY ORB - Curves toward target; implodes on expire/hit pulling nearby enemies
+                if (this.type === 'gravity_orb') {
+                    if(Math.abs(this.x - player.x) > 2500 || Math.abs(this.y - player.y) > 2500) return false;
+
+                    // Re-acquire target if dead or became untargetable
+                    const orbTargetInvalid = !this.target || this.target.hp <= 0 ||
+                        (this.target.hackState && this.target.hackState.active) ||
+                        this.target.fleeing ||
+                        (this.target.isNexusPrime && !this.target.coreVulnerable);
+                    if (orbTargetInvalid) {
+                        const candidates = spatialGrid.getNearby(this.x, this.y, 600);
+                        this.target = null;
+                        let bestPri = -1, nearestD = Infinity;
+                        for (let ci = 0; ci < candidates.length; ci++) {
+                            const c = candidates[ci];
+                            if (c.hp <= 0) continue;
+                            if (c.hackState && c.hackState.active) continue;
+                            if (c.fleeing) continue;
+                            if (c.isNexusPrime && !c.coreVulnerable) continue;
+                            const pri = (c.isBossShield && (!c.spawnInvuln || c.spawnInvuln <= 0)) ? 10 :
+                                        c.isTitan ? 8.5 : c.isChampion ? 7 : c.type === 'tank' ? 5 : 1;
+                            const dx = c.x - this.x, dy = c.y - this.y;
+                            const d = dx*dx + dy*dy;
+                            if (pri > bestPri || (pri === bestPri && d < nearestD)) {
+                                bestPri = pri; nearestD = d; this.target = c;
+                            }
+                        }
+                    }
+
+                    if (this.target && this.target.hp > 0) {
+                        this.speed = Math.min((this.speed || 2.5) + 0.08 * (dt/16), 5);
+                        const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+                        const steer = (this.curveStrength || 0.06) * (dt/16);
+                        this.vx = this.vx + (Math.cos(angle) * this.speed - this.vx) * steer;
+                        this.vy = this.vy + (Math.sin(angle) * this.speed - this.vy) * steer;
+                    }
+
+                    // Continuous gravitational pull toward orb while traveling
+                    if (!this.pullCooldown) this.pullCooldown = 0;
+                    this.pullCooldown -= dt/16;
+                    if (this.pullCooldown <= 0) {
+                        this.pullCooldown = 2;
+                        const pullRadius = this.travelPullRadius || 80;
+                        const pullNearby = spatialGrid.getNearby(this.x, this.y, pullRadius);
+                        for (let pi = 0; pi < pullNearby.length; pi++) {
+                            const e = pullNearby[pi];
+                            if (e.hp <= 0) continue;
+                            // Don't pull enemies that are within 120px of the player — keeps them out of your personal space
+                            const epx = e.x - player.x, epy = e.y - player.y;
+                            if (epx*epx + epy*epy < 120*120) continue;
+                            // Heavy enemies resist the travel pull
+                            const pullResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
+                            const dx = this.x - e.x, dy = this.y - e.y;
+                            const d = Math.sqrt(dx*dx + dy*dy) || 1;
+                            if (d < pullRadius) {
+                                const falloff = 1 - d/pullRadius;
+                                const force = falloff * 5.5 * pullResist;
+                                e.pushX = (e.pushX || 0) + (dx/d) * force;
+                                e.pushY = (e.pushY || 0) + (dy/d) * force;
+                            }
+                        }
+                    }
+
+                    // On-expire implosion (also triggered on hit in the collision section)
+                    if (this.life <= 1 && !this.imploded) {
+                        this.imploded = true;
+                        const ir = this.implodeRadius || 100;
+                        createExplosion(this.x, this.y, '#7722ff', 20);
+                        // Gravity singularity ring — expands fast then gets yanked back in
+                        if (!player.gravityRings) player.gravityRings = [];
+                        player.gravityRings.push({ x: this.x, y: this.y, maxR: ir * 1.2, life: 450, maxLife: 450 });
+                        // Spiral spark burst — scale with particle budget
+                        if (!isReduced) {
+                            const pc = entities.particles.length;
+                            const sparkCount = pc > 80 ? 4 : pc > 50 ? 7 : 12;
+                            for (let si = 0; si < sparkCount; si++) {
+                                const angle = (si / sparkCount) * Math.PI * 2 + Math.random() * 0.3;
+                                const speed = 2.5 + Math.random() * 2;
+                                const spark = particlePool.spawn(this.x, this.y, si % 2 === 0 ? '#cc44ff' : '#9933ff', 1.0);
+                                spark.vx = Math.cos(angle) * speed;
+                                spark.vy = Math.sin(angle) * speed;
+                                entities.particles.push(spark);
+                            }
+                        }
+                        // Direct position snap — move enemies to center, zero their momentum so no overshoot
+                        const pullNearby = spatialGrid.getNearby(this.x, this.y, ir);
+                        for (let pi = 0; pi < pullNearby.length; pi++) {
+                            const e = pullNearby[pi];
+                            if (e.hp <= 0) continue;
+                            const dx = this.x - e.x, dy = this.y - e.y;
+                            const d = Math.sqrt(dx*dx + dy*dy) || 1;
+                            if (d < ir) {
+                                const snapResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
+                                const pull = (1 - d/ir) * 0.92 * snapResist;
+                                e.x += dx * pull;
+                                e.y += dy * pull;
+                                if (snapResist === 1.0) { e.pushX = 0; e.pushY = 0; }
+                            }
+                        }
+                        // AOE damage at detonation — damages all enemies in implode radius
+                        // Skip if fired point-blank (within 80px of player) to avoid self-knockback situations
+                        const distToPlayer = Math.sqrt((this.x - player.x)**2 + (this.y - player.y)**2);
+                        const aoeNearby = spatialGrid.getNearby(this.x, this.y, ir);
+                        for (let ai = 0; ai < aoeNearby.length; ai++) {
+                            const e = aoeNearby[ai];
+                            if (e.hp <= 0) continue;
+                            const dx = this.x - e.x, dy = this.y - e.y;
+                            if (dx*dx + dy*dy < ir*ir) {
+                                player.dealElementalDamage(e, this.damage * (distToPlayer < 80 ? 0 : 1), 'gravity', '#7722ff');
+                            }
                         }
                     }
                 }
@@ -13572,8 +13944,105 @@
                     }
                     
                     ctx.restore();
+                } else if (this.type === 'gravity_orb') {
+                    // BLACK HOLE aesthetic - dark void core with accretion disk and distortion ring
+                    ctx.save();
+
+                    // PULL FIELD: Pulsing gravity well ring showing influence radius
+                    const pullR = this.travelPullRadius || 80;
+                    const pulsePhase = (state.frameCount * 0.04) % 1; // 0→1 loop
+                    // Two concentric rings at different phases for constant visible pull cue
+                    for (let ri = 0; ri < 2; ri++) {
+                        const phase = (pulsePhase + ri * 0.5) % 1;
+                        const ringR = pullR * (0.15 + phase * 0.85); // Starts near orb, expands to full radius
+                        const ringAlpha = (1 - phase) * 0.35;
+                        if(!isReduced) { ctx.shadowBlur = 6; ctx.shadowColor = '#6600cc'; }
+                        ctx.strokeStyle = `rgba(100, 0, 200, ${ringAlpha})`;
+                        ctx.lineWidth = 2;
+                        ctx.beginPath();
+                        ctx.arc(this.x, this.y, ringR, 0, Math.PI * 2);
+                        ctx.stroke();
+                    }
+                    // Faint fill showing the whole field
+                    ctx.fillStyle = 'rgba(50, 0, 100, 0.06)';
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, pullR, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Trail - stretched gravitational wake, dark purple fading to nothing
+                    if (this.trail && this.trail.length > 1) {
+                        const now = Date.now();
+                        const trailMaxAge = 400;
+                        ctx.lineCap = 'round';
+                        for (let ti = 1; ti < this.trail.length; ti++) {
+                            const p1 = this.trail[ti - 1];
+                            const p2 = this.trail[ti];
+                            const age = now - p2.time;
+                            const fr = 1 - (age / trailMaxAge);
+                            if (fr > 0) {
+                                ctx.strokeStyle = `rgba(60, 0, 120, ${fr * 0.6})`;
+                                ctx.lineWidth = 10 + fr * 8;
+                                ctx.shadowBlur = 0;
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x, p1.y);
+                                ctx.lineTo(p2.x, p2.y);
+                                ctx.stroke();
+                                ctx.strokeStyle = `rgba(160, 60, 255, ${fr * 0.35})`;
+                                ctx.lineWidth = 3;
+                                ctx.beginPath();
+                                ctx.moveTo(p1.x, p1.y);
+                                ctx.lineTo(p2.x, p2.y);
+                                ctx.stroke();
+                            }
+                        }
+                    }
+
+                    ctx.translate(this.x, this.y);
+                    const spin = state.frameCount * 0.08;
+
+                    // Outer distortion glow - large, diffuse
+                    if(!isReduced) { ctx.shadowBlur = 30; ctx.shadowColor = '#4400aa'; }
+                    ctx.fillStyle = 'rgba(40, 0, 80, 0.5)';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 28, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Accretion disk - hot spinning arcs around the void
+                    if(!isReduced) { ctx.shadowBlur = 12; ctx.shadowColor = '#cc66ff'; }
+                    ctx.lineWidth = 3;
+                    for (let ai = 0; ai < 4; ai++) {
+                        const arcStart = spin + (ai * Math.PI / 2);
+                        const arcLen = Math.PI * 0.55;
+                        const arcAlpha = 0.6 + Math.sin(spin * 2 + ai) * 0.3;
+                        ctx.strokeStyle = `rgba(180, 80, 255, ${arcAlpha})`;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 18, arcStart, arcStart + arcLen);
+                        ctx.stroke();
+                        ctx.strokeStyle = `rgba(220, 140, 255, ${arcAlpha * 0.6})`;
+                        ctx.lineWidth = 1.5;
+                        ctx.beginPath();
+                        ctx.arc(0, 0, 13, arcStart + 0.2, arcStart + arcLen - 0.1);
+                        ctx.stroke();
+                        ctx.lineWidth = 3;
+                    }
+
+                    // Event horizon - absolute black void center
+                    ctx.shadowBlur = 0;
+                    ctx.fillStyle = '#000000';
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 10, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Photon ring - thin bright ring right at edge of void
+                    if(!isReduced) { ctx.shadowBlur = 8; ctx.shadowColor = '#ffffff'; }
+                    ctx.strokeStyle = 'rgba(200, 160, 255, 0.9)';
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 11, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.restore();
                 } else if (this.type === 'drone_rocket') {
-                    // Magenta plasma ball with spiraling energy
                     ctx.save();
                     ctx.translate(this.x, this.y);
                     
@@ -14874,13 +15343,17 @@
                                 player.weaponStats[weapon.id].area *= 1.02;
                             }
                             
-                            // Apply element (random or specific)
+                            // Apply element (none, random, or specific)
                             let element = weapon.element;
                             if (element === 'random') {
                                 const elements = ['fire', 'ice', 'volt', 'bio', 'hack'];
                                 element = elements[Math.floor(Math.random() * elements.length)];
                             }
-                            player.weaponAugments[weapon.id] = element;
+                            if (element && element !== 'none') {
+                                player.weaponAugments[weapon.id] = element;
+                            } else {
+                                delete player.weaponAugments[weapon.id];
+                            }
                             
                             debugLog(`  ⚔️ Weapon ${index + 1}: ${weapon.id} (Level ${testModeSettings.weaponLevel}, ${element})`);
                         });
@@ -20702,6 +21175,9 @@
                     for(let e of nearbyEnemies) {
                         // Skip inactive or dead enemies (including destroyed boss shields)
                         if (e.hp <= 0 || (e.active === false)) continue;
+
+                        // Gravity orb passes through all enemies except its intended target
+                        if (p.type === 'gravity_orb' && e !== p.target) continue;
                         
                         const dx = p.x - e.x; const dy = p.y - e.y;
                         const roughDist = Math.abs(dx) + Math.abs(dy); // Manhattan distance (faster)
@@ -20709,8 +21185,58 @@
                             if(Math.sqrt(dx*dx + dy*dy) < e.radius+10) {
                                 let hitColor = '#ffffff';
                                 if(p.type === 'seeker') hitColor = '#ff5500';
+                                if(p.type === 'gravity_orb') hitColor = '#7722ff';
                                 
                                 player.dealElementalDamage(e, p.damage, p.source, hitColor);
+                                
+                                // GRAVITY ORB HIT - trigger implosion immediately
+                                if (p.type === 'gravity_orb' && !p.imploded) {
+                                    p.imploded = true;
+                                    const ir = p.implodeRadius || 100;
+                                    createExplosion(p.x, p.y, '#7722ff', 22);
+                                    if (!player.gravityRings) player.gravityRings = [];
+                                    player.gravityRings.push({ x: p.x, y: p.y, maxR: ir * 1.2, life: 450, maxLife: 450 });
+                                    if (!isReduced) {
+                                        const pc = entities.particles.length;
+                                        const sparkCount = pc > 80 ? 4 : pc > 50 ? 7 : 12;
+                                        for (let si = 0; si < sparkCount; si++) {
+                                            const angle = (si / sparkCount) * Math.PI * 2 + Math.random() * 0.3;
+                                            const speed = 2.5 + Math.random() * 2;
+                                            const spark = particlePool.spawn(p.x, p.y, si % 2 === 0 ? '#cc44ff' : '#9933ff', 1.0);
+                                            spark.vx = Math.cos(angle) * speed;
+                                            spark.vy = Math.sin(angle) * speed;
+                                            entities.particles.push(spark);
+                                        }
+                                    }
+                                    // Direct position snap — no overshoot possible
+                                    const gPull = spatialGrid.getNearby(p.x, p.y, ir);
+                                    for (let gpi = 0; gpi < gPull.length; gpi++) {
+                                        const ge = gPull[gpi];
+                                        if (ge.hp <= 0) continue;
+                                        const gdx = p.x - ge.x, gdy = p.y - ge.y;
+                                        const gd = Math.sqrt(gdx*gdx + gdy*gdy) || 1;
+                                        if (gd < ir) {
+                                            const snapResist = (ge.type === 'boss' || ge.isNexusPrime || ge.isTitan) ? 0 : (ge.type === 'tank') ? 0.15 : 1.0;
+                                            const pull = (1 - gd/ir) * 0.92 * snapResist;
+                                            ge.x += gdx * pull;
+                                            ge.y += gdy * pull;
+                                            if (snapResist === 1.0) { ge.pushX = 0; ge.pushY = 0; }
+                                        }
+                                    }
+                                    // AOE damage — skip if point-blank to avoid close-range self-chaos
+                                    const pDistToPlayer = Math.sqrt((p.x - player.x)**2 + (p.y - player.y)**2);
+                                    if (pDistToPlayer >= 80) {
+                                        const aoeHit = spatialGrid.getNearby(p.x, p.y, ir);
+                                        for (let ai = 0; ai < aoeHit.length; ai++) {
+                                            const ae = aoeHit[ai];
+                                            if (ae.hp <= 0 || ae === e) continue;
+                                            const adx = p.x - ae.x, ady = p.y - ae.y;
+                                            if (adx*adx + ady*ady < ir*ir) {
+                                                player.dealElementalDamage(ae, p.damage, 'gravity', '#7722ff');
+                                            }
+                                        }
+                                    }
+                                }
                                 
                                 // DRONE ROCKET SPLASH DAMAGE
                                 if (p.type === 'drone_rocket' && p.hasSplash) {
@@ -20940,16 +21466,248 @@
                 p.draw(ctx); return true;
             });
 
+            // GRAVITY LENS singularity rings — expand fast then get yanked back to center
+            if (player.gravityRings && player.gravityRings.length > 0) {
+                player.gravityRings = player.gravityRings.filter(ring => {
+                    ring.life -= scaledDt;
+                    if (ring.life <= 0) return false;
+                    const t = 1 - ring.life / ring.maxLife;
+
+                    // Phase 1 (0→0.25): blast outward — outer ring leads, inner follows ~40ms later
+                    // Phase 2 (0.25→1): both collapse together hard
+                    const expandOffset = 0.08; // slightly more offset
+                    const calcR = (tIn, maxRIn) => {
+                        if (tIn < 0.25) {
+                            const et = tIn / 0.25;
+                            return maxRIn * (1 - Math.pow(1 - et, 3.5));
+                        } else {
+                            const ct = (tIn - 0.25) / 0.75;
+                            return maxRIn * Math.max(0, 1 - Math.pow(ct, 5.5));
+                        }
+                    };
+                    const outerR = calcR(t, ring.maxR);
+                    const tInner = t < 0.25
+                        ? Math.max(0, t - expandOffset)
+                        : t;
+                    const innerR = calcR(tInner, ring.maxR * 0.80); // closer to outer
+                    // Slightly longer fade-in
+                    const fadeIn = Math.min(1, t * 6);
+                    const alpha = fadeIn;
+                    ctx.save();
+
+                    // Scale glow halo widths relative to ring size so they stay visually thin at all area levels
+                    const haloW = Math.max(4, ring.maxR * 0.06);
+                    const midW = Math.max(2, ring.maxR * 0.03);
+
+                    // OUTER RING — deep purple with soft glow halo
+                    ctx.strokeStyle = `rgba(130, 0, 220, ${alpha * 0.3})`;
+                    ctx.lineWidth = haloW;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, outerR, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(170, 40, 255, ${alpha * 0.55})`;
+                    ctx.lineWidth = midW;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, outerR, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(200, 80, 255, ${alpha * 0.9})`;
+                    ctx.lineWidth = 1.5;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, outerR, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    // INNER RING — near-white hot core, burning bright
+                    ctx.strokeStyle = `rgba(200, 160, 255, ${alpha * 0.25})`;
+                    ctx.lineWidth = haloW * 0.8;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, innerR, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(225, 190, 255, ${alpha * 0.6})`;
+                    ctx.lineWidth = midW * 0.8;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, innerR, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.strokeStyle = `rgba(210, 180, 255, ${alpha})`;
+                    ctx.lineWidth = 1.2;
+                    ctx.beginPath();
+                    ctx.arc(ring.x, ring.y, innerR, 0, Math.PI * 2);
+                    ctx.stroke();
+
+                    ctx.restore();
+                    return true;
+                });
+            }
+
+            // WARP SLING frame-based event queue — ticks with scaledDt so all events obey time dilation
+            if (player.warpQueue && player.warpQueue.length > 0) {
+                const pending = player.warpQueue;
+                player.warpQueue = []; // new entries pushed by fn() go into the fresh array
+                for (let qi = 0; qi < pending.length; qi++) {
+                    const evt = pending[qi];
+                    evt.delay -= scaledDt;
+                    if (evt.delay <= 0) {
+                        evt.fn(); // may push new entries to player.warpQueue
+                    } else {
+                        player.warpQueue.push(evt);
+                    }
+                }
+            }
+
+            // WARP SLING flash rings - drawn in world space after projectiles
+            if (player.warpFlashes && player.warpFlashes.length > 0) {
+                player.warpFlashes = player.warpFlashes.filter(flash => {
+                    flash.life -= scaledDt;
+                    if (flash.life <= 0) return false;
+                    const progress = 1 - flash.life / flash.maxLife; // 0=start, 1=end
+                    const alpha = flash.life / flash.maxLife;
+                    ctx.save();
+
+                    if (flash.isMuzzle) {
+                        const fx = flash.followPlayer ? player.x : flash.x;
+                        const fy = flash.followPlayer ? player.y : flash.y;
+                        const maxR = flash.radius;
+                        const eased = progress * progress;
+                        // Fade IN only — reaches full brightness and stays there (no fadeout)
+                        const fadeIn = Math.min(1, progress * 3);
+                        if(!isReduced) { ctx.shadowBlur = 18; ctx.shadowColor = '#00d4ff'; }
+                        for (let ri = 0; ri < 2; ri++) {
+                            const ringProgress = Math.max(0, eased - ri * 0.15);
+                            const ringR = maxR * Math.max(0, 1.0 - ringProgress * 1.3);
+                            const ringAlpha = fadeIn * (1.0 - ri * 0.25);
+                            if (ringR > 1) {
+                                ctx.strokeStyle = `rgba(0, 200, 255, ${ringAlpha * 0.9})`;
+                                ctx.lineWidth = 2 + ri;
+                                ctx.beginPath();
+                                ctx.arc(fx, fy, ringR, 0, Math.PI * 2);
+                                ctx.stroke();
+                            }
+                        }
+                        const coreProgress = Math.max(0, eased - 0.3);
+                        const coreR = maxR * 0.22 * Math.max(0, 1.0 - coreProgress * 2.5);
+                        if (coreR > 0) {
+                            ctx.fillStyle = `rgba(100, 230, 255, ${fadeIn * 0.9})`;
+                            ctx.beginPath();
+                            ctx.arc(fx, fy, coreR, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    } else {
+                        // WARP SLING DETONATION: pure energy rift — near-white with gold essence
+                        const fx2 = flash.x, fy2 = flash.y;
+                        const maxR = flash.radius;
+                        // Main ring: fast expand, near-white
+                        const ringR = maxR * (0.1 + progress * 0.9);
+                        const ringAlpha = alpha * (1 - progress * 0.4);
+                        ctx.strokeStyle = `rgba(200, 245, 255, ${ringAlpha})`;
+                        ctx.lineWidth = 4;
+                        ctx.beginPath();
+                        ctx.arc(fx2, fy2, ringR, 0, Math.PI * 2);
+                        ctx.stroke();
+                        // Second ring — warm gold backing, slightly behind
+                        const ring2R = maxR * Math.max(0, progress * 0.75 - 0.05);
+                        if (ring2R > 0) {
+                            ctx.strokeStyle = `rgba(0, 180, 255, ${alpha * 0.55})`;
+                            ctx.lineWidth = 9;
+                            ctx.beginPath();
+                            ctx.arc(fx2, fy2, ring2R, 0, Math.PI * 2);
+                            ctx.stroke();
+                        }
+                        // Rift tear lines — near-white hot rays
+                        const riftCount = 7;
+                        for (let ri = 0; ri < riftCount; ri++) {
+                            const baseAngle = (ri / riftCount) * Math.PI * 2 + (flash.riftSeed || 0);
+                            const jitter = ((ri * 1.618) % 1 - 0.5) * 0.5;
+                            const angle = baseAngle + jitter * progress;
+                            const innerR = maxR * 0.08;
+                            const outerR = ringR * (0.6 + ((ri * 0.37) % 1) * 0.5);
+                            const midR = (innerR + outerR) * 0.5;
+                            const wobble = maxR * 0.06 * Math.sin(progress * Math.PI * 3 + ri);
+                            const perpA = angle + Math.PI / 2;
+                            ctx.strokeStyle = `rgba(180, 240, 255, ${alpha * (0.9 - ri * 0.04)})`;
+                            ctx.lineWidth = 2;
+                            ctx.lineCap = 'round';
+                            ctx.beginPath();
+                            ctx.moveTo(fx2 + Math.cos(angle) * innerR, fy2 + Math.sin(angle) * innerR);
+                            ctx.lineTo(
+                                fx2 + Math.cos(angle) * midR + Math.cos(perpA) * wobble,
+                                fy2 + Math.sin(angle) * midR + Math.sin(perpA) * wobble
+                            );
+                            ctx.lineTo(fx2 + Math.cos(angle) * outerR, fy2 + Math.sin(angle) * outerR);
+                            ctx.stroke();
+                        }
+                        // Intense white-gold core flash
+                        const coreR = maxR * 0.22 * Math.max(0, 1 - progress * 2.2);
+                        if (coreR > 1) {
+                            ctx.fillStyle = `rgba(0, 200, 255, ${alpha * 0.8})`;
+                            ctx.beginPath();
+                            ctx.arc(fx2, fy2, coreR, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                            ctx.beginPath();
+                            ctx.arc(fx2, fy2, coreR * 0.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+
+                    ctx.restore();
+                    return true;
+                });
+            }
+
+            // WARP SLING chain streaks (blink-to-blink lines) and energy orb projectile
+
+            // WARP SLING energy orb — tiny bright orb arcing fast from player to target with ease-out
+            if (player.warpOrbs && player.warpOrbs.length > 0) {
+                player.warpOrbs = player.warpOrbs.filter(orb => {
+                    orb.life -= scaledDt;
+                    if (orb.life <= 0) return false;
+                    const t = 1 - (orb.life / orb.maxLife); // 0=start, 1=end
+                    // Smooth ease-in-out: slow start, fast middle, gentle arrival — no piecewise discontinuity
+                    const eased = t < 0.5
+                        ? 4 * t * t * t
+                        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+                    const dx = orb.endX - orb.startX;
+                    const dy = orb.endY - orb.startY;
+                    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                    const perpX = -dy / dist;
+                    const perpY = dx / dist;
+                    const curlAmt = Math.min(dist * 0.35, 90);
+                    // Pure sin arc — zero at start and end, peak at midpoint, no lean multiplier to avoid end bump
+                    const curlShape = Math.sin(t * Math.PI);
+                    const arcOffset = curlAmt * curlShape;
+                    const ox = orb.startX + dx * eased + perpX * arcOffset;
+                    const oy = orb.startY + dy * eased + perpY * arcOffset;
+                    ctx.save();
+                    // Layered orb — slightly smaller, still bright
+                    ctx.fillStyle = 'rgba(0, 180, 255, 0.4)';
+                    ctx.beginPath();
+                    ctx.arc(ox, oy, 7.5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(0, 210, 255, 0.85)';
+                    ctx.beginPath();
+                    ctx.arc(ox, oy, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = 'rgba(160, 235, 255, 0.95)';
+                    ctx.beginPath();
+                    ctx.arc(ox, oy, 3.2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(ox, oy, 1.8, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                    return true;
+                });
+            }
+
             // Flush per-frame damage accumulator → one summed FloatingText per enemy
             // Flush per-frame damage accumulator → one summed FloatingText per enemy
             // Must be after projectile filter since collisions call takeDamage during that loop
             // Use two alternating pre-allocated maps to avoid GC pressure from new Map() every frame
-            // Flush every 20 frames (~333ms) — matches DOT tick and pylon tick interval
-            // so each flush captures weapon hits + pylon tick + fire/bio DOT all summed per enemy
+            // Flush every 10 frames (~167ms) — snappier feedback on hit
             if (!state.dmgAccumA) { state.dmgAccumA = new Map(); state.dmgAccumB = new Map(); state.dmgAccumActive = 'A'; }
             if (!state.dmgFlushTimer) state.dmgFlushTimer = 0;
             state.dmgFlushTimer += dt/16;
-            if (state.dmgFlushTimer >= 20 && state.dmgAccum && state.dmgAccum.size > 0) {
+            if (state.dmgFlushTimer >= 10 && state.dmgAccum && state.dmgAccum.size > 0) {
                 state.dmgFlushTimer = 0;
                 const toFlush = state.dmgAccum;
                 state.dmgAccum = (state.dmgAccumActive === 'A') ? state.dmgAccumB : state.dmgAccumA;
@@ -20967,7 +21725,7 @@
                         acc.elementType
                     ));
                 }
-            } else if (state.dmgFlushTimer >= 20) {
+            } else if (state.dmgFlushTimer >= 10) {
                 state.dmgFlushTimer = 0;
                 if (state.dmgAccum) state.dmgAccum.clear();
             }
@@ -22263,6 +23021,8 @@
                     if(wId === 'gas') pct = player.gasTimer / player.maxGasTimer;
                     if(wId === 'ricochet') pct = player.ricochetTimer / Math.max(60, 150 / player.weaponStats.ricochet.rate);
                     if(wId === 'boomerang') pct = player.boomerangTimer / player.maxBoomerangTimer;
+                    if(wId === 'gravity') pct = player.gravityTimer / player.maxGravityTimer;
+                    if(wId === 'warp') pct = player.warpTimer / player.maxWarpTimer;
                     
                     if (wId === 'ion') {
                         const currentIonRate = player.fireRate / Math.min(4, Math.max(1, player.weapons.ion));
@@ -22896,7 +23656,9 @@
                 'gas': 'Toxic Barrage',
                 'ricochet': 'Ricochet Disc',
                 'drones': 'Combat Drones',
-                'boomerang': 'Spiral Boomerang'
+                'boomerang': 'Spiral Boomerang',
+                'gravity': 'Gravity Lens',
+                'warp': 'Warp Sling'
             };
             
             debugLog('🎉 Victory weaponStats:', savedWeaponStats);
@@ -23072,7 +23834,9 @@
                     'gas': 'Toxic Barrage',
                     'ricochet': 'Ricochet Disc',
                     'drones': 'Combat Drones',
-                    'boomerang': 'Spiral Boomerang'
+                    'boomerang': 'Spiral Boomerang',
+                    'gravity': 'Gravity Lens',
+                    'warp': 'Warp Sling'
                 };
                 
                 debugLog('🔴 weaponStats:', state.weaponStats);
@@ -23271,7 +24035,9 @@
             { id: 'drones', name: 'Combat Drones' },
             { id: 'mines', name: 'Collapsar Mines' },
             { id: 'gas', name: 'Toxic Barrage' },
-            { id: 'boomerang', name: 'Spiral Boomerang' }
+            { id: 'boomerang', name: 'Spiral Boomerang' },
+            { id: 'gravity', name: 'Gravity Lens' },
+            { id: 'warp', name: 'Warp Sling' }
         ];
         
         // Populate weapon dropdowns
@@ -24513,7 +25279,8 @@
                 'tesla': 'Tesla Coils', 'whip': 'Plasma Whip', 'meteor': 'Meteor Strike',
                 'railgun': 'Railgun', 'flak': 'Flak Cannon', 'pylons': 'Energy Pylons',
                 'mines': 'Collapsar Mines', 'gas': 'Toxic Barrage', 'ricochet': 'Ricochet Disc',
-                'drones': 'Combat Drones', 'boomerang': 'Spiral Boomerang'
+                'drones': 'Combat Drones', 'boomerang': 'Spiral Boomerang',
+                'gravity': 'Gravity Lens', 'warp': 'Warp Sling'
             };
             const endlessWeaponArr = Object.entries(state.weaponStats || {})
                 .filter(([weapon]) => endlessWeaponNames[weapon])
