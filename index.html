@@ -2538,8 +2538,8 @@
                 this.gasTimer = 0; this.maxGasTimer = 390; // 6.5 seconds base lob rate (since clouds last 5s)
                 this.boomerangTimer = 0; this.maxBoomerangTimer = 210; // 3.5 second base cooldown
                 this.ricochetTimer = 0;
-                this.gravityTimer = 0; this.maxGravityTimer = 130; // ~2.2s base cooldown
-                this.warpTimer = 0; this.maxWarpTimer = 180; // 3s base cooldown
+                this.gravityTimer = 0; this.maxGravityTimer = 180; // ~3s base cooldown
+                this.warpTimer = 0; this.maxWarpTimer = 135; // ~2.25s base cooldown
                 this.drones = []; // Will be initialized when drones weapon is acquired
                 
                 // CATALYST ship-specific properties
@@ -5310,7 +5310,7 @@
 
                         const didFire = fireGravity();
                         if (didFire) {
-                            this.maxGravityTimer = Math.max(50, (130 - this.weapons.gravity * 7) / this.weaponStats.gravity.rate);
+                            this.maxGravityTimer = Math.max(50, (180 - this.weapons.gravity * 10) / this.weaponStats.gravity.rate);
                             this.gravityTimer = this.maxGravityTimer;
                         } else {
                             this.gravityTimer = 10;
@@ -5417,14 +5417,14 @@
                                     fn: () => {
                                         if (prevX !== undefined) {
                                         }
-                                        player.warpFlashes.push({ x: cx, y: cy, radius: blastRadius, life: 466, maxLife: 466, riftSeed: Math.random() * Math.PI * 2 });
+                                        player.warpFlashes.push({ x: cx, y: cy, radius: blastRadius, aoeRadius: blastRadius * 0.88, life: 466, maxLife: 466, riftSeed: Math.random() * Math.PI * 2 });
                                         createExplosion(cx, cy, '#00d4ff', 14);
-                                        const nearby = spatialGrid.getNearby(cx, cy, blastRadius);
+                                        const nearby = spatialGrid.getNearby(cx, cy, blastRadius * 0.88);
                                         for (let ni = 0; ni < nearby.length; ni++) {
                                             const e = nearby[ni];
                                             if (e.hp <= 0 || hitSet.has(e)) continue;
                                             const dx = e.x - cx, dy = e.y - cy;
-                                            if (dx*dx + dy*dy <= blastRadius*blastRadius) {
+                                            if (dx*dx + dy*dy <= (blastRadius * 0.88) * (blastRadius * 0.88)) {
                                                 hitSet.add(e);
                                                 player.dealElementalDamage(e, baseDmg, 'warp', '#00d4ff');
                                             }
@@ -5467,7 +5467,7 @@
 
                         const didFire = fireWarp();
                         if (didFire) {
-                            this.maxWarpTimer = Math.max(60, 180 / this.weaponStats.warp.rate);
+                            this.maxWarpTimer = Math.max(60, 135 / this.weaponStats.warp.rate);
                             this.warpTimer = this.maxWarpTimer;
                         } else {
                             this.warpTimer = 10;
@@ -12874,10 +12874,11 @@
                     if (this.life <= 1 && !this.imploded) {
                         this.imploded = true;
                         const ir = this.implodeRadius || 100;
+                        const pullR = ir * 1.2; // pull zone always slightly larger than AOE
                         createExplosion(this.x, this.y, '#7722ff', 20);
                         // Gravity singularity ring — expands fast then gets yanked back in
                         if (!player.gravityRings) player.gravityRings = [];
-                        player.gravityRings.push({ x: this.x, y: this.y, maxR: ir * 1.2, life: 450, maxLife: 450 });
+                        player.gravityRings.push({ x: this.x, y: this.y, maxR: ir, life: 450, maxLife: 450 });
                         // Spiral spark burst — scale with particle budget
                         if (!isReduced) {
                             const pc = entities.particles.length;
@@ -12891,23 +12892,22 @@
                                 entities.particles.push(spark);
                             }
                         }
-                        // Direct position snap — move enemies to center, zero their momentum so no overshoot
-                        const pullNearby = spatialGrid.getNearby(this.x, this.y, ir);
+                        // STEP 1: Pull snap — gather enemies first (pull zone wider than AOE)
+                        const pullNearby = spatialGrid.getNearby(this.x, this.y, pullR);
                         for (let pi = 0; pi < pullNearby.length; pi++) {
                             const e = pullNearby[pi];
                             if (e.hp <= 0) continue;
                             const dx = this.x - e.x, dy = this.y - e.y;
                             const d = Math.sqrt(dx*dx + dy*dy) || 1;
-                            if (d < ir) {
+                            if (d < pullR) {
                                 const snapResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
-                                const pull = (1 - d/ir) * 0.92 * snapResist;
+                                const pull = (1 - d/pullR) * 0.92 * snapResist;
                                 e.x += dx * pull;
                                 e.y += dy * pull;
                                 if (snapResist === 1.0) { e.pushX = 0; e.pushY = 0; }
                             }
                         }
-                        // AOE damage at detonation — damages all enemies in implode radius
-                        // Skip if fired point-blank (within 80px of player) to avoid self-knockback situations
+                        // STEP 2: AOE damage after pull — hits everything now gathered inside ir
                         const distToPlayer = Math.sqrt((this.x - player.x)**2 + (this.y - player.y)**2);
                         const aoeNearby = spatialGrid.getNearby(this.x, this.y, ir);
                         for (let ai = 0; ai < aoeNearby.length; ai++) {
@@ -21254,15 +21254,19 @@
                                 if(p.type === 'seeker') hitColor = '#ff5500';
                                 if(p.type === 'gravity_orb') hitColor = '#7722ff';
                                 
-                                player.dealElementalDamage(e, p.damage, p.source, hitColor);
+                                // Gravity orb defers primary hit damage until after pull (see implosion block below)
+                                if (p.type !== 'gravity_orb') {
+                                    player.dealElementalDamage(e, p.damage, p.source, hitColor);
+                                }
                                 
                                 // GRAVITY ORB HIT - trigger implosion immediately
                                 if (p.type === 'gravity_orb' && !p.imploded) {
                                     p.imploded = true;
                                     const ir = p.implodeRadius || 100;
+                                    const pullR = ir * 1.2; // pull zone always slightly larger than AOE
                                     createExplosion(p.x, p.y, '#7722ff', 22);
                                     if (!player.gravityRings) player.gravityRings = [];
-                                    player.gravityRings.push({ x: p.x, y: p.y, maxR: ir * 1.2, life: 450, maxLife: 450 });
+                                    player.gravityRings.push({ x: p.x, y: p.y, maxR: ir, life: 450, maxLife: 450 });
                                     if (!isReduced) {
                                         const pc = entities.particles.length;
                                         const sparkCount = pc > 80 ? 4 : pc > 50 ? 7 : 12;
@@ -21275,23 +21279,26 @@
                                             entities.particles.push(spark);
                                         }
                                     }
-                                    // Direct position snap — no overshoot possible
-                                    const gPull = spatialGrid.getNearby(p.x, p.y, ir);
+                                    // STEP 1: Pull snap — gather enemies first (pull zone wider than AOE)
+                                    const gPull = spatialGrid.getNearby(p.x, p.y, pullR);
                                     for (let gpi = 0; gpi < gPull.length; gpi++) {
                                         const ge = gPull[gpi];
                                         if (ge.hp <= 0) continue;
                                         const gdx = p.x - ge.x, gdy = p.y - ge.y;
                                         const gd = Math.sqrt(gdx*gdx + gdy*gdy) || 1;
-                                        if (gd < ir) {
+                                        if (gd < pullR) {
                                             const snapResist = (ge.type === 'boss' || ge.isNexusPrime || ge.isTitan) ? 0 : (ge.type === 'tank') ? 0.15 : 1.0;
-                                            const pull = (1 - gd/ir) * 0.92 * snapResist;
+                                            const pull = (1 - gd/pullR) * 0.92 * snapResist;
                                             ge.x += gdx * pull;
                                             ge.y += gdy * pull;
                                             if (snapResist === 1.0) { ge.pushX = 0; ge.pushY = 0; }
                                         }
                                     }
-                                    // AOE damage — skip if point-blank to avoid close-range self-chaos
+                                    // STEP 2: Damage after pull — primary target + AOE, all gathered enemies hit
                                     const pDistToPlayer = Math.sqrt((p.x - player.x)**2 + (p.y - player.y)**2);
+                                    // Primary target direct hit
+                                    player.dealElementalDamage(e, p.damage, 'gravity', '#7722ff');
+                                    // AOE on surrounding enemies
                                     if (pDistToPlayer >= 80) {
                                         const aoeHit = spatialGrid.getNearby(p.x, p.y, ir);
                                         for (let ai = 0; ai < aoeHit.length; ai++) {
@@ -21661,8 +21668,9 @@
                         // WARP SLING DETONATION: pure energy rift — near-white with gold essence
                         const fx2 = flash.x, fy2 = flash.y;
                         const maxR = flash.radius;
+                        const peakFactor = 0.88; // visual ring peaks at 88% of blastRadius — AOE matched to this
                         // Main ring: fast expand, near-white
-                        const ringR = maxR * (0.1 + progress * 0.9);
+                        const ringR = maxR * peakFactor * (0.1 + progress * 0.9);
                         const ringAlpha = alpha * (1 - progress * 0.4);
                         ctx.strokeStyle = `rgba(200, 245, 255, ${ringAlpha})`;
                         ctx.lineWidth = 4;
@@ -21670,7 +21678,7 @@
                         ctx.arc(fx2, fy2, ringR, 0, Math.PI * 2);
                         ctx.stroke();
                         // Second ring — warm gold backing, slightly behind
-                        const ring2R = maxR * Math.max(0, progress * 0.75 - 0.05);
+                        const ring2R = maxR * peakFactor * Math.max(0, progress * 0.75 - 0.05);
                         if (ring2R > 0) {
                             ctx.strokeStyle = `rgba(0, 180, 255, ${alpha * 0.55})`;
                             ctx.lineWidth = 9;
@@ -21684,7 +21692,7 @@
                             const baseAngle = (ri / riftCount) * Math.PI * 2 + (flash.riftSeed || 0);
                             const jitter = ((ri * 1.618) % 1 - 0.5) * 0.5;
                             const angle = baseAngle + jitter * progress;
-                            const innerR = maxR * 0.08;
+                            const innerR = maxR * peakFactor * 0.08;
                             const outerR = ringR * (0.6 + ((ri * 0.37) % 1) * 0.5);
                             const midR = (innerR + outerR) * 0.5;
                             const wobble = maxR * 0.06 * Math.sin(progress * Math.PI * 3 + ri);
