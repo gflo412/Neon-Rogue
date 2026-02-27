@@ -933,11 +933,11 @@
             <div class="border-t border-gray-700 pt-4 mb-6">
                 <div class="text-lg text-yellow-400 font-bold mb-2">REWARDS EARNED:</div>
                 <div class="text-green-400 mb-1">
-                    <i class="fas fa-cube mr-2"></i><span id="endless-reward-cores-conversion">0 Nexus Cores</span>
+                    <i class="fas fa-circle mr-2" style="color: #c084fc;"></i><span id="endless-reward-cores-conversion">0 Nexus Cores</span>
                     <span class="text-xs text-gray-400 ml-2">(1 Core = 150 Shards)</span>
                 </div>
                 <div class="text-pink-400" id="endless-reward-singularities-container" style="display:none;">
-                    <i class="fas fa-star mr-2"></i><span id="endless-reward-singularities">0 Singularities</span>
+                    <i class="fas fa-gem mr-2 text-yellow-300"></i><span id="endless-reward-singularities">0 Singularities</span>
                     <span class="text-xs text-gray-400 ml-2">(+1 every 15 levels)</span>
                 </div>
             </div>
@@ -9970,7 +9970,11 @@
                 // SAFETY: Validate entity coordinates
                 if (this.x === null || this.x === undefined || this.y === null || this.y === undefined || isNaN(this.x) || isNaN(this.y)) {
                     console.error(`🐛 BUG: Entity has invalid coordinates! type=${this.type}, isNexusPrime=${this.isNexusPrime}, isBossTurret=${this.isBossTurret}, x=${this.x}, y=${this.y}`);
-                    return; // Don't process damage for entities with invalid position
+                    // Recover to player position so the enemy stays active but doesn't corrupt further
+                    this.x = (player ? player.x : 0) + (Math.random() - 0.5) * 200;
+                    this.y = (player ? player.y : 0) + (Math.random() - 0.5) * 200;
+                    this.pushX = 0; this.pushY = 0;
+                    return; // Skip damage this tick, coords now valid for next frame
                 }
                 
                 // NEXUS PRIME CORE PROTECTION: Core immune to damage while shields are active
@@ -10241,6 +10245,7 @@
                             
                             // Deal 10% max HP damage to each remaining Titan
                             otherTitans.forEach(titan => {
+                                if (isNaN(titan.x) || isNaN(titan.y)) return; // skip corrupt entity
                                 const squadDamage = titan.maxHp * 0.10;
                                 titan.takeDamage(squadDamage, '#ff00ff', false, 'normal', 'titan_squad');
                                 
@@ -11829,6 +11834,8 @@
                 }
 
 
+                if (isNaN(this.pushX) || !isFinite(this.pushX)) this.pushX = 0;
+                if (isNaN(this.pushY) || !isFinite(this.pushY)) this.pushY = 0;
                 this.x += this.pushX * (dt/16); this.y += this.pushY * (dt/16);
                 this.pushX *= 0.8; this.pushY *= 0.8;
                 
@@ -12902,8 +12909,8 @@
                             if (d < pullR) {
                                 const snapResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
                                 const pull = (1 - d/pullR) * 0.92 * snapResist;
-                                e.x += dx * pull;
-                                e.y += dy * pull;
+                                const nx = e.x + dx * pull, ny = e.y + dy * pull;
+                                if (!isNaN(nx) && !isNaN(ny)) { e.x = nx; e.y = ny; }
                                 if (snapResist === 1.0) { e.pushX = 0; e.pushY = 0; }
                             }
                         }
@@ -12926,7 +12933,7 @@
                     // Initialize
                     if (this.bounces === undefined) this.bounces = 0;
                     if (this.maxBounces === undefined) this.maxBounces = 8;
-                    if (this.hitEnemies === undefined) this.hitEnemies = new Set();
+                    if (!(this.hitEnemies instanceof Set)) this.hitEnemies = new Set();
                     
                     // PERFORMANCE: Only check collision when near target (not every frame for all enemies)
                     if (this.target && this.target.hp > 0 && !this.hitEnemies.has(this.target)) {
@@ -17369,6 +17376,7 @@
             const now = Date.now(); 
             let dt = now - state.lastTime;
             state.lastTime = now;
+            dt = Math.min(dt, 100); // Cap at ~6 frames — prevents position explosions after tab-background spikes
             
             // PERFORMANCE MONITORING - Frame-time based (actual FPS measurement)
             if (!state.performanceMode) state.performanceMode = 'normal';
@@ -17790,7 +17798,8 @@
                 document.getElementById('boss-hud').classList.add('active');
                 
                 // If any screen/modal is open, queue the warning for after it closes
-                if (state.screen === 'levelup' || state.paused) {
+                const debuffOpen = document.getElementById('debuff-slot-machine').classList.contains('active');
+                if (state.screen === 'levelup' || state.paused || debuffOpen) {
                     state.queuedWarning = 'champion';
                 } else {
                     const warn = document.getElementById('boss-warning');
@@ -17997,7 +18006,7 @@
             if (player.ultimate && player.ultimateCharge < 100 && !player.ultimateActive) {
                 // Passive time-based charging
                 const ultimateData = ULTIMATES[player.ultimate];
-                const passiveChargePerFrame = (player.ultimateChargeRate * (dt / 1000)) / ultimateData.chargeTime * 100;
+                const passiveChargePerFrame = (player.ultimateChargeRate * (scaledDt / 1000)) / ultimateData.chargeTime * 100;
                 player.ultimateCharge += passiveChargePerFrame;
                 
                 // Cap at 100%
@@ -18132,6 +18141,11 @@
             
             // Enemy updates with spatial culling
             entities.enemies = entities.enemies.filter(e => {
+                // Remove entities with corrupt coordinates — can't render or interact safely
+                if (isNaN(e.x) || isNaN(e.y)) {
+                    debugLog(`🗑️ Culled corrupt enemy: type=${e.type}, hp=${e.hp}`);
+                    return false;
+                }
                 // FLEEING ENEMIES: Update and despawn when offscreen
                 if (e.fleeing) {
                     e.fleeingTimer -= scaledDt / 16;
@@ -21031,7 +21045,7 @@
                     const deflNearby = spatialGrid.getNearby(ep.x, ep.y, 60);
                     for (let di = 0; di < deflNearby.length; di++) {
                         const e = deflNearby[di];
-                        if (ep.hitEnemies && ep.hitEnemies.includes(e)) continue;
+                        if (ep.hitEnemies && ep.hitEnemies.has(e)) continue;
                         
                         const edx = e.x - ep.x, edy = e.y - ep.y;
                         const dist = Math.sqrt(edx*edx + edy*edy);
@@ -21048,8 +21062,8 @@
                                 break;
                             } else {
                                 player.dealElementalDamage(e, ep.deflectedDamage * 0.5, 'whip', '#ff00ff', false);
-                                if (!ep.hitEnemies) ep.hitEnemies = [];
-                                ep.hitEnemies.push(e);
+                                if (!ep.hitEnemies) ep.hitEnemies = new Set();
+                                ep.hitEnemies.add(e);
                             }
                         }
                     }
@@ -21112,7 +21126,7 @@
             // EVENT_HORIZON_PULL_TICK - Handle pull phase in main game loop (moved from separate setInterval)
             if (player.ultimateData && player.ultimateData.eventHorizon && player.ultimateData.eventHorizon.active && player.ultimateData.eventHorizon.phase === 'pull') {
                 const eventHorizon = player.ultimateData.eventHorizon;
-                eventHorizon.pullTimer -= dt;
+                eventHorizon.pullTimer -= scaledDt;
                 
                 const sx = eventHorizon.x, sy = eventHorizon.y;
                 const ehData = ULTIMATES.event_horizon;
@@ -21143,6 +21157,7 @@
                             if (e.isNexusPrime) pullDamage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
                             else if (e.isChampion) pullDamage *= ULTIMATE_DAMAGE_REDUCTION.titan;
                             else pullDamage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                            pullDamage = Math.max(1, pullDamage);
                             e.takeDamage(pullDamage, '#9400ff', false, 'normal');
                             const damageText = new FloatingText(e.x, e.y - 20, Math.floor(pullDamage * DAMAGE_DISPLAY_MULTIPLIER), '#bb66ff');
                             damageText.fontSize = 17; damageText.life = 60;
@@ -21172,6 +21187,7 @@
                                 if (e.isNexusPrime) damage *= ULTIMATE_DAMAGE_REDUCTION.nexusPrime;
                                 else if (e.isChampion) damage *= ULTIMATE_DAMAGE_REDUCTION.titan;
                                 else damage *= ULTIMATE_DAMAGE_REDUCTION.normal;
+                                damage = Math.max(1, damage);
                                 e.takeDamage(damage, '#9400ff', false, 'normal');
                                 e.flash = 8;
                                 const damageText = new FloatingText(e.x, e.y - 30, Math.floor(damage * DAMAGE_DISPLAY_MULTIPLIER), '#9400ff');
@@ -21289,8 +21305,8 @@
                                         if (gd < pullR) {
                                             const snapResist = (ge.type === 'boss' || ge.isNexusPrime || ge.isTitan) ? 0 : (ge.type === 'tank') ? 0.15 : 1.0;
                                             const pull = (1 - gd/pullR) * 0.92 * snapResist;
-                                            ge.x += gdx * pull;
-                                            ge.y += gdy * pull;
+                                            const gnx = ge.x + gdx * pull, gny = ge.y + gdy * pull;
+                                            if (!isNaN(gnx) && !isNaN(gny)) { ge.x = gnx; ge.y = gny; }
                                             if (snapResist === 1.0) { ge.pushX = 0; ge.pushY = 0; }
                                         }
                                     }
@@ -21855,11 +21871,10 @@
             let nextCurve;
             
             // Faster early game: reduced XP for levels 1-5
-            if (state.level < 5) nextCurve = 8 + (state.level * 6); // 14, 20, 26, 32 (was 20, 30, 40, 50)
+            if (state.level < 5) nextCurve = 8 + (state.level * 6); // 14, 20, 26, 32
             else if (state.level < 10) nextCurve = 10 + (state.level * 10); // 60, 70, 80, 90, 100
-            else if (state.level < 30) nextCurve = 110 + ((state.level - 10) * 15); // Linear through level 30
-            else if (state.level < 35) nextCurve = 410 + ((state.level - 30) * 20); // +20 per level: 30-34 (smoother transition)
-            else nextCurve = 510; // Flat 510 XP per level from 35+ (was 585 from 40+)
+            else if (state.level < 25) nextCurve = 110 + ((state.level - 10) * 15); // Linear up to level 25 (peaks at 320)
+            else nextCurve = 320; // Flat 320 XP per level from 25+ — fast paced, challenge comes from enemies
 
 
             // Check level up - no cap in endless mode
@@ -24579,6 +24594,13 @@
         function rollEndlessDebuff() {
             state.paused = true;
             document.getElementById('debuff-slot-machine').classList.add('active');
+            
+            // If the boss warning snuck through before we paused, hide it and re-queue
+            const warn = document.getElementById('boss-warning');
+            if (warn.style.display === 'block') {
+                warn.style.display = 'none';
+                state.queuedWarning = 'champion';
+            }
             
             // Start with hidden accept button
             document.getElementById('accept-debuff-btn').style.display = 'none';
