@@ -15,11 +15,12 @@
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
 
 
-        body { margin: 0; overflow: hidden; background-color: #020202; font-family: 'Orbitron', sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
+        body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Orbitron', sans-serif; touch-action: none; user-select: none; -webkit-user-select: none; }
         #gameCanvas { display: block; width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        #gameCanvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
 
 
-        .modal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.95); backdrop-filter: blur(10px); display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 40px; padding-bottom: 40px; overflow-y: auto; z-index: 100; pointer-events: auto; opacity: 0; visibility: hidden; transition: opacity 0.3s; }
+        .modal { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 1.0); display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 40px; padding-bottom: 40px; overflow-y: auto; z-index: 100; pointer-events: auto; opacity: 0; visibility: hidden; transition: opacity 0.3s; }
         .modal.active { opacity: 1; visibility: visible; }
         .void-divider { border: none; border-top: 1px solid rgba(168, 85, 247, 0.25); margin: 24px 0; width: 100%; max-width: 672px; }
 
@@ -685,7 +686,7 @@
             <div class="text-xs text-gray-300 space-y-1">
                 <div><i class="fas fa-check text-purple-400 mr-2"></i>3 augment slots</div>
                 <div><i class="fas fa-check text-purple-400 mr-2"></i>Random debuff every 10 levels (starting at 15)</div>
-                <div><i class="fas fa-check text-purple-400 mr-2"></i>Shop checkpoint every 25 levels</div>
+                <div><i class="fas fa-check text-purple-400 mr-2"></i>Shop checkpoint every 20 levels</div>
                 <div><i class="fas fa-check text-purple-400 mr-2"></i><strong class="text-yellow-400">NO LEVEL CAP</strong></div>
             </div>
         </div>
@@ -849,7 +850,7 @@
     <div id="endless-checkpoint-shop" class="modal">
         <div class="bg-gray-900 bg-opacity-95 border-2 border-purple-600 rounded-lg p-6 max-w-xl w-full">
             <h2 class="text-2xl text-purple-400 font-black mb-1 tracking-widest text-center">
-                <i class="fas fa-store mr-2"></i>CHECKPOINT - LEVEL <span id="checkpoint-level-display">25</span>
+                <i class="fas fa-store mr-2"></i>CHECKPOINT - LEVEL <span id="checkpoint-level-display">20</span>
             </h2>
             <div class="text-center text-yellow-400 font-bold text-sm mb-4">
                 💎 <span id="checkpoint-shards-display">0</span> Shards
@@ -1546,7 +1547,7 @@
             </div>
             <div class="flex items-start gap-4">
                 <i class="fas fa-store text-yellow-400 text-lg mt-0.5 w-5 shrink-0"></i>
-                <div><span class="text-yellow-300 font-bold">Shop checkpoint every 25 levels</span><span class="text-gray-400"> — restock and adapt your strategy</span></div>
+                <div><span class="text-yellow-300 font-bold">Shop checkpoint every 20 levels</span><span class="text-gray-400"> — restock and adapt your strategy</span></div>
             </div>
             <div class="flex items-start gap-4">
                 <i class="fas fa-exclamation-triangle text-red-400 text-lg mt-0.5 w-5 shrink-0"></i>
@@ -1628,6 +1629,7 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d', { alpha: false });
         let width, height;
+        const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1;
         const resize = () => { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; };
         window.addEventListener('resize', resize); resize();
 
@@ -1895,10 +1897,14 @@
             totalShardsCollected: 0, // Total shards collected this run
             endlessAugments: [], // Augments purchased from shops + equipped
             nextDebuffLevel: 15, // Next level to roll a debuff
-            nextCheckpointLevel: 25, // Next checkpoint shop level
+            nextCheckpointLevel: 20, // Next checkpoint shop level (every 20 levels)
             checkpointPurchases: { left: false, right: false }, // Track shop purchases
             shardBoostActive: false, // Shard amplifier buff
-            shardBoostEndLevel: 0 // When shard boost expires
+            shardBoostEndLevel: 0, // When shard boost expires
+            // Endless Titan System (time-based)
+            endlessTitanWave: 0, // How many titan waves have spawned
+            nextTitanTime: 3 * 60 * 1000, // First titan at 3 minutes (ms)
+            titanCooldownTimer: 0 // Breathing room after titan clears
         };
 
 
@@ -1919,21 +1925,21 @@
             barrier: { id: 'barrier', type: 'weapon', name: 'Kinetic Barrier', icon: 'fa-shield-alt', desc: 'Frontal energy plow that damages, deflects enemies, and redirects projectiles.', offensive: true, validUpgrades: ['dmg', 'area'], shipLocked: 'VANGUARD' },
             orbital: { id: 'orbital', type: 'weapon', name: 'Bladestorm', icon: 'fa-compact-disc', desc: 'Spinning energy blades orbit the ship at close range.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'REAPER' },
             surge: { id: 'surge', type: 'weapon', name: 'Elemental Surge', icon: 'fa-atom', desc: 'Cycles through elemental orbs. Every 5th hit triggers a burst.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'], shipLocked: 'CATALYST' },
-            beam: { id: 'beam', type: 'weapon', name: 'Plasma Beam', icon: 'fa-fire', desc: 'Continuous energy beam.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            seeker: { id: 'seeker', type: 'weapon', name: 'Seeker Swarm', icon: 'fa-rocket', desc: 'Launches homing missiles.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            rad: { id: 'rad', type: 'weapon', name: 'Rad-Field', icon: 'fa-radiation', desc: 'Emits a damaging aura.', offensive: true, validUpgrades: ['dmg', 'area'] },
-            tesla: { id: 'tesla', type: 'weapon', name: 'Tesla Coil', icon: 'fa-bolt', desc: 'Zaps nearby enemies.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            beam: { id: 'beam', type: 'weapon', name: 'Plasma Beam', icon: 'fa-fire', desc: 'Sustained beam that burns through armor. Prolonged contact reduces effective armor.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            seeker: { id: 'seeker', type: 'weapon', name: 'Seeker Swarm', icon: 'fa-rocket', desc: 'Homing missiles that accelerate mid-flight toward high-threat targets.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            rad: { id: 'rad', type: 'weapon', name: 'Rad-Field', icon: 'fa-radiation', desc: 'Emits a radiation field around the ship. Enemies that linger inside accumulate stacking damage.', offensive: true, validUpgrades: ['dmg', 'area'] },
+            tesla: { id: 'tesla', type: 'weapon', name: 'Tesla Coil', icon: 'fa-bolt', desc: 'Lightning that forks and chains between enemies with reduced damage per hop.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
 
-            whip: { id: 'whip', type: 'weapon', name: 'Plasma Whip', icon: 'fa-slash', desc: 'Energy whip slashes in a wide arc. Returns bullets back to sender.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            meteor: { id: 'meteor', type: 'weapon', name: 'Meteor Strike', icon: 'fa-meteor', desc: 'Calls down an orbital strike.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            railgun: { id: 'railgun', type: 'weapon', name: 'Railgun', icon: 'fa-long-arrow-alt-right', desc: 'Fires a piercing high-velocity slug.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            flak: { id: 'flak', type: 'weapon', name: 'Flak Cannon', icon: 'fa-bomb', desc: 'Fires a shell that bursts into shrapnel.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            pylons: { id: 'pylons', type: 'weapon', name: 'Energy Pylons', icon: 'fa-project-diagram', desc: 'Energy pylons damage enemies crossing between them.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            ricochet: { id: 'ricochet', type: 'weapon', name: 'Ricochet Disc', icon: 'fa-circle-notch', desc: 'Bouncing projectile chains between enemies.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            drones: { id: 'drones', type: 'weapon', name: 'Combat Drones', icon: 'fa-fighter-jet', desc: 'Autonomous drones fire at nearby enemies.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            mines: { id: 'mines', type: 'weapon', name: 'Collapsar Mines', icon: 'fa-gem', desc: 'Hovering mines pull enemies in before detonating.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            gas: { id: 'gas', type: 'weapon', name: 'Toxic Barrage', icon: 'fa-cloud', desc: 'Carpets enemy clusters with poison clouds.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
-            boomerang: { id: 'boomerang', type: 'weapon', name: 'Spiral Boomerang', icon: 'fa-sync', desc: 'Throws boomerangs that spiral outward then orbit back to you.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            whip: { id: 'whip', type: 'weapon', name: 'Plasma Whip', icon: 'fa-slash', desc: 'Wide arc slash that deflects projectiles back at enemies.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            meteor: { id: 'meteor', type: 'weapon', name: 'Meteor Strike', icon: 'fa-meteor', desc: 'Delayed orbital strike on the densest cluster. Impact knocks back survivors.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            railgun: { id: 'railgun', type: 'weapon', name: 'Railgun', icon: 'fa-long-arrow-alt-right', desc: 'High-velocity slug that punches through every enemy in a line. Ignores a portion of enemy armor.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            flak: { id: 'flak', type: 'weapon', name: 'Flak Cannon', icon: 'fa-bomb', desc: 'Proximity shell that bursts into a shrapnel cone on impact, shredding tightly packed groups.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            pylons: { id: 'pylons', type: 'weapon', name: 'Energy Pylons', icon: 'fa-project-diagram', desc: 'Paired pylons that zap enemies crossing the beam between them.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            ricochet: { id: 'ricochet', type: 'weapon', name: 'Ricochet Disc', icon: 'fa-circle-notch', desc: 'Disc that chains between enemies at high speed, bouncing up to 8 times.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            drones: { id: 'drones', type: 'weapon', name: 'Combat Drones', icon: 'fa-fighter-jet', desc: 'Autonomous fighters that orbit the ship and engage nearby enemies independently.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            mines: { id: 'mines', type: 'weapon', name: 'Collapsar Mines', icon: 'fa-gem', desc: 'Hovering mines that drift toward enemies. On trigger, pulls nearby foes inward before detonating.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            gas: { id: 'gas', type: 'weapon', name: 'Toxic Barrage', icon: 'fa-cloud', desc: 'Lobs canisters into enemy clusters that burst into lingering poison clouds dealing tick damage.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
+            boomerang: { id: 'boomerang', type: 'weapon', name: 'Spiral Boomerang', icon: 'fa-sync', desc: 'Disc that spirals outward in an expanding orbit then arcs back, hitting enemies on both passes.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             gravity: { id: 'gravity', type: 'weapon', name: 'Gravity Lens', icon: 'fa-circle', desc: 'Fires graviton orbs that curve toward enemies. On hit, implode and pull nearby foes together.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] },
             warp: { id: 'warp', type: 'weapon', name: 'Warp Sling', icon: 'fa-crosshairs', desc: 'Teleports an explosive charge to the densest enemy cluster. Higher levels add chain blinks.', offensive: true, validUpgrades: ['dmg', 'rate', 'area'] }
         };
@@ -5285,7 +5291,7 @@
                             }
                             if (!bestTarget) bestTarget = visibleEnemies[0];
 
-                            const baseDmg = this.damage * 1.65 * levelScaling * this.weaponStats.gravity.dmg * damageBonus;
+                            const baseDmg = this.damage * 2.2 * levelScaling * this.weaponStats.gravity.dmg * damageBonus;
                             // Area grows slightly per level (5px) plus area stat multiplier; travel pull grows very slightly
                             const implodeRadius = (55 + this.weapons.gravity * 5) * this.weaponStats.gravity.area;
                             const travelPullRadius = 80 + this.weapons.gravity * 4;
@@ -6828,6 +6834,15 @@
                 // Apply Ascension damage multipliers
                 dmg *= this.getAscensionDamageMult(enemy);
                 
+                // MOMENTUM DEBUFF: damage scales with current speed (25% at standstill, 100% at full speed)
+                if (this.momentumDebuff) {
+                    const maxSpeed = this.speed * (this.shipSpeedMult || 1.0);
+                    const curSpeed = Math.sqrt((this.vx || 0) ** 2 + (this.vy || 0) ** 2);
+                    const speedRatio = maxSpeed > 0 ? Math.min(1, curSpeed / maxSpeed) : 0;
+                    const momentumMult = 0.25 + speedRatio * 0.75; // 0.25 → 1.0
+                    dmg *= momentumMult;
+                }
+                
                 // COMBAT STIMULANT: Apply stacking damage bonus
                 if (this.stimulantStacks > 0) {
                     dmg *= (1 + this.stimulantStacks / 100);
@@ -7393,8 +7408,9 @@
                 // Basic: Always hackable (drone, swarm, splitter)
                 // Elite: Only with mastery (tank, kamikaze)
                 // Boss: Never hackable
-                const canHack = enemy.tier === 'basic' || 
-                               (enemy.tier === 'elite' && this.elementalMasteries.hack);
+                const canHack = !enemy.isTitan && !enemy.isNexusPrime &&
+                               (enemy.tier === 'basic' || 
+                               (enemy.tier === 'elite' && this.elementalMasteries.hack));
                 
                 if (isDirect && augElement === 'hack' && canHack && !enemy.hackState.active) {
                     // Digital Inferno: Burning enemies 50% easier to hack
@@ -10271,11 +10287,11 @@
                         
                         // Remove this TITAN's health bar if it has one
                         if (this.isChampion && this.championId) {
-                            const titanIndex = parseInt(this.championId.split('_')[1]);
-                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
-                            if (barWrapper) {
-                                barWrapper.remove();
-                            }
+                            const wrapperId = this.championId.startsWith('titan_endless_')
+                                ? `boss-bar-wrapper-endless-${this.endlessTitanWave}`
+                                : `boss-bar-wrapper-${parseInt(this.championId.split('_')[1])}`;
+                            const barWrapper = document.getElementById(wrapperId);
+                            if (barWrapper) barWrapper.remove();
                         }
                         
                         // Check if any other champions are still alive
@@ -10283,13 +10299,14 @@
                         
                         debugLog(`💀 Champion died. Remaining champions: ${remainingChampions}`);
                         
-                        // Remove this champion's health bar
+                        // Remove this champion's health bar (second pass for safety)
                         if (this.championId) {
-                            // Extract index from championId (e.g., "titan_0" -> 0)
-                            const titanIndex = parseInt(this.championId.split('_')[1]);
-                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
-                            if (barWrapper) {
-                                barWrapper.remove();
+                            const wrapperId2 = this.championId.startsWith('titan_endless_')
+                                ? `boss-bar-wrapper-endless-${this.endlessTitanWave}`
+                                : `boss-bar-wrapper-${parseInt(this.championId.split('_')[1])}`;
+                            const barWrapper2 = document.getElementById(wrapperId2);
+                            if (barWrapper2) {
+                                barWrapper2.remove();
                                 debugLog(`🗑️ Removed health bar for ${this.championId}`);
                             }
                         }
@@ -10300,10 +10317,17 @@
                             document.getElementById('boss-hud').classList.remove('active');
                             state.breathingRoomTimer = 300; // 5 seconds peace
                             
+                            // Endless: remove cooldown timer since next spawn is purely time-based
+                            if (state.gameMode === 'endless') {
+                                state.titanCooldownTimer = 0;
+                            }
+                            
                             // ULTIMATE DROP: Offer ultimate selection
                             state.pendingUltimateSelection = true;
                             debugLog('🎁 Titan defeated! Ultimate selection pending...');
-                            debugLog('   state.pendingUltimateSelection set to:', state.pendingUltimateSelection);
+                        } else if (state.gameMode === 'endless') {
+                            // Rebuild bars so remaining titans fill the space equally
+                            rebuildEndlessTitanBars();
                         }
                         
                         // Grant one save charge for defeating boss/champion
@@ -10713,8 +10737,8 @@
                             this.bioState.timer = 300; // Reset to full duration
                         }
                         
-                        // 25% chance to self-destruct when hack ends
-                        if (Math.random() < 0.25) {
+                        // 25% chance to self-destruct when hack ends (basic enemies only — not titans/champions)
+                        if (Math.random() < 0.25 && !this.isTitan && !this.isChampion) {
                             const explosionRadius = 70;
                             const explosionDamage = this.maxHp * 0.1;
                             
@@ -10767,8 +10791,8 @@
                             this.takeDamage(0, '#00ffff');
                         }
                         
-                        // If enemy was marked to die after hack, kill it now
-                        if (this.hackState.diesAfter) {
+                        // If enemy was marked to die after hack, kill it now (not titans/champions)
+                        if (this.hackState.diesAfter && !this.isTitan && !this.isChampion) {
                             this.hp = 0;
                             this.takeDamage(0, '#00ffff'); // Trigger death
                         }
@@ -11203,11 +11227,12 @@
                     
                     // Update individual health bar for this champion
                     if (this.isChampion && this.championId) {
-                        const titanIndex = parseInt(this.championId.split('_')[1]);
-                        const barElement = document.getElementById(`boss-bar-${titanIndex}`);
+                        const barId = this.championId.startsWith('titan_endless_')
+                            ? `boss-bar-endless-${this.endlessTitanWave}`
+                            : `boss-bar-${parseInt(this.championId.split('_')[1])}`;
+                        const barElement = document.getElementById(barId);
                         if (barElement) {
-                            const hpPercent = (this.hp / this.maxHp * 100);
-                            barElement.style.width = hpPercent + '%';
+                            barElement.style.width = (this.hp / this.maxHp * 100) + '%';
                         }
                     }
                     
@@ -11837,7 +11862,7 @@
                 if (isNaN(this.pushX) || !isFinite(this.pushX)) this.pushX = 0;
                 if (isNaN(this.pushY) || !isFinite(this.pushY)) this.pushY = 0;
                 this.x += this.pushX * (dt/16); this.y += this.pushY * (dt/16);
-                this.pushX *= 0.8; this.pushY *= 0.8;
+                this.pushX *= Math.pow(0.88, dt/16); this.pushY *= Math.pow(0.88, dt/16);
                 
                 // FLAK KNOCKBACK: Smooth animation with ease-out
                 if (this.knockbackState) {
@@ -12851,28 +12876,48 @@
                         this.vy = this.vy + (Math.sin(angle) * this.speed - this.vy) * steer;
                     }
 
-                    // Continuous gravitational pull toward orb while traveling
-                    if (!this.pullCooldown) this.pullCooldown = 0;
-                    this.pullCooldown -= dt/16;
-                    if (this.pullCooldown <= 0) {
-                        this.pullCooldown = 2;
-                        const pullRadius = this.travelPullRadius || 80;
+                    // Continuous gravitational pull — every 3 frames (smooth but cheaper)
+                    if (!this.pullFrameCounter) this.pullFrameCounter = 0;
+                    this.pullFrameCounter += dt/16;
+                    if (this.pullFrameCounter >= 3) {
+                        this.pullFrameCounter = 0;
+                        const pullRadius = this.travelPullRadius || 120;
+                        const pullRadiusSq = pullRadius * pullRadius;
                         const pullNearby = spatialGrid.getNearby(this.x, this.y, pullRadius);
                         for (let pi = 0; pi < pullNearby.length; pi++) {
                             const e = pullNearby[pi];
                             if (e.hp <= 0) continue;
-                            // Don't pull enemies that are within 120px of the player — keeps them out of your personal space
                             const epx = e.x - player.x, epy = e.y - player.y;
-                            if (epx*epx + epy*epy < 120*120) continue;
-                            // Heavy enemies resist the travel pull
+                            if (epx*epx + epy*epy < 80*80) continue;
                             const pullResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
+                            if (pullResist === 0) continue;
                             const dx = this.x - e.x, dy = this.y - e.y;
-                            const d = Math.sqrt(dx*dx + dy*dy) || 1;
-                            if (d < pullRadius) {
+                            const dSq = dx*dx + dy*dy;
+                            if (dSq < pullRadiusSq) {
+                                const d = Math.sqrt(dSq) || 1;
                                 const falloff = 1 - d/pullRadius;
-                                const force = falloff * 5.5 * pullResist;
+                                const force = falloff * falloff * 8 * pullResist * 3; // *3 to compensate for running 1/3 as often
                                 e.pushX = (e.pushX || 0) + (dx/d) * force;
                                 e.pushY = (e.pushY || 0) + (dy/d) * force;
+                            }
+                        }
+                    }
+                    if (!this.pullCooldown) this.pullCooldown = 0;
+                    this.pullCooldown -= dt/16;
+                    if (this.pullCooldown <= 0) {
+                        this.pullCooldown = 20;
+                        const dmgRadius = this.travelPullRadius || 120;
+                        const dmgNearby = spatialGrid.getNearby(this.x, this.y, dmgRadius);
+                        for (let pi = 0; pi < dmgNearby.length; pi++) {
+                            const e = dmgNearby[pi];
+                            if (e.hp <= 0) continue;
+                            const pullResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
+                            if (pullResist === 0) continue;
+                            const dx = this.x - e.x, dy = this.y - e.y;
+                            if (dx*dx + dy*dy < dmgRadius*dmgRadius) {
+                                const tickDmg = Math.max(1, this.damage * 0.15 * pullResist);
+                                const gravityElement = player.weaponAugments ? player.weaponAugments['gravity'] : null;
+                                player.dealElementalDamage(e, tickDmg, 'gravity', '#9933ff', false, 'normal', gravityElement);
                             }
                         }
                     }
@@ -12881,12 +12926,12 @@
                     if (this.life <= 1 && !this.imploded) {
                         this.imploded = true;
                         const ir = this.implodeRadius || 100;
-                        const pullR = ir * 1.2; // pull zone always slightly larger than AOE
+                        const pullR = ir * 1.4;
                         createExplosion(this.x, this.y, '#7722ff', 20);
-                        // Gravity singularity ring — expands fast then gets yanked back in
+                        // Gravity singularity ring — expands fast then collapses inward
                         if (!player.gravityRings) player.gravityRings = [];
                         player.gravityRings.push({ x: this.x, y: this.y, maxR: ir, life: 450, maxLife: 450 });
-                        // Spiral spark burst — scale with particle budget
+                        // Spiral spark burst
                         if (!isReduced) {
                             const pc = entities.particles.length;
                             const sparkCount = pc > 80 ? 4 : pc > 50 ? 7 : 12;
@@ -12899,7 +12944,7 @@
                                 entities.particles.push(spark);
                             }
                         }
-                        // STEP 1: Pull snap — gather enemies first (pull zone wider than AOE)
+                        // STEP 1: Violent pull snap — slam enemies hard toward center
                         const pullNearby = spatialGrid.getNearby(this.x, this.y, pullR);
                         for (let pi = 0; pi < pullNearby.length; pi++) {
                             const e = pullNearby[pi];
@@ -12908,23 +12953,21 @@
                             const d = Math.sqrt(dx*dx + dy*dy) || 1;
                             if (d < pullR) {
                                 const snapResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
-                                const pull = (1 - d/pullR) * 0.92 * snapResist;
-                                const nx = e.x + dx * pull, ny = e.y + dy * pull;
+                                const pull = (1 - d/pullR) * 1.6 * snapResist;
+                                const nx = e.x + dx * Math.min(pull, 0.95), ny = e.y + dy * Math.min(pull, 0.95);
                                 if (!isNaN(nx) && !isNaN(ny)) { e.x = nx; e.y = ny; }
                                 if (snapResist === 1.0) { e.pushX = 0; e.pushY = 0; }
                             }
                         }
-                        // STEP 2: AOE damage after pull — hits everything now gathered inside ir
-                        const distToPlayer = Math.sqrt((this.x - player.x)**2 + (this.y - player.y)**2);
-                        const aoeNearby = spatialGrid.getNearby(this.x, this.y, ir);
-                        for (let ai = 0; ai < aoeNearby.length; ai++) {
-                            const e = aoeNearby[ai];
-                            if (e.hp <= 0) continue;
-                            const dx = this.x - e.x, dy = this.y - e.y;
-                            if (dx*dx + dy*dy < ir*ir) {
-                                player.dealElementalDamage(e, this.damage * (distToPlayer < 80 ? 0 : 1), 'gravity', '#7722ff');
-                            }
-                        }
+                        // STEP 2: Queue delayed damage — fires when ring starts collapsing (t=0.25, life=337)
+                        if (!state.pendingGravityHits) state.pendingGravityHits = [];
+                        state.pendingGravityHits.push({
+                            x: this.x, y: this.y,
+                            radius: ir,
+                            damage: this.damage,
+                            fired: false,
+                            ringRef: player.gravityRings[player.gravityRings.length - 1]
+                        });
                     }
                 }
                 
@@ -14573,12 +14616,28 @@
 
                 if (dist < player.radius + 10) { 
                     if (this.type === 'xp') gainXp(this.val);
-                    if (this.type === 'health') { player.heal(30, true); } // Reduced from 50 to 30 
+                    if (this.type === 'health') {
+                        // CURSED DROPS: 40% chance to deal 15 damage instead of healing
+                        if (player.cursedDrops && state.gameMode === 'endless' && seededRandom() < 0.3) {
+                            player.takeDamage(15, false, 'Cursed Drop');
+                            createFloatingText(player.x, player.y - 20, 'CURSED!', '#ff3333', 16, 60);
+                        } else {
+                            player.heal(30, true);
+                        }
+                    }
                     // Shield cells removed from game
                     if (this.type === 'shield_cell') { 
                         return false; // Remove pickup
                     }
-                    if (this.type === 'magnet') { activateMagnet(); }
+                    if (this.type === 'magnet') {
+                        // CURSED DROPS: 40% chance to deal 15 damage instead of activating
+                        if (player.cursedDrops && state.gameMode === 'endless' && seededRandom() < 0.3) {
+                            player.takeDamage(15, false, 'Cursed Drop');
+                            createFloatingText(player.x, player.y - 20, 'CURSED!', '#ff3333', 16, 60);
+                        } else {
+                            activateMagnet();
+                        }
+                    }
                     if (this.type === 'void_shard') {
                         // Collect Void Shard (Endless Mode currency)
                         if (state.gameMode === 'endless') {
@@ -15348,10 +15407,13 @@
                 state.voidShards = 0;
                 state.totalShardsCollected = 0;
                 state.nextDebuffLevel = 15;
-                state.nextCheckpointLevel = 25;
+                state.nextCheckpointLevel = 20;
                 state.checkpointPurchases = { left: false, right: false };
                 state.shardBoostActive = false;
                 state.shardBoostEndLevel = 0;
+                state.endlessTitanWave = 0;
+                state.nextTitanTime = 2 * 60 * 1000;
+                state.titanCooldownTimer = 0;
                 
                 // Show endless HUD elements
                 document.getElementById('void-shard-hud').style.display = 'block';
@@ -16103,7 +16165,10 @@
                     'overcharged_enemies': 'Overcharged Enemies',
                     'accelerated_enemies': 'Accelerated Enemies',
                     'empowered_titans': 'Empowered Titans',
-                    'critical_weakness': 'Critical Weakness'
+                    'critical_weakness': 'Critical Weakness',
+                    'momentum': 'Momentum',
+                    'debt_collector': 'Debt Collector',
+                    'cursed_drops': 'Cursed Drops'
                 };
                 const debuffDescs = {
                     'fragile_hull': 'Max HP and HP upgrades -30%',
@@ -16120,7 +16185,10 @@
                     'overcharged_enemies': 'All enemies deal +20% damage',
                     'accelerated_enemies': 'All enemies move 15% faster',
                     'empowered_titans': 'Titan Champions have +25% HP and damage',
-                    'critical_weakness': 'Enemies have +15% crit chance vs you'
+                    'critical_weakness': 'Enemies have +15% crit chance vs you',
+                    'momentum': 'Damage scales with speed — 100% speed = 100% damage, standing still = 25% damage',
+                    'debt_collector': 'Shop items cost 50% more Void Shards',
+                    'cursed_drops': 'Health and magnet pickups have 40% chance to deal 15 damage instead'
                 };
                 
                 // FontAwesome icon mapping
@@ -16139,7 +16207,10 @@
                     'overcharged_enemies': 'fa-radiation-alt',
                     'accelerated_enemies': 'fa-running',
                     'empowered_titans': 'fa-dragon',
-                    'critical_weakness': 'fa-crosshairs'
+                    'critical_weakness': 'fa-crosshairs',
+                    'momentum': 'fa-tachometer-alt',
+                    'debt_collector': 'fa-coins',
+                    'cursed_drops': 'fa-skull-crossbones'
                 };
                 
                 state.endlessDebuffs.forEach(debuffId => {
@@ -16618,6 +16689,85 @@
             setTimeout(() => {
                 spawnNexusPrime(spawnX, spawnY);
             }, 3500);
+        }
+        
+        // Rebuilds the endless titan health bar section — called on spawn and on death
+        // Each bar gets an equal share of width, labeled with its Mk. number
+        function rebuildEndlessTitanBars() {
+            const toRoman = n => {
+                const v=[1000,900,500,400,100,90,50,40,10,9,5,4,1];
+                const s=['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
+                let r=''; for(let i=0;i<v.length;i++) while(n>=v[i]){r+=s[i];n-=v[i];} return r;
+            };
+            const aliveTitans = entities.enemies.filter(e => e.isChampion && e.hp > 0 && e.endlessTitanWave);
+            const barsContainer = document.getElementById('boss-bars-container');
+            barsContainer.innerHTML = '';
+            barsContainer.style.flexDirection = 'column';
+            barsContainer.style.alignItems = 'center';
+            if (aliveTitans.length === 0) return;
+
+            // Title: single titan shows its Mk. label, multiple show TITAN SQUAD
+            const titleDiv = document.createElement('div');
+            titleDiv.id = 'endless-titan-title';
+            titleDiv.style.textAlign = 'center';
+            titleDiv.style.color = '#ff6600';
+            titleDiv.style.fontWeight = 'bold';
+            titleDiv.style.marginBottom = '2px';
+            titleDiv.style.fontSize = '18px';
+            titleDiv.style.textShadow = '0 0 10px #ff6600';
+            titleDiv.innerText = aliveTitans.length === 1
+                ? `Titan Mk. ${toRoman(aliveTitans[0].endlessTitanWave)}`
+                : 'TITAN SQUAD';
+            barsContainer.appendChild(titleDiv);
+
+            // Row of bars — flex so they share space equally
+            const barsRow = document.createElement('div');
+            barsRow.style.display = 'flex';
+            barsRow.style.gap = '4px';
+            barsRow.style.width = '100%';
+            barsRow.style.alignItems = 'center';
+            barsContainer.appendChild(barsRow);
+
+            aliveTitans.forEach(titan => {
+                const wave = titan.endlessTitanWave;
+
+                // Label above each bar when multiple titans
+                const col = document.createElement('div');
+                col.style.flex = '1';
+                col.style.minWidth = '0';
+
+                if (aliveTitans.length > 1) {
+                    const label = document.createElement('div');
+                    label.style.textAlign = 'center';
+                    label.style.fontSize = '10px';
+                    label.style.color = '#ffaa66';
+                    label.style.marginBottom = '1px';
+                    label.style.whiteSpace = 'nowrap';
+                    label.innerText = `Mk. ${toRoman(wave)}`;
+                    col.appendChild(label);
+                }
+
+                const barContainer = document.createElement('div');
+                barContainer.className = 'boss-bar-container';
+                barContainer.style.height = '15px';
+
+                const barFill = document.createElement('div');
+                barFill.id = `boss-bar-endless-${wave}`;
+                barFill.className = 'boss-bar-fill';
+                barFill.style.width = (titan.hp / titan.maxHp * 100) + '%';
+                barFill.style.background = '#ff6600';
+                barFill.style.boxShadow = '0 0 20px #ff6600';
+
+                barContainer.appendChild(barFill);
+                col.appendChild(barContainer);
+
+                const wrapper = document.createElement('div');
+                wrapper.id = `boss-bar-wrapper-endless-${wave}`;
+                wrapper.style.flex = '1';
+                wrapper.style.minWidth = '0';
+                wrapper.appendChild(col);
+                barsRow.appendChild(wrapper);
+            });
         }
         
         function showBossWarning() {
@@ -17589,7 +17739,7 @@
             state.zoom += (state.targetZoom - state.zoom) * 0.02; // Slow interpolation
             
             ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.fillStyle = '#050608'; ctx.fillRect(0, 0, width, height);
+            ctx.fillStyle = '#080808'; ctx.fillRect(0, 0, width, height);
 
 
             const tx = width/2 - player.x * state.zoom; const ty = height/2 - player.y * state.zoom;
@@ -17658,7 +17808,7 @@
 
             // SAFE GRID
             const gs = 80 * state.zoom;
-            ctx.strokeStyle = '#1e2130'; ctx.lineWidth = 2; ctx.beginPath();
+            ctx.strokeStyle = '#0f1018'; ctx.lineWidth = 2; ctx.beginPath();
             let offsetX = state.camera.x % gs; let offsetY = state.camera.y % gs;
             if (isNaN(offsetX)) offsetX = 0; if (isNaN(offsetY)) offsetY = 0;
             
@@ -17680,85 +17830,62 @@
                 debugLog('This should not happen - boss should trigger in gainXp()');
             }
             
-            // CHAMPION SPAWN: Levels 15, 25, 35 only (skip 45, go straight to boss at 50) - NORMAL MODE
-            // ENDLESS MODE: Spawn titans every 10 levels starting at 15 (1, 2, 3+ titans)
-            const shouldSpawnTitans = state.gameMode === 'endless' 
-                ? (state.level >= 15 && (state.level - 15) % 10 === 0)
-                : (state.level === 15 || state.level === 25 || state.level === 35);
+            // CHAMPION SPAWN: Levels 15, 25, 35 only - NORMAL MODE ONLY
+            // ENDLESS MODE uses time-based titan spawning below
+            const shouldSpawnTitans = state.gameMode !== 'endless' &&
+                (state.level === 15 || state.level === 25 || state.level === 35);
             
             if (!state.finalBossTriggered && !state.bossActive && state.bossWave !== state.level && shouldSpawnTitans) {
-                state.bossActive = true; // Flag to track champion is active
+                state.bossActive = true;
                 state.bossWave = state.level;
-                // DON'T clear enemies - champion joins the fight!
                 
-                // Determine number of TITANs based on level
+                // Determine number of TITANs based on level (normal mode)
                 let titanCount = 1;
-                if (state.gameMode === 'endless') {
-                    // Endless: 1 titan at 15, 2 at 25, 3 at 35+
-                    if (state.level >= 35) titanCount = 3;
-                    else if (state.level >= 25) titanCount = 2;
-                    else titanCount = 1;
-                } else {
-                    // Normal: same logic
-                    if (state.level >= 35) titanCount = 3;
-                    else if (state.level >= 25) titanCount = 2;
-                }
+                if (state.level >= 35) titanCount = 3;
+                else if (state.level >= 25) titanCount = 2;
                 
                 // Clear previous health bars
                 const barsContainer = document.getElementById('boss-bars-container');
                 barsContainer.innerHTML = '';
-                
-                // Change to column layout for title above bars
                 barsContainer.style.flexDirection = 'column';
                 barsContainer.style.alignItems = 'center';
                 
-                // Add title for TITAN encounter
                 const titleDiv = document.createElement('div');
                 titleDiv.style.textAlign = 'center';
                 titleDiv.style.color = '#ff6600';
                 titleDiv.style.fontWeight = 'bold';
-                titleDiv.style.marginBottom = '-4px'; // Negative margin to bring health bars closer
+                titleDiv.style.marginBottom = '-4px';
                 titleDiv.style.fontSize = '18px';
                 titleDiv.style.textShadow = '0 0 10px #ff6600';
                 titleDiv.innerText = titanCount === 1 ? 'TITAN' : 'TITAN SQUAD';
                 barsContainer.appendChild(titleDiv);
                 
-                // Create container for health bars
                 const barsRow = document.createElement('div');
                 barsRow.style.display = 'flex';
                 barsRow.style.gap = '8px';
                 barsRow.style.width = '100%';
                 barsRow.style.justifyContent = 'center';
-                barsRow.style.margin = '0'; // Remove any default margin
-                barsRow.style.padding = '0'; // Remove any default padding
+                barsRow.style.margin = '0';
+                barsRow.style.padding = '0';
                 
-                // Spawn TITANs in a formation
                 for (let i = 0; i < titanCount; i++) {
                     const champion = new Enemy('champion');
                     champion.championId = `titan_${i}`;
-                    champion.isTitan = true; // Immune to gravity pull/snap
+                    champion.isTitan = true;
                     
-                    // DEFENSIVE: Prevent methods from being deleted
-                    // Seal the prototype to prevent modification
                     if (i === 0) {
-                        // Only need to do this once for the prototype
                         Object.seal(Object.getPrototypeOf(champion));
-                        debugLog('🛡️ Sealed Enemy prototype to prevent method deletion');
                     }
                     
-                    // Position TITANs in a spread formation
                     if (titanCount === 1) {
-                        // Single TITAN - spawn at player position
                         champion.x = player.x + (Math.random() - 0.5) * 200;
                         champion.y = player.y + (Math.random() - 0.5) * 200;
                     } else if (titanCount === 2) {
-                        // Two TITANs - spawn on opposite sides
                         const angle = (Math.PI * 2 / 2) * i + Math.random() * 0.5;
                         const dist = 250 + Math.random() * 100;
                         champion.x = player.x + Math.cos(angle) * dist;
                         champion.y = player.y + Math.sin(angle) * dist;
-                    } else if (titanCount === 3) {
-                        // Three TITANs - spawn in triangle formation
+                    } else {
                         const angle = (Math.PI * 2 / 3) * i + Math.random() * 0.3;
                         const dist = 300 + Math.random() * 100;
                         champion.x = player.x + Math.cos(angle) * dist;
@@ -17767,15 +17894,14 @@
                     
                     entities.enemies.push(champion);
                     
-                    // Create health bar for this TITAN
                     const barWrapper = document.createElement('div');
                     barWrapper.id = `boss-bar-wrapper-${i}`;
-                    barWrapper.style.flex = '1'; // Equal width, expands to fill space
-                    barWrapper.style.minWidth = '80px'; // Minimum width for readability
+                    barWrapper.style.flex = '1';
+                    barWrapper.style.minWidth = '80px';
                     
                     const barContainer = document.createElement('div');
                     barContainer.className = 'boss-bar-container';
-                    barContainer.style.height = '15px'; // Consistent height
+                    barContainer.style.height = '15px';
                     
                     const barFill = document.createElement('div');
                     barFill.id = `boss-bar-${i}`;
@@ -17790,14 +17916,9 @@
                 }
                 
                 barsContainer.appendChild(barsRow);
-                
-                // Champion name display
-                const name = titanCount === 1 ? `TITAN` : `TITAN SQUAD`;
-                document.getElementById('boss-name-display').innerText = name;
-
+                document.getElementById('boss-name-display').innerText = titanCount === 1 ? 'TITAN' : 'TITAN SQUAD';
                 document.getElementById('boss-hud').classList.add('active');
                 
-                // If any screen/modal is open, queue the warning for after it closes
                 const debuffOpen = document.getElementById('debuff-slot-machine').classList.contains('active');
                 if (state.screen === 'levelup' || state.paused || debuffOpen) {
                     state.queuedWarning = 'champion';
@@ -17808,9 +17929,73 @@
                 }
             }
 
+            // ENDLESS MODE: Time-based titan spawning
+            if (state.gameMode === 'endless' && !state.finalBossTriggered) {
+                const noActiveTitan = !entities.enemies.some(e => e.isChampion && e.hp > 0);
+                const readyToSpawn = state.gameTime >= state.nextTitanTime && 
+                                     !state.paused &&
+                                     state.breathingRoomTimer <= 0;
+                
+                if (readyToSpawn) {
+                    state.endlessTitanWave++;
+                    const wave = state.endlessTitanWave;
+                    
+                    // Roman numeral helper
+                    const toRoman = n => {
+                        const vals = [1000,900,500,400,100,90,50,40,10,9,5,4,1];
+                        const syms = ['M','CM','D','CD','C','XC','L','XL','X','IX','V','IV','I'];
+                        let result = '';
+                        for (let i = 0; i < vals.length; i++) {
+                            while (n >= vals[i]) { result += syms[i]; n -= vals[i]; }
+                        }
+                        return result;
+                    };
+                    
+                    const mkLabel = `Titan Mk. ${toRoman(wave)}`;
+                    
+                    // Progressive scaling: +12% HP and +8% damage per wave
+                    const hpMult = Math.pow(1.12, wave - 1);
+                    const dmgMult = Math.pow(1.08, wave - 1);
+                    
+                    // Spawn the titan
+                    const champion = new Enemy('champion');
+                    champion.championId = `titan_endless_${wave}`;
+                    champion.isTitan = true;
+                    champion.endlessTitanWave = wave;
+                    champion.hp = Math.floor(champion.hp * hpMult);
+                    champion.maxHp = champion.hp;
+                    champion.dmg = champion.dmg * dmgMult;
+                    champion.x = player.x + (Math.random() - 0.5) * 300;
+                    champion.y = player.y + (Math.random() - 0.5) * 300;
+                    
+                    entities.enemies.push(champion);
+                    state.bossActive = true;
+                    
+                    // Rebuild all bars — new titan added, widths redistribute automatically
+                    rebuildEndlessTitanBars();
+                    
+                    document.getElementById('boss-name-display').innerText = mkLabel;
+                    document.getElementById('boss-hud').classList.add('active');
+                    
+                    // Schedule next titan (2.5 min intervals after first)
+                    state.nextTitanTime = state.gameTime + 2 * 60 * 1000;
+                    
+                    debugLog(`🔴 Endless Titan ${mkLabel} spawned (HP ×${hpMult.toFixed(2)}, DMG ×${dmgMult.toFixed(2)})`);
+                    
+                    const debuffOpen = document.getElementById('debuff-slot-machine').classList.contains('active');
+                    if (state.screen === 'levelup' || state.paused || debuffOpen) {
+                        state.queuedWarning = 'champion';
+                    } else {
+                        const warn = document.getElementById('boss-warning');
+                        warn.style.display = 'block';
+                        setTimeout(() => warn.style.display = 'none', 3000);
+                    }
+                }
+            }
+
 
             const mins = state.gameTime / 60000;
-            const baseSpawnCap = state.level < 5 ? 8 : 5;
+            const baseSpawnCap = state.level < 5 ? 12 : 8;
             // Reduce spawn cap during titan fights for performance
             const titanCapMult = state.bossActive ? 0.55 : 1.0;
             // Endless mode level 35+: gradually raise cap from 125 to 175 by level 75
@@ -17870,8 +18055,8 @@
             // After level 30, scale less aggressively (0.008 instead of 0.013) to prevent overwhelming spawns
             const levelForSpawn = state.level <= 30 ? state.level : 30 + (state.level - 30) * 0.615; // Softer scaling past 30
             let spawnIntervalSeconds = state.bossActive ? 
-                (0.33 - Math.min(0.15, levelForSpawn * 0.013)) * 1.67 : // 67% slower during champion
-                (0.33 - Math.min(0.15, levelForSpawn * 0.013));
+                (0.25 - Math.min(0.13, levelForSpawn * 0.013)) * 1.67 : // 67% slower during champion
+                (0.25 - Math.min(0.13, levelForSpawn * 0.013));
             
             // ENDLESS MODE 35+: Gradually increase spawn rate (up to 25% faster by level 75)
             if (state.gameMode === 'endless' && state.level >= 35) {
@@ -18932,8 +19117,10 @@
                         
                         // CRITICAL: Clean up health bar before removing
                         if (e.championId) {
-                            const titanIndex = parseInt(e.championId.split('_')[1]);
-                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                            const _wrId = e.championId.startsWith('titan_endless_')
+                                ? `boss-bar-wrapper-endless-${e.endlessTitanWave}`
+                                : `boss-bar-wrapper-${parseInt(e.championId.split('_')[1])}`;
+                            const barWrapper = document.getElementById(_wrId);
                             if (barWrapper) {
                                 barWrapper.remove();
                                 debugLog(`🗑️ Removed orphaned health bar for ${e.championId} (no update method)`);
@@ -19272,8 +19459,10 @@
                     
                     // CRITICAL: Clean up health bar before removing
                     if (e.championId) {
-                        const titanIndex = parseInt(e.championId.split('_')[1]);
-                        const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                        const _wrId2 = e.championId.startsWith('titan_endless_')
+                            ? `boss-bar-wrapper-endless-${e.endlessTitanWave}`
+                            : `boss-bar-wrapper-${parseInt(e.championId.split('_')[1])}`;
+                        const barWrapper = document.getElementById(_wrId2);
                         if (barWrapper) {
                             barWrapper.remove();
                             debugLog(`🗑️ Removed orphaned health bar for ${e.championId}`);
@@ -19318,8 +19507,10 @@
                         
                         // Clean up health bar
                         if (e.championId) {
-                            const titanIndex = parseInt(e.championId.split('_')[1]);
-                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                            const _wrId3 = e.championId.startsWith('titan_endless_')
+                                ? `boss-bar-wrapper-endless-${e.endlessTitanWave}`
+                                : `boss-bar-wrapper-${parseInt(e.championId.split('_')[1])}`;
+                            const barWrapper = document.getElementById(_wrId3);
                             if (barWrapper) {
                                 barWrapper.remove();
                                 debugLog(`🗑️ Removed orphaned health bar for ${e.championId} (update crash)`);
@@ -19365,8 +19556,10 @@
                         
                         // Clean up health bar
                         if (e.championId) {
-                            const titanIndex = parseInt(e.championId.split('_')[1]);
-                            const barWrapper = document.getElementById(`boss-bar-wrapper-${titanIndex}`);
+                            const _wrId4 = e.championId.startsWith('titan_endless_')
+                                ? `boss-bar-wrapper-endless-${e.endlessTitanWave}`
+                                : `boss-bar-wrapper-${parseInt(e.championId.split('_')[1])}`;
+                            const barWrapper = document.getElementById(_wrId4);
                             if (barWrapper) {
                                 barWrapper.remove();
                                 debugLog(`🗑️ Removed orphaned health bar for ${e.championId} (draw crash)`);
@@ -21275,11 +21468,11 @@
                                     player.dealElementalDamage(e, p.damage, p.source, hitColor);
                                 }
                                 
-                                // GRAVITY ORB HIT - trigger implosion immediately
+                                // GRAVITY ORB HIT - trigger implosion with delayed damage
                                 if (p.type === 'gravity_orb' && !p.imploded) {
                                     p.imploded = true;
                                     const ir = p.implodeRadius || 100;
-                                    const pullR = ir * 1.2; // pull zone always slightly larger than AOE
+                                    const pullR = ir * 1.4;
                                     createExplosion(p.x, p.y, '#7722ff', 22);
                                     if (!player.gravityRings) player.gravityRings = [];
                                     player.gravityRings.push({ x: p.x, y: p.y, maxR: ir, life: 450, maxLife: 450 });
@@ -21295,7 +21488,7 @@
                                             entities.particles.push(spark);
                                         }
                                     }
-                                    // STEP 1: Pull snap — gather enemies first (pull zone wider than AOE)
+                                    // STEP 1: Violent pull snap — slam enemies hard toward center
                                     const gPull = spatialGrid.getNearby(p.x, p.y, pullR);
                                     for (let gpi = 0; gpi < gPull.length; gpi++) {
                                         const ge = gPull[gpi];
@@ -21304,28 +21497,21 @@
                                         const gd = Math.sqrt(gdx*gdx + gdy*gdy) || 1;
                                         if (gd < pullR) {
                                             const snapResist = (ge.type === 'boss' || ge.isNexusPrime || ge.isTitan) ? 0 : (ge.type === 'tank') ? 0.15 : 1.0;
-                                            const pull = (1 - gd/pullR) * 0.92 * snapResist;
-                                            const gnx = ge.x + gdx * pull, gny = ge.y + gdy * pull;
+                                            const pull = (1 - gd/pullR) * 1.6 * snapResist;
+                                            const gnx = ge.x + gdx * Math.min(pull, 0.95), gny = ge.y + gdy * Math.min(pull, 0.95);
                                             if (!isNaN(gnx) && !isNaN(gny)) { ge.x = gnx; ge.y = gny; }
                                             if (snapResist === 1.0) { ge.pushX = 0; ge.pushY = 0; }
                                         }
                                     }
-                                    // STEP 2: Damage after pull — primary target + AOE, all gathered enemies hit
-                                    const pDistToPlayer = Math.sqrt((p.x - player.x)**2 + (p.y - player.y)**2);
-                                    // Primary target direct hit
-                                    player.dealElementalDamage(e, p.damage, 'gravity', '#7722ff');
-                                    // AOE on surrounding enemies
-                                    if (pDistToPlayer >= 80) {
-                                        const aoeHit = spatialGrid.getNearby(p.x, p.y, ir);
-                                        for (let ai = 0; ai < aoeHit.length; ai++) {
-                                            const ae = aoeHit[ai];
-                                            if (ae.hp <= 0 || ae === e) continue;
-                                            const adx = p.x - ae.x, ady = p.y - ae.y;
-                                            if (adx*adx + ady*ady < ir*ir) {
-                                                player.dealElementalDamage(ae, p.damage, 'gravity', '#7722ff');
-                                            }
-                                        }
-                                    }
+                                    // STEP 2: Queue delayed damage — fires when ring starts collapsing (life <= 337)
+                                    if (!state.pendingGravityHits) state.pendingGravityHits = [];
+                                    state.pendingGravityHits.push({
+                                        x: p.x, y: p.y,
+                                        radius: ir,
+                                        damage: p.damage,
+                                        fired: false,
+                                        ringRef: player.gravityRings[player.gravityRings.length - 1]
+                                    });
                                 }
                                 
                                 // DRONE ROCKET SPLASH DAMAGE
@@ -21558,6 +21744,54 @@
 
             // GRAVITY LENS singularity rings — expand fast then get yanked back to center
             if (player.gravityRings && player.gravityRings.length > 0) {
+                // Process delayed gravity damage + continuous collapse pull
+                if (state.pendingGravityHits) {
+                    state.pendingGravityHits = state.pendingGravityHits.filter(hit => {
+                        if (hit.fired) return false;
+                        if (!hit.ringRef || hit.ringRef.life <= 0) { hit.fired = true; return false; }
+
+                        // Continuous pull during ring lifetime — weak during expand, violent during collapse
+                        const t = 1 - hit.ringRef.life / hit.ringRef.maxLife;
+                        const pullRadius = hit.radius * 1.4;
+                        const collapseProgress = t < 0.25 ? 0 : (t - 0.25) / 0.75;
+                        const pullStrength = 0.3 + collapseProgress * collapseProgress * 1.8;
+                        const nearbyEnemies = spatialGrid.getNearby(hit.x, hit.y, pullRadius);
+                        for (let pi = 0; pi < nearbyEnemies.length; pi++) {
+                            const e = nearbyEnemies[pi];
+                            if (e.hp <= 0) continue;
+                            const snapResist = (e.type === 'boss' || e.isNexusPrime || e.isTitan) ? 0 : (e.type === 'tank') ? 0.15 : 1.0;
+                            if (snapResist === 0) continue;
+                            const dx = hit.x - e.x, dy = hit.y - e.y;
+                            const dSq = dx*dx + dy*dy;
+                            if (dSq < pullRadius * pullRadius) {
+                                const d = Math.sqrt(dSq) || 1;
+                                const distRatio = 1 - d/pullRadius;
+                                const force = pullStrength * distRatio * snapResist;
+                                e.pushX = (e.pushX || 0) + (dx/d) * force;
+                                e.pushY = (e.pushY || 0) + (dy/d) * force;
+                                // Cap magnitude to prevent flinging from accumulated forces
+                                const mag = Math.sqrt(e.pushX*e.pushX + e.pushY*e.pushY);
+                                if (mag > 12) { e.pushX = (e.pushX/mag)*12; e.pushY = (e.pushY/mag)*12; }
+                            }
+                        }
+
+                        // Fire damage when ring is almost fully collapsed
+                        if (hit.ringRef.life <= 67) {
+                            hit.fired = true;
+                            const aoeNearby = spatialGrid.getNearby(hit.x, hit.y, hit.radius);
+                            for (let ai = 0; ai < aoeNearby.length; ai++) {
+                                const e = aoeNearby[ai];
+                                if (e.hp <= 0) continue;
+                                const dx = hit.x - e.x, dy = hit.y - e.y;
+                                if (dx*dx + dy*dy < hit.radius * hit.radius) {
+                                    player.dealElementalDamage(e, hit.damage, 'gravity', '#7722ff');
+                                }
+                            }
+                            return false;
+                        }
+                        return true;
+                    });
+                }
                 player.gravityRings = player.gravityRings.filter(ring => {
                     ring.life -= scaledDt;
                     if (ring.life <= 0) return false;
@@ -21827,7 +22061,7 @@
             drawIndicators();
             
             if (state.timeScale < 0.9) {
-                ctx.fillStyle = `rgba(0, 20, 40, ${0.4 * (1 - state.timeScale)})`; 
+                ctx.fillStyle = `rgba(160, 160, 170, ${0.075 * (1 - state.timeScale)})`; 
                 ctx.fillRect(0, 0, width, height);
             }
             
@@ -24566,28 +24800,26 @@
         
         // ===== ENDLESS MODE GAMEPLAY FUNCTIONS =====
         
-        // Debuff pool with weighted tiers
+        // Debuff pool — all equal probability
         const ENDLESS_DEBUFFS = [
-            // Tier 1 (33% weight each - total 10)
-            { id: 'fragile_hull', weight: 2, tier: 1 },
-            { id: 'power_drain', weight: 2, tier: 1 },
-            { id: 'sluggish_systems', weight: 2, tier: 1 },
-            { id: 'aggressive_swarms', weight: 2, tier: 1 },
-            { id: 'weakened_shields', weight: 2, tier: 1 },
-            
-            // Tier 2 (50% weight each - total 15)
-            { id: 'energy_leak', weight: 3, tier: 2 },
-            { id: 'brittle_armor', weight: 3, tier: 2 },
-            { id: 'overloaded_circuits', weight: 3, tier: 2 },
-            { id: 'leaky_shields', weight: 3, tier: 2 },
-            { id: 'compressed_field', weight: 3, tier: 2 },
-            
-            // Tier 3 (17% weight each - total 5)
-            { id: 'ticking_doom', weight: 1, tier: 3 },
-            { id: 'overcharged_enemies', weight: 1, tier: 3 },
-            { id: 'accelerated_enemies', weight: 1, tier: 3 },
-            { id: 'empowered_titans', weight: 1, tier: 3 },
-            { id: 'critical_weakness', weight: 1, tier: 3 }
+            { id: 'fragile_hull' },
+            { id: 'power_drain' },
+            { id: 'sluggish_systems' },
+            { id: 'aggressive_swarms' },
+            { id: 'weakened_shields' },
+            { id: 'energy_leak' },
+            { id: 'brittle_armor' },
+            { id: 'overloaded_circuits' },
+            { id: 'leaky_shields' },
+            { id: 'compressed_field' },
+            { id: 'momentum' },
+            { id: 'debt_collector' },
+            { id: 'cursed_drops' },
+            { id: 'ticking_doom' },
+            { id: 'overcharged_enemies' },
+            { id: 'accelerated_enemies' },
+            { id: 'empowered_titans' },
+            { id: 'critical_weakness' }
         ];
         
         // Roll random debuff (weighted) - Now opens slot machine
@@ -24629,18 +24861,8 @@
             // Enable background glow during spin
             bgGlow.style.opacity = '1';
             
-            // Determine final selection FIRST using weighted random
-            const totalWeight = ENDLESS_DEBUFFS.reduce((sum, d) => sum + d.weight, 0);
-            let random = seededRandom() * totalWeight;
-            
-            selectedDebuff = ENDLESS_DEBUFFS[0];
-            for (const debuff of ENDLESS_DEBUFFS) {
-                if (random < debuff.weight) {
-                    selectedDebuff = debuff;
-                    break;
-                }
-                random -= debuff.weight;
-            }
+            // Determine final selection — pure random, all equal
+            selectedDebuff = ENDLESS_DEBUFFS[Math.floor(seededRandom() * ENDLESS_DEBUFFS.length)];
             
             debugLog(`🎰 Pre-selected result: ${selectedDebuff.id}`);
             
@@ -24660,7 +24882,10 @@
                 'overcharged_enemies': 'fa-radiation-alt',
                 'accelerated_enemies': 'fa-running',
                 'empowered_titans': 'fa-dragon',
-                'critical_weakness': 'fa-crosshairs'
+                'critical_weakness': 'fa-crosshairs',
+                'momentum': 'fa-tachometer-alt',
+                'debt_collector': 'fa-coins',
+                'cursed_drops': 'fa-skull-crossbones'
             };
             
             const names = {
@@ -24678,7 +24903,10 @@
                 'overcharged_enemies': 'Overcharged Enemies',
                 'accelerated_enemies': 'Accelerated Enemies',
                 'empowered_titans': 'Empowered Titans',
-                'critical_weakness': 'Critical Weakness'
+                'critical_weakness': 'Critical Weakness',
+                'momentum': 'Momentum',
+                'debt_collector': 'Debt Collector',
+                'cursed_drops': 'Cursed Drops'
             };
             
             const descs = {
@@ -24696,7 +24924,10 @@
                 'overcharged_enemies': 'All enemies deal +20% damage',
                 'accelerated_enemies': 'All enemies move 15% faster',
                 'empowered_titans': 'Titan Champions have +25% HP and damage',
-                'critical_weakness': 'Enemies have +15% crit chance vs you'
+                'critical_weakness': 'Enemies have +15% crit chance vs you',
+                'momentum': 'Damage scales with speed — 100% speed = 100% damage, standing still = 25% damage',
+                'debt_collector': 'Shop items cost 50% more Void Shards',
+                'cursed_drops': 'Health and magnet pickups have 40% chance to deal 15 damage instead'
             };
             
             // Simple cycling animation with deceleration
@@ -24860,6 +25091,15 @@
                 const oldCrit = player.enemyCritChance || 0;
                 player.enemyCritChance = (player.enemyCritChance || 0) + 0.15;
                 debugLog(`  🎯 Enemy crit chance: ${(oldCrit * 100).toFixed(1)}% → ${(player.enemyCritChance * 100).toFixed(1)}%`);
+            } else if (debuffId === 'momentum') {
+                player.momentumDebuff = true;
+                debugLog(`  💨 Momentum debuff enabled`);
+            } else if (debuffId === 'debt_collector') {
+                player.debtCollector = (player.debtCollector || 0) + 1;
+                debugLog(`  💸 Debt collector stacks: ${player.debtCollector}`);
+            } else if (debuffId === 'cursed_drops') {
+                player.cursedDrops = (player.cursedDrops || 0) + 1;
+                debugLog(`  ☠️ Cursed drops stacks: ${player.cursedDrops}`);
             }
             
             debugLog(`✅ Debuff ${debuffId} applied successfully`);
@@ -24882,7 +25122,10 @@
                 overcharged_enemies: 'Overcharged Enemies',
                 accelerated_enemies: 'Accelerated Enemies',
                 empowered_titans: 'Empowered Titans',
-                critical_weakness: 'Critical Weakness'
+                critical_weakness: 'Critical Weakness',
+                momentum: 'Momentum',
+                debt_collector: 'Debt Collector',
+                cursed_drops: 'Cursed Drops'
             };
             
             createFloatingText(player.x, player.y - 40, `DEBUFF: ${names[debuff.id]}`, '#ff6b6b', 18, 120);
@@ -24988,7 +25231,8 @@
             list.innerHTML = '';
             
             const checkpointNum = state.endlessLevel / 25;
-            const costMultiplier = 1 + (checkpointNum * 0.3);
+            const debtMult = (player.debtCollector && state.gameMode === 'endless') ? Math.pow(1.5, player.debtCollector) : 1;
+            const costMultiplier = (1 + (checkpointNum * 0.3)) * debtMult;
             
             // Get all unlocked augments that are NOT already equipped
             const unlockedIds = Object.keys(augmentProgress.unlocked).filter(id => {
@@ -25046,25 +25290,28 @@
             const list = document.getElementById('checkpoint-actions-list');
             list.innerHTML = '';
             
+            const debtMult = (player.debtCollector && state.gameMode === 'endless') ? Math.pow(1.5, player.debtCollector) : 1;
+            
             const actions = [
                 { id: 'full_restore', name: 'Full Restore', icon: 'fa-heart', desc: 'Heal to max HP + restore all shields', cost: 100 },
                 { id: 'debuff_cleanse', name: 'Debuff Cleanse', icon: 'fa-broom', desc: 'Remove 1 random debuff permanently', cost: 200 },
-                { id: 'shard_amplifier', name: 'Shard Amplifier', icon: 'fa-gem', desc: '+25% Void Shard drops for next 25 levels', cost: 300 }
+                { id: 'shard_amplifier', name: 'Shard Amplifier', icon: 'fa-gem', desc: '+25% Void Shard drops for next 20 levels', cost: 300 }
             ];
             
             actions.forEach(action => {
+                const actionCost = Math.floor(action.cost * debtMult);
                 const card = document.createElement('div');
                 card.className = 'checkpoint-item bg-gray-800 border-2 border-gray-600 rounded p-2 cursor-pointer hover:border-cyan-400 transition-all';
                 card.dataset.type = 'action';
                 card.dataset.id = action.id;
-                card.dataset.cost = action.cost;
+                card.dataset.cost = actionCost;
                 card.innerHTML = `
                     <div class="flex items-center justify-between mb-1">
                         <div class="flex items-center gap-2">
                             <i class="fas ${action.icon} text-cyan-400 text-sm"></i>
                             <span class="font-bold text-xs text-white">${action.name}</span>
                         </div>
-                        <span class="cost-display text-cyan-400 font-bold text-xs">💎${action.cost}</span>
+                        <span class="cost-display text-cyan-400 font-bold text-xs">💎${actionCost}</span>
                     </div>
                     <div class="text-[10px] text-gray-400">${action.desc}</div>
                 `;
@@ -25171,7 +25418,7 @@
                     }
                 } else if (selectedAction.id === 'shard_amplifier') {
                     state.shardBoostActive = true;
-                    state.shardBoostEndLevel = state.endlessLevel + 25;
+                    state.shardBoostEndLevel = state.endlessLevel + 20;
                     createFloatingText(player.x, player.y, 'SHARD BOOST!', '#a855f7', 18);
                 }
                 debugLog(`✅ Purchased action: ${selectedAction.id}`);
